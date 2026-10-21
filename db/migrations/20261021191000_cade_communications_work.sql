@@ -625,9 +625,11 @@ After the fear.'),
     ('anniversary-later-years', 'Develop registration anniversary communications for year two and beyond', 'STATUS: HELD — REVIEW WORK ONLY. No delivery is enabled by this task.
 
 DECISIONS / DEPENDENCIES
-The approved automated anniversary is year one only. Define copy, meaning, timing and any verified benefit for later years before implementation.
+The year-one anniversary email and automatic badge are implemented by the canonical anniversary rule. This task is for year two and beyond: define copy, meaning, timing and any verified later-year badge or benefit before implementation.
 
 COMPLETE CADE SOURCE COPY AND QUESTIONS
+BADGES FOR EACH APPLICABLE TRIGGER/EMAIL. IE 30 DAYS: A BADGE IF THEY LEFT US A REVIEW. IS THERE A WAY TO MONITOR THAT? 3 MOS: IF THEY COMPLETE OUR SURVEY. 1 YEAR: AUTO BADGE. NEED TO BUILD 2+ YEAR COMMS. PLACE THIS TASK IN LIBBY’S WORKING QUE
+
 MEMBER REGISTRATION ANNIVERSARY
 
 Trigger: Registration anniversary

@@ -74,6 +74,22 @@ test("manual copy enters only the chosen field and subject, keeping other design
   f.change('manual-communication-destination','copy:body');f.button('Add copy to this draft').props.onClick();
   assert.equal(applied.length,1);assert.equal(applied[0].subject,'The confirmed change');assert.equal(applied[0].copy.heading,'Keep heading');assert.equal(applied[0].copy.body,'Alex, the workshop moves to Friday. Your calendar is updated.');assert.deepEqual(applied[0].values,props.edits.values);assert.deepEqual(applied[0].banner,props.edits.banner);assert.equal(applied[0].signOff,null);
 });
+test('manual closing uses one handwritten After the fear while preserving the message and custom closings',()=>{
+  for(const entry of [
+    {body:'Alex, the update is ready.\n\nRU/NED\nAfter the fear.',expected:'Alex, the update is ready.\n\nRU/NED',signOff:{text:'After the fear.'}},
+    {body:'Alex, the update is ready.\r\n\r\nRU/NED\r\nAfter the fear.\r\n',expected:'Alex, the update is ready.\r\n\r\nRU/NED',signOff:{text:'After the fear.'}},
+    {body:'After the fear.\nAlex, the update is ready.\n\nRU/NED\nSee you there.',expected:'After the fear.\nAlex, the update is ready.\n\nRU/NED\nSee you there.',signOff:null},
+  ]) {
+    const h=harness(),applied=[];h.browser.window.location.search='?manualTemplate=platform-update';
+    const Component=compile('src/components/platform/OperatorManualCommunicationTemplate.tsx',{react:h.hooks,'@/lib/communications/cade-communications':copy,'./operatorStyles':styles},undefined,h.browser).default;
+    const props={preview:true,template:{variables:[{key:'BODY',type:'string'}],fields:[]},edits:{subject:'Old subject',values:{BODY:'Old copy'},copy:{},signOff:{text:'All the love'}},onApply:value=>applied.push(value)};
+    const f=controls(()=>h.render(Component,props));f.draw();f.change('manual-communication-subject','A confirmed update');f.change('manual-communication-body',entry.body);
+    f.change('manual-communication-destination','variable:BODY');f.find(x=>x.type==='input'&&x.props.type==='checkbox').props.onChange({target:{checked:true}});f.button('Add copy to this draft').props.onClick();
+    assert.equal(applied.length,1);assert.equal(applied[0].values.BODY,entry.expected);assert.deepEqual(applied[0].signOff,entry.signOff);
+    const message=[applied[0].values.BODY,applied[0].signOff?.text].filter(Boolean).join('\n');
+    assert.equal(message.match(/After the fear\./g)?.length,1);assert.doesNotMatch(message,/All the love/);assert.match(message,/RU\/NED/);
+  }
+});
 test("lifecycle catalog reports unknown, held, globally paused and ready states without inventing activation",()=>{
   assert.ok(view.lifecycleCommunicationItems(null).every(x=>x.status==='attention'));
   const item={key:'checkin_90',enabled:false,ready:true,missing:[],settings:{},eligible:0,nextDueAt:null,lastSentAt:null};

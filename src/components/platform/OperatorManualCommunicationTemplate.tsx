@@ -63,8 +63,11 @@ export default function OperatorManualCommunicationTemplate({ template, edits, o
     if (!selected || !template || issue || !confirmed || !options.some(item => item.key === destination)) return;
     const [kind, ...parts] = destination.split(":");
     const key = parts.join(":");
-    onApply({ ...edits, subject: subject.trim(), signOff: null,
-      ...(kind === "variable" ? { values: { ...edits.values, [key]: body.trim() } } : { copy: { ...edits.copy, [key]: body.trim() } }),
+    const trimmedBody = body.trim();
+    const handwrittenClosing = /\r?\nAfter the fear\.$/.test(trimmedBody);
+    const messageBody = handwrittenClosing ? trimmedBody.replace(/\r?\nAfter the fear\.$/, "").trimEnd() : trimmedBody;
+    onApply({ ...edits, subject: subject.trim(), signOff: handwrittenClosing ? { text: "After the fear." } : null,
+      ...(kind === "variable" ? { values: { ...edits.values, [key]: messageBody } } : { copy: { ...edits.copy, [key]: messageBody } }),
     });
     setImported(true);
     setMessage("Copy added to the draft. Review every other text field, the full design and the recipients before sending.");
@@ -89,7 +92,7 @@ export default function OperatorManualCommunicationTemplate({ template, edits, o
       <label className="flex items-start gap-3 text-sm leading-relaxed"><input className="mt-1" type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /><span>I checked the actual dates, links, recipients and any benefits promised in this message. Optional instructions are filled in or removed.</span></label>
       {selected.channel === "emails" ? template ? <>
         <label className="block text-sm" htmlFor="manual-communication-destination">Where should the message go?<select className={OPERATOR_FIELD_CLASS} id="manual-communication-destination" value={options.some(item => item.key === destination) ? destination : ""} onChange={event => setDestination(event.target.value)}><option value="">Choose the design’s body text field</option>{options.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
-        <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Only the subject and selected text field are replaced. Layout, images, links and other copy stay in place. Check them in the preview. The extra handwritten sign-off is removed because this copy already includes its closing.</p>
+        <p className="text-xs leading-relaxed text-[color:var(--operator-muted)]">Only the subject and selected text field are replaced. Layout, images, links and other copy stay in place. A final “After the fear.” becomes the yellow handwritten sign-off. Other closings stay in the message, with the extra sign-off removed. Check the full preview before sending.</p>
         <button className={OPERATOR_BUTTON_CLASS} type="button" disabled={!!issue || !confirmed || !options.some(item => item.key === destination)} onClick={apply}>Add copy to this draft</button>
       </> : <p className="text-sm">Choose a Resend design below, then select its body field to add this copy.</p> : <button className={OPERATOR_BUTTON_CLASS} type="button" disabled={!!issue || !confirmed} onClick={() => void copyText()}>Copy reviewed text</button>}
       {message ? <p className="text-sm leading-relaxed" role="status">{message}</p> : null}

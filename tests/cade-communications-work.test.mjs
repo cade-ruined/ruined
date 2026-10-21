@@ -32,6 +32,10 @@ test("CADE review migration assigns one complete task per held decision to the v
   const incomplete=tasks.filter(x=>x.idempotency_key.endsWith(':incomplete-foundations'));assert.equal(incomplete.length,1);assert.match(incomplete[0].description,/INCOMPLETE FOUNDATIONS \/ BLOCKED FROM MOVING FORWARD/);
   assert.equal(tasks.filter(x=>x.idempotency_key.endsWith(':future-events')).length,1);
   assert.ok(tasks.every(x=>x.description.includes('COMPLETE CADE SOURCE COPY AND QUESTIONS')));
+  const laterAnniversary=tasks.find(x=>x.idempotency_key.endsWith(':anniversary-later-years'));
+  assert.match(laterAnniversary.description,/BADGES FOR EACH APPLICABLE TRIGGER\/EMAIL\. IE 30 DAYS: A BADGE IF THEY LEFT US A REVIEW\. IS THERE A WAY TO MONITOR THAT\? 3 MOS: IF THEY COMPLETE OUR SURVEY\. 1 YEAR: AUTO BADGE\. NEED TO BUILD 2\+ YEAR COMMS\. PLACE THIS TASK IN LIBBY’S WORKING QUE/);
+  assert.match(laterAnniversary.description,/year-one anniversary email and automatic badge are implemented/);
+  assert.match(laterAnniversary.description,/MEMBER REGISTRATION ANNIVERSARY/);
   const events=(await f.db.query('select * from operator_task_events')).rows;
   assert.equal(events.length,12); assert.ok(events.every(x=>x.event_type==='created' && x.actor_type==='system' && x.evidence.deliveryEnabled===false));
   const original=tasks[0]; await f.db.query("update operator_tasks set status='in_progress',description='Human decision preserved',version=2 where id=$1",[original.id]);

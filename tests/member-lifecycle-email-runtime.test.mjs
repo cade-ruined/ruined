@@ -17,7 +17,7 @@ const model=await load("src/lib/communications/member-lifecycle-email-model.ts")
 const access=await load("src/lib/membership/access-policy.ts");
 class CadenceDeliveryError extends Error {constructor(code,terminal=false){super(code);this.code=code;this.terminal=terminal;}}
 
-async function fixture(t) {
+async function fixture(t,{sixMonth=false}={}) {
   const db=new PGlite();t.after(()=>db.close());
   const ids=Object.fromEntries(["member","person","actor","auth","event","circle","enrollment"].map(key=>[key,crypto.randomUUID()]));
   await db.exec(`create role anon;create role authenticated;create schema private;
@@ -47,7 +47,12 @@ async function fixture(t) {
     create function private.ruined_lock_member_operator_funding(uuid) returns boolean language sql as 'select false';
     create function private.ruined_member_has_complimentary_funding(uuid) returns boolean language sql as 'select true';
     create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql as 'select false';
-    create function private.ruined_member_profile_released(uuid) returns boolean language sql as 'select true';`);
+    create function private.ruined_member_profile_released(uuid) returns boolean language sql as 'select true';
+    alter table ruined_members add unique(id,person_id);
+    create table membership_blocks(id uuid primary key);`);
+  const operationsMigration=await read("db/migrations/20260826_membership_operating_spine_05_content_operations.sql");
+  await db.exec(operationsMigration.slice(operationsMigration.indexOf("create table if not exists public.operator_tasks ("),
+    operationsMigration.indexOf("create index if not exists operator_task_events_task_idx")));
   await db.query("insert into people values($1,'active')",[ids.person]);
   await db.query("insert into ruined_members values($1,$2,'member@example.test',null,'2020-01-01')",[ids.member,ids.person]);
   await db.query("insert into platform_users values($1,$2,$3,'active','member@example.test'),($4,null,null,'active','admin@example.test')",[ids.auth,ids.member,ids.person,ids.actor]);
@@ -72,6 +77,13 @@ async function fixture(t) {
   await consent();
   await db.exec(await read("db/migrations/20261021192000_member_lifecycle_emails.sql"));
   await db.query("update private.member_lifecycle_email_rules set enabled=true,activated_at=$1,approved_by=$2,design='{}'::jsonb where key='anniversary'",[new Date(Date.parse(due)-86400000).toISOString(),ids.actor]);
+  if(sixMonth) {
+    const anchor=new Date(`${model.denverDate(due)}T12:00:00Z`);anchor.setUTCDate(Math.min(anchor.getUTCDate(),28));anchor.setUTCMonth(anchor.getUTCMonth()-6);
+    await db.query("update experiences set starts_at=$1,ends_at=$1::timestamptz+interval '90 minutes' where id=$2",[anchor.toISOString(),ids.event]);
+    await db.query("update private.member_lifecycle_email_rules set enabled=false where key='anniversary'");
+    await db.query("update private.member_lifecycle_email_rules set enabled=true,activated_at=$1,approved_by=$2,design='{}'::jsonb,settings=$3::jsonb where key='checkin_6_month'",
+      [new Date(Date.parse(due)-86400000).toISOString(),ids.actor,JSON.stringify({foundationsWorkType:"timeline",foundationsWorkLabel:"created your Timeline",foundationsWorkPath:"/my/foundations/timeline",fulfillmentMode:"task"})]);
+  }
   const sends=[],responses=[],hooks=[],committed=[],providerErrors=[],providerChecks=[],rendered=[],lockFaults=[];
   function bridge(engine,root=false) {
     class Query {
@@ -100,7 +112,13 @@ async function fixture(t) {
       sendCadencePayload:async(payload,id)=>{const saved=committed.at(-1).find(row=>row.id===id);assert.ok(saved.first_attempt_at);assert.deepEqual(saved.payload,payload);
         sends.push({payload,id});const error=responses.shift();if(error)throw error;return "provider-id";}},
     "./member-email-cadence-provider":{assertCadenceRecipientDeliverable:async email=>{providerChecks.push(email);const error=providerErrors.shift();if(error)throw error;}},
-    "./member-email-cadence-repository":{CadenceDeliveryError},"./member-lifecycle-email-model":model,
+    "./member-email-cadence-repository":{CadenceDeliveryError},"./member-lifecycle-email-model":sixMonth ? {...model,
+      // Keep the fulfillment test in the database's current send window even
+      // on dates with no six-month anniversary (for example October 31).
+      // Civil-month timing itself is covered by the pure lifecycle model suite.
+      lifecycleOccurrences:(key,dates,year)=>model.lifecycleOccurrences(key,dates,year).map(occurrence=>({...occurrence,
+        dueAt:due,expiresAt:new Date(Date.parse(due)+86400000).toISOString()})),
+    } : model,
     "./member-lifecycle-email-repository":repository,
     "./member-lifecycle-email-service":{renderLifecycleMessage:(rule,name)=>{rendered.push({rule,name});return {from:"Ruined <connect@example.test>",replyTo:[],subject:"Anniversary",html:`<p>${name}</p>`,text:name};}},
   });
@@ -228,5 +246,56 @@ test("busy event or completion evidence defers lifecycle dispatch before provide
     assert.equal(result.failed,1);assert.equal(f.sends.length,0);assert.equal(f.providerChecks.length,0);
     const [delivery]=await f.deliveries();assert.equal(delivery.status,"failed");assert.equal(delivery.first_attempt_at,null);
     await f.retry();assert.equal((await f.worker.processMemberLifecycleEmailBatch()).sent,1);assert.equal(f.sends.length,1);
+  }
+});
+
+async function addFulfillmentOwner(f,{verified=true,role=true}={}) {
+  const person=crypto.randomUUID(),actor=crypto.randomUUID();
+  await f.db.query("insert into people values($1,'active')",[person]);
+  await f.db.query("insert into platform_users values($1,null,$2,'active','libby@theruinedproject.com')",[actor,person]);
+  await f.db.query("insert into platform_role_grants values($1,'ops_admin',$2)",[actor,role ? null : new Date().toISOString()]);
+  await f.db.query("insert into person_email_addresses(person_id,email_normalized,verification_state) values($1,'libby@theruinedproject.com',$2)",[person,verified ? "verified" : "unverified"]);
+  return actor;
+}
+
+test("six-month fulfillment creates one assigned task and one safe created event after provider acceptance",async t=>{
+  const f=await fixture(t,{sixMonth:true}),owner=await addFulfillmentOwner(f);
+  const result=await f.worker.processMemberLifecycleEmailBatch();assert.equal(result.queued,1);assert.equal(result.sent,1);
+  const [delivery]=await f.deliveries(),tasks=(await f.db.query("select * from operator_tasks")).rows;
+  assert.equal(tasks.length,1);const [task]=tasks;
+  assert.equal(task.member_id,f.ids.member);assert.equal(task.assigned_to_auth_user_id,owner);
+  assert.equal(task.task_type,"communications.six_month_artifact");assert.equal(task.created_by_type,"system");assert.equal(task.status,"open");
+  assert.equal(task.idempotency_key,`cade:six-month:${f.ids.member}:${delivery.occurrence_key}`);
+  const events=(await f.db.query("select * from operator_task_events")).rows;assert.equal(events.length,1);
+  assert.equal(events[0].operator_task_id,task.id);assert.equal(events[0].event_type,"created");assert.equal(events[0].actor_type,"system");
+  assert.equal(events[0].next_status,"open");assert.equal(events[0].dedupe_key,`${task.idempotency_key}:created`);
+  assert.deepEqual(events[0].evidence,{source:"member_lifecycle_email",deliveryId:delivery.id,ruleKey:"checkin_6_month"});
+  assert.equal((await f.worker.processMemberLifecycleEmailBatch()).sent,0);assert.equal(f.sends.length,1);
+  assert.equal((await f.db.query("select count(*)::int as n from operator_tasks")).rows[0].n,1);
+  assert.equal((await f.db.query("select count(*)::int as n from operator_task_events")).rows[0].n,1);
+});
+
+test("six-month task audit failure rolls back fulfillment and retries the same frozen provider message once",async t=>{
+  const f=await fixture(t,{sixMonth:true});await addFulfillmentOwner(f);
+  f.lockFaults.push("insert into operator_task_events");
+  assert.equal((await f.worker.processMemberLifecycleEmailBatch()).failed,1);assert.equal(f.sends.length,1);
+  assert.equal((await f.db.query("select count(*)::int as n from operator_tasks")).rows[0].n,0);
+  assert.equal((await f.deliveries())[0].status,"failed");
+  await f.retry();assert.equal((await f.worker.processMemberLifecycleEmailBatch()).sent,1);
+  assert.deepEqual(f.sends[0],f.sends[1]);assert.equal(f.rendered.length,1);
+  assert.equal((await f.db.query("select count(*)::int as n from operator_tasks")).rows[0].n,1);
+  assert.equal((await f.db.query("select count(*)::int as n from operator_task_events")).rows[0].n,1);
+  assert.equal((await f.worker.processMemberLifecycleEmailBatch()).sent,0);assert.equal(f.sends.length,2);
+});
+
+test("six-month fulfillment requires exactly one active verified administrator owner before provider access",async t=>{
+  for(const mode of ["missing","unverified","revoked","duplicate"]) {
+    const f=await fixture(t,{sixMonth:true});
+    if(mode!=="missing") await addFulfillmentOwner(f,{verified:mode!=="unverified",role:mode!=="revoked"});
+    if(mode==="duplicate") await addFulfillmentOwner(f);
+    const result=await f.worker.processMemberLifecycleEmailBatch();assert.equal(result.manualReview,1,mode);
+    assert.equal(f.providerChecks.length,0,mode);assert.equal(f.sends.length,0,mode);
+    assert.equal((await f.db.query("select count(*)::int as n from operator_tasks")).rows[0].n,0);
+    assert.equal((await f.db.query("select count(*)::int as n from operator_task_events")).rows[0].n,0);
   }
 });

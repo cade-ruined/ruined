@@ -18,7 +18,7 @@ A new welcome’s confirmed delivery starts the 24-hour clock for “A few thing
 
 Call reminders use actual scheduled call dates, type, duration and Circle name. Foundations 01 sends its morning email at 8 a.m. Mountain Time and its SMS 150 minutes before the call. Other day-of call emails are 150 minutes before their calls. Existing SMS consent and stop handling remain authoritative.
 
-The one-year anniversary anchors to completed registration and requires actual Foundations completion, Circle membership and Membership-call attendance. Later-year anniversaries remain held. The 30-day, 90-day and six-month check-ins anchor to the first confirmed attended Membership call. Rule activation and recipient enrollment are future-only boundaries; expired milestones never backfill.
+The one-year anniversary anchors to completed registration and requires actual Foundations completion, Circle membership and Membership-call attendance. The canonical badge collection independently awards the One Year badge from the registration anniversary, using its existing access, uniqueness and visibility controls. Email consent does not affect that earned milestone. Later-year anniversaries remain held. The 30-day, 90-day and six-month check-ins anchor to the first confirmed attended Membership call. Rule activation and recipient enrollment are future-only boundaries; expired milestones never backfill.
 
 Annual closure markers show separate Thanksgiving/Black Friday, Christmas, New Year, Memorial Day, July 4 and Labor Day periods. They do not cancel or reschedule calls. Holiday emails require explicit year-specific closure, return-date and schedule-change settings.
 
@@ -30,7 +30,7 @@ The 12 tasks are: profile drip; Foundations completion; incomplete Foundations; 
 
 ## Release checks
 
-Apply the four October 21 migrations in order before deploying the worker. They add the durable follow-up, review tasks, inactive lifecycle rules and private template overrides. They do not send email or activate new lifecycle rules.
+Apply the five October 21 migrations in order before deploying the worker. They add the durable follow-up, review tasks, inactive lifecycle rules, private template overrides and the one-year badge progress rule. They do not send email or activate new lifecycle rules.
 
 Review the actual saved design before activating the ready first-anniversary, RU/NED birthday and New Year rules. Keep all unresolved rules disabled. Preserve any operator-authored call-message overrides; stored sequences without explicit message overrides use the new approved defaults automatically.
 

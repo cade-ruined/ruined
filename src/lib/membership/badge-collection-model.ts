@@ -16,14 +16,15 @@ export type MemberBadgeCollection = { ownerId: string; seenAt: string | null; ba
 
 export const BADGE_COLLECTION_KEYS = [
   "make-it-yours", "first-words", "your-story", "on-the-record", "groundwork",
-  "in-the-room", "full-circle", "the-whole-month", "open-door", "in-real-life",
+  "in-the-room", "full-circle", "the-whole-month", "open-door", "in-real-life", "one-year",
 ] as const satisfies readonly MemberBadgeKey[];
 
-const ACTIONS: Record<(typeof BADGE_COLLECTION_KEYS)[number], string> = {
+const ACTIONS: Record<(typeof BADGE_COLLECTION_KEYS)[number], string | null> = {
   "make-it-yours": "/my/profile", "first-words": "/my#journal",
   "your-story": "/my/foundations/timeline", "on-the-record": "/my#timeline",
   groundwork: "/my/foundations", "in-the-room": "/my/experiences", "full-circle": "/my/circle",
   "the-whole-month": "/my/experiences", "open-door": "/my/invitation", "in-real-life": "/my/experiences",
+  "one-year": null,
 };
 
 export function badgeProgressLabel(key: string, progress: number, target: number): string {
@@ -32,6 +33,7 @@ export function badgeProgressLabel(key: string, progress: number, target: number
   if (key === "full-circle") return `${progress} of 2 Circle calls in one month`;
   if (key === "the-whole-month") return `${progress} of 4 calls in one topic month`;
   if (key === "groundwork") return `${progress}% complete`;
+  if (key === "one-year") return "One year from registration";
   return "Not yet earned";
 }
 

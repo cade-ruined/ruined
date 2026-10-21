@@ -85,11 +85,18 @@ async function fulfillmentOwner(tx:TransactionSql,rule:LifecycleRule) {
 }
 async function fulfillmentTask(tx:TransactionSql,delivery:Delivery,rule:LifecycleRule,owner:string|null) {
   if (!owner) return;
-  await tx`insert into operator_tasks(member_id,task_type,title,description,assigned_to_auth_user_id,created_by_type,idempotency_key)
+  const key=`cade:six-month:${delivery.memberId}:${delivery.occurrenceKey}`;
+  const [created]=await tx<Array<{id:string}>>`insert into operator_tasks(member_id,task_type,title,description,assigned_to_auth_user_id,created_by_type,idempotency_key)
     values(${delivery.memberId}::uuid,'communications.six_month_artifact','Prepare the six-month member Artifact',
       ${`The member received the six-month check-in. Follow the approved fulfillment process for: ${rule.settings.foundationsWorkLabel}. Do not place private Foundations responses in this task.`},
-      ${owner}::uuid,'system',${`cade:six-month:${delivery.memberId}:${delivery.occurrenceKey}`})
-    on conflict(idempotency_key) where idempotency_key is not null do nothing`;
+      ${owner}::uuid,'system',${key})
+    on conflict(idempotency_key) where idempotency_key is not null do nothing returning id`;
+  const task=created ?? (await tx<Array<{id:string}>>`select id from operator_tasks where idempotency_key=${key} for update`)[0];
+  if (!task) throw new Error("Six-month fulfillment task unavailable");
+  await tx`insert into operator_task_events(operator_task_id,event_type,next_status,actor_type,evidence,dedupe_key)
+    values(${task.id}::uuid,'created','open','system',
+      ${tx.json({source:"member_lifecycle_email",deliveryId:delivery.id,ruleKey:rule.key})},${`${key}:created`})
+    on conflict(dedupe_key) do nothing`;
 }
 
 export async function processMemberLifecycleEmailBatch(limit=20) {

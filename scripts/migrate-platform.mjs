@@ -122,6 +122,7 @@ const migrations = [
   "../db/migrations/20261021191000_cade_communications_work.sql",
   "../db/migrations/20261021192000_member_lifecycle_emails.sql",
   "../db/migrations/20261021193000_member_communication_template_overrides.sql",
+  "../db/migrations/20261021194000_member_registration_anniversary_badge.sql",
 ];
 
 function migrationBody(migration, migrationName) {
