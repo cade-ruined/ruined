@@ -1,3 +1,5 @@
+begin;
+
 -- CADE-only unresolved communications. This migration creates review work, never send plans or consent.
 -- Fresh installations may not have Libby yet. They install the schema and defer assignment safely.
 do $migration$
@@ -937,3 +939,5 @@ end;
 $permissions$;
 
 select private.ruined_seed_cade_communications_work();
+
+commit;

@@ -5,6 +5,22 @@ import test from "node:test";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 const read = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const migration = await read("db/migrations/20261021191000_cade_communications_work.sql");
+test("every registered migration passes the production runner transaction-envelope validation", async () => {
+  const runner = await read("scripts/migrate-platform.mjs");
+  // Evaluate only the runner's pure validator, never its database entrypoint.
+  const start = runner.indexOf("function migrationBody(");
+  const end = runner.indexOf("function migrationChecksum(", start);
+  assert.ok(start >= 0 && end > start, "Production migration validator must be available");
+  const validate = new Function(`${runner.slice(start, end)}; return migrationBody;`)();
+  const paths = [...runner.matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g)].map(match => match[1]);
+  assert.ok(paths.includes("db/migrations/20261021191000_cade_communications_work.sql"));
+  for (const path of paths) {
+    const body = validate(await read(path), path);
+    assert.ok(body.trim().length > 0, `${path} must contain migration statements`);
+  }
+  assert.throws(() => validate(migration.replace(/^begin;\s*/i, ""), "unwrapped-cade-work.sql"), /BEGIN\/COMMIT envelope/);
+  assert.throws(() => validate(migration.replace(/commit;\s*$/i, ""), "unterminated-cade-work.sql"), /BEGIN\/COMMIT envelope/);
+});
 async function fixture(t, { status = "active", verified = true, role = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks(), db = new PGlite(); t.after(() => db.close());
   await db.exec(`create role anon; create role authenticated; create schema private; create table people(id uuid primary key,status text);
