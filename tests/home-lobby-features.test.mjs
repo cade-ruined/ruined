@@ -20,7 +20,7 @@ function load(react = React, environment = {}, exportName = "JourneyLobbyIndex")
     "next/image": { default: ({ src, alt, className }) => React.createElement("img", { src, alt, className }) },
     "./JourneyQuickBuy": { default: () => null },
     "@/data/navigation": { EXPLORE_ROOMS: [] },
-    "@/data/public-membership": { MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members gathered" } },
+    "@/data/public-membership": { MEMBERSHIP_LINKS: { signUp: "https://members.theruinedproject.com/membership" }, MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members gathered" } },
     "@/lib/store/catalog": { catalogNotice: () => "" },
   };
   const output = { exports: {} };
@@ -47,17 +47,17 @@ function render(props = {}) {
   return { all: nodes(fragment), cards: nodes(fragment).filter((node) => attr(node, "data-home-marquee-item") !== undefined) };
 }
 
-test("the opening cards lead with open BYOB registration, then new arrivals, the waitlist, and cast", () => {
+test("the opening cards lead with open BYOB registration, then new arrivals, memberships, and cast", () => {
   const { cards } = render();
   assert.deepEqual(cards.map((card) => attr(card, "href")), [
-    "/community/byob-03/register", "/store", "#members", "https://www.instagram.com/theruinedproject/",
+    "/community/byob-03/register", "/store", "https://members.theruinedproject.com/membership", "https://www.instagram.com/theruinedproject/",
   ]);
   assert.match(text(cards[0]), /BYOB Nº 03/);
   assert.match(text(cards[0]), /Register now · October 9/);
   assert.equal(attr(nodes(cards[0]).find((node) => node.tagName === "img"), "src"), "/byob-community.webp");
   assert.match(text(cards[1]), /New arrivals/);
   assert.match(text(cards[1]), /Shop the collection/);
-  assert.match(text(cards[2]), /Join waitlist/);
+  assert.match(text(cards[2]), /Explore memberships/);
   assert.match(text(cards[3]), /Meet the Cast/);
   assert.ok(!cards.some((card) => /What is this|BYOB Tank/i.test(text(card))));
   assert.equal(attr(cards[3], "target"), "_blank");
@@ -104,7 +104,7 @@ test("a date announcement leads the lobby without reopening the previous gatheri
 
 test("missing products and closed events never resurrect obsolete promotions", () => {
   const { cards } = render({ products: [], events: events.slice(0, 2) });
-  assert.deepEqual(cards.map((card) => attr(card, "href")), ["#members", "https://www.instagram.com/theruinedproject/"]);
+  assert.deepEqual(cards.map((card) => attr(card, "href")), ["https://members.theruinedproject.com/membership", "https://www.instagram.com/theruinedproject/"]);
   assert.doesNotMatch(cards.map(text).join(" "), /Register now|BYOB Tank|What is this|Preorder|Ships September/);
 });
 

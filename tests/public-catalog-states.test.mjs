@@ -62,7 +62,7 @@ const { JourneyStoreIndex, JourneyLobbyIndex } = await compile("src/components/s
   ...uiDependencies,
   "./JourneyQuickBuy": { default: () => null },
   "@/data/navigation": { EXPLORE_ROOMS: [] },
-  "@/data/public-membership": { MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members" } },
+  "@/data/public-membership": { MEMBERSHIP_LINKS: { signUp: "https://members.theruinedproject.com/membership" }, MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members" } },
 });
 
 test("catalog differentiates missing configuration, successful empty reads, and available products", async () => {
@@ -188,7 +188,7 @@ test("the walk store receives an honest state and provides a direct catalog reco
 test("an empty lobby catalog leaves membership and social links without a stale product promotion", () => {
   const html = renderToStaticMarkup(React.createElement(JourneyLobbyIndex, { events: [], products: [] }));
   assert.doesNotMatch(html, /BYOB Tank|BYOB_Tee_Product|\$32|Ships September/);
-  assert.match(html, /Join waitlist/);
+  assert.match(html, /Explore memberships/);
   assert.match(html, /Meet the Cast/);
 });
 
