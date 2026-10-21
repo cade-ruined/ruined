@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import OperatorManualCommunicationTemplate from "./OperatorManualCommunicationTemplate";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import OperatorEmailGroups from "@/components/platform/OperatorEmailGroups";
@@ -137,6 +138,9 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   const [purpose, setPurpose] = useState<EmailGroupCampaignPurpose>("general_updates");
   const [groupDialog, setGroupDialog] = useState<{ id?: string; create?: boolean } | null>(null);
   const [groupPending, setGroupPending] = useState(false);
+  const [manualDirty, setManualDirty] = useState(false);
+  const [manualPending, setManualPending] = useState(false);
+  const [manualVersion, setManualVersion] = useState(0);
   const [groupDirty, setGroupDirty] = useState(false);
   const groupPendingRef = useRef(false);
   const [localCampaigns, setLocalCampaigns] = useState<LocalEmailCampaignSummary[]>(preview ? [{ id: "sample-queued-campaign", revision: 1, name: "A note to members — sample", status: "queued", purpose: "membership_updates", groupId: "sample-group-manual", updatedAt: "2026-10-13T15:00:00Z", total: 2, pending: 1, sending: 0, sent: 1, unknown: 0, failed: 0, cancelled: 0 }] : []);
@@ -163,7 +167,7 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   const [query, setQuery] = useState("");
   const errorRef = useRef<HTMLParagraphElement>(null);
   const [localBanner, setLocalBanner] = useState<LocalEmailBanner | null>(null);
-  const busy = pending !== null || groupPending;
+  const busy = pending !== null || groupPending || manualPending;
   const localAudience = mode === "campaign" && audienceSource === "local_group";
   const selectedGroup = groups.find(group => group.id === groupId);
   const reviewSendingReady = review?.origin === "local_group" ? localConfiguration.sendingReady : overview?.configuration.sendingReady;
@@ -175,21 +179,21 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
 
   useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [error]);
   useEffect(() => {
-    function preventLoss(event: BeforeUnloadEvent) { if ((dirty || groupDirty || pendingRef.current || groupPendingRef.current) && !allowNavigationRef.current) event.preventDefault(); }
+    function preventLoss(event: BeforeUnloadEvent) { if ((dirty || groupDirty || manualDirty || manualPending || pendingRef.current || groupPendingRef.current) && !allowNavigationRef.current) event.preventDefault(); }
     function guardNavigation(event: MouseEvent) {
-      if ((!dirty && !groupDirty && !pendingRef.current && !groupPendingRef.current) || allowNavigationRef.current || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+      if ((!dirty && !groupDirty && !manualDirty && !manualPending && !pendingRef.current && !groupPendingRef.current) || allowNavigationRef.current || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
       const anchor = event.target.closest<HTMLAnchorElement>("a[href]");
       if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
       const destination = new URL(anchor.href, window.location.href);
       if (!["http:", "https:"].includes(destination.protocol) || (destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash)) return;
       event.preventDefault(); event.stopPropagation();
-      if (pendingRef.current || groupPendingRef.current) { setNotice("Wait for the current email action to finish before leaving."); return; }
+      if (pendingRef.current || groupPendingRef.current || manualPending) { setNotice("Wait for the current email action to finish before leaving."); return; }
       setConfirm({ description: "Leave this email and discard the unsaved changes?", action: () => { allowNavigationRef.current = true; window.location.assign(destination.href); } });
     }
     window.addEventListener("beforeunload", preventLoss);
     document.addEventListener("click", guardNavigation, true);
     return () => { window.removeEventListener("beforeunload", preventLoss); document.removeEventListener("click", guardNavigation, true); };
-  }, [dirty, groupDirty]);
+  }, [dirty, groupDirty, manualDirty, manualPending]);
 
   const loadOverview = useCallback(async (initial = false) => {
     if (preview || pendingRef.current || groupPendingRef.current) return;
@@ -245,11 +249,12 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
   function finish() { pendingRef.current = false; setPending(null); }
   function change() { setLocalSaved(false); setDirty(true); setReview(null); setAcknowledged(false); setSavedBroadcast(null); setError(""); setNotice(""); }
   function changeEdits(next: ResendEmailEdits) { setEdits(next); change(); }
-  function requestChange(action: () => void, description = "Discard the unsaved changes to this email?") {
+  function requestChange(action: () => void, description = "Discard the unsaved changes to this email?", preserveManual = false) {
     if (pendingRef.current || groupPendingRef.current) return;
-    if (dirty || groupDirty) setConfirm({ description, action }); else action();
+    if (dirty || groupDirty || manualDirty && !preserveManual) setConfirm({ description, action }); else action();
   }
   function resetWorkspace(nextView: View) {
+    setManualVersion(value => value + 1); setManualDirty(false);
     ++selectionRef.current; ++previewSequenceRef.current;
     setLocalDraft(null); setLocalSaved(false); setLocalHistory(null); setGroupDirty(false); setGroupDialog(null);
     setView(nextView); setTemplate(null); setBroadcast(null); setRendered(null); setPreviewError(""); setPreviewUpdating(false);
@@ -416,10 +421,11 @@ export default function OperatorEmailComposer({ preview = false, previewCatalog 
 
     {groupError ? <p className="mb-4 text-sm text-[var(--operator-danger)]" role="alert">{groupError}</p> : null}
     {view === "groups" ? <OperatorEmailGroups groups={groups} ruleOptions={groupOptions} preview={preview} previewStore={previewGroups} onGroupsChange={groupChanged} onPendingChange={groupBusy} onDirtyChange={setGroupDirty} /> : null}
+    {view === "templates" ? <OperatorManualCommunicationTemplate key={manualVersion} onDirtyChange={setManualDirty} onPendingChange={setManualPending} preview={preview} template={template} edits={edits} onApply={changeEdits} disabled={busy} /> : null}
     {view === "templates" && !template && overview ? <section aria-labelledby="resend-templates-title">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h3 className="text-lg font-semibold" id="resend-templates-title">Start with your design.</h3><p className="mt-1 text-sm text-[color:var(--operator-muted)]">Choose a template from Resend. Its layout, images, and links stay intact.</p></div><a className="min-h-11 py-3 text-sm underline underline-offset-4" href="https://resend.com/templates" rel="noreferrer" target="_blank">Open templates in Resend ↗</a></div>
       <label className="mb-5 block max-w-md text-sm" htmlFor="resend-template-search">Find a template<input className={OPERATOR_FIELD_CLASS} id="resend-template-search" onChange={(event) => setQuery(event.target.value)} placeholder="Search your Resend templates" type="search" value={query} /></label>
-      {templates.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{templates.map((item) => <li className="operator-bento-card flex flex-col items-start" key={item.id}><span className="mb-6 rounded-none bg-[var(--operator-surface-muted)] px-2 py-1 text-xs capitalize text-[color:var(--operator-muted)]">{item.status}</span><h4 className="break-words text-base font-semibold leading-snug">{item.name}</h4>{item.updatedAt ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Updated {dateLabel(item.updatedAt)}</p> : null}<button className={`${OPERATOR_BUTTON_CLASS} mt-5 w-full`} disabled={busy || !canCompose} onClick={() => requestChange(() => { void chooseTemplate(item.id); })} type="button">{pending === "template" ? "Loading…" : "Use template"}<span className="sr-only">: {item.name}</span></button></li>)}</ul> : <p className="operator-glass rounded-none border border-dashed border-[color:var(--operator-ink)]/20 p-6 text-sm leading-relaxed text-[color:var(--operator-muted)]">{query ? "No templates match this search." : canCompose ? "No templates were found in Resend. Add your design in Resend, then refresh this workspace." : "Your templates will appear here when Resend is connected."}</p>}
+      {templates.length ? <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{templates.map((item) => <li className="operator-bento-card flex flex-col items-start" key={item.id}><span className="mb-6 rounded-none bg-[var(--operator-surface-muted)] px-2 py-1 text-xs capitalize text-[color:var(--operator-muted)]">{item.status}</span><h4 className="break-words text-base font-semibold leading-snug">{item.name}</h4>{item.updatedAt ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Updated {dateLabel(item.updatedAt)}</p> : null}<button className={`${OPERATOR_BUTTON_CLASS} mt-5 w-full`} disabled={busy || !canCompose} onClick={() => requestChange(() => { void chooseTemplate(item.id); }, undefined, true)} type="button">{pending === "template" ? "Loading…" : "Use template"}<span className="sr-only">: {item.name}</span></button></li>)}</ul> : <p className="operator-glass rounded-none border border-dashed border-[color:var(--operator-ink)]/20 p-6 text-sm leading-relaxed text-[color:var(--operator-muted)]">{query ? "No templates match this search." : canCompose ? "No templates were found in Resend. Add your design in Resend, then refresh this workspace." : "Your templates will appear here when Resend is connected."}</p>}
     </section> : null}
 
     {view === "templates" && template ? <section className="scroll-mt-28" id="resend-composer" aria-labelledby="resend-template-title">

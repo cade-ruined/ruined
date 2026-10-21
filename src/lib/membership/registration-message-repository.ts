@@ -2,9 +2,11 @@ import "server-only";
 
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
-import type { RegistrationCompletionBasis, RegistrationMessageKind } from "./registration-email";
+import type { RegistrationCompletionBasis, RegistrationMessageKind, RegistrationFoundationsCall, RegistrationTemplateOverride } from "./registration-email";
 import type { RegistrationFoundingPricing } from "./registration-model";
 import type { RegistrationPaidMembership } from "./registration-paid-confirmation";
+import { parseFoundationsBillingSchedule } from "./foundations-schedule";
+import { getMemberCommunicationPreferences } from "./member-communication-preferences";
 
 export type RegistrationEmailPayload = {
   from: string; to: string; replyTo: string; subject: string; html: string; text: string;
@@ -33,6 +35,10 @@ export type RegistrationMessageDelivery = RegistrationMessageClaim & {
   paid_membership: RegistrationPaidMembership | null;
   paid_reservation_id: string | null;
   delivery_payment_reservation_id: string | null;
+  foundations_call: RegistrationFoundationsCall | null;
+  delivery_foundations: RegistrationFoundationsCall | null;
+  profile_activated_at: Date | string | null;
+  template_override: RegistrationTemplateOverride | null;
 };
 
 export class RegistrationDeliveryError extends Error {
@@ -74,10 +80,10 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
     const [delivery] = await tx<RegistrationMessageDelivery[]>`
       select message.*, member.email_normalized as email,
         coalesce(nullif(btrim(private_profile.legal_name),''),nullif(btrim(profile.display_name),''),'Friend') as member_name,
-        registration.completion_basis,
+        registration.completion_basis, registration.profile_activated_at,
         proof.reservation_id as paid_reservation_id,
         case when (registration.completion_basis='paid_membership'
-          or (message.kind='profile_ready' and registration.completion_basis='saved_card')) and proof.reservation_id is not null
+          or registration.completion_basis='saved_card') and proof.reservation_id is not null
           and private.ruined_registration_paid_reservation(member.id)=proof.reservation_id
           then jsonb_build_object('offerId',contract.terms_snapshot->>'offerId',
             'billingPlan',contract.terms_snapshot->>'billingPlan','amountPaidCents',proof.amount_paid,
@@ -99,11 +105,13 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
         private.ruined_member_registration_ready(message.member_id) as registration_ready,
         coalesce(member.deleted_at is null and person.status='active' and lifecycle.account_state not in ('closed','suspended')
           and registration.registered_at is not null
+          and (message.kind<>'pre_foundations' or (lifecycle.standing_state in ('pre_active','active','cancellation_requested')
+            and (lifecycle.standing_state<>'cancellation_requested' or lifecycle.cancellation_effective_at>clock_timestamp())))
           and registration.completion_basis in ('saved_card','complimentary','paid_membership')
           and exists(select 1 from person_email_addresses email where email.person_id=member.person_id
             and email.email_normalized=member.email_normalized and email.verification_state='verified' and email.retired_at is null)
           and case when message.kind='welcome' then registration.profile_activated_at is null
-            else registration.profile_activated_at is not null end,false) as eligible
+            when message.kind='profile_ready' then registration.profile_activated_at is not null else true end,false) as eligible
       from member_registration_messages message
       left join ruined_members member on member.id=message.member_id
       left join member_lifecycle lifecycle on lifecycle.member_id=member.id
@@ -157,14 +165,75 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
         locked_at=null,lock_token=null,updated_at=clock_timestamp() where id=${claim.id}::uuid`;
       return { kind: "deferred" as const };
     }
+    delivery.foundations_call = null;
+    if (delivery.kind !== "profile_ready") {
+      const payment = delivery.paid_membership;
+      const schedule = payment ? parseFoundationsBillingSchedule(payment.billingSchedule,payment.billingPlan) : null;
+      if (schedule) delivery.foundations_call = {startsAt:schedule.callStartsAt[0],timeZone:schedule.timeZone};
+      else if (delivery.completion_basis !== "paid_membership") {
+        // Only an actual explicit invitation establishes a nonpaid member's
+        // cohort. Never infer one from the month, title, or a public calendar.
+        // Roster editors lock events before members; do not wait on an editor
+        // while holding this registration worker's existing member lock.
+        const calls = await tx<Array<{startsAt: Date | string; timeZone: string}>>`
+          select event.starts_at as "startsAt",event.timezone as "timeZone" from experience_registrations roster
+          join experiences event on event.id=roster.experience_id
+          join private.member_email_cadence_event_bindings binding on binding.experience_id=event.id
+          join member_registration_access registration on registration.member_id=roster.member_id
+          where roster.member_id=${claim.member_id}::uuid and roster.status='registered' and roster.source='ops'
+            and binding.kind='foundations_01' and event.visibility='invite_only' and event.registration_mode='internal'
+            and event.status='published' and event.cancelled_at is null and event.ends_at>event.starts_at
+            and event.starts_at>registration.registered_at
+          order by event.starts_at,event.id limit 2 for share of roster,event,binding nowait`;
+        if (calls.length===1) delivery.foundations_call={startsAt:new Date(calls[0].startsAt).toISOString(),timeZone:calls[0].timeZone};
+      }
+      if (delivery.delivery_foundations && (delivery.delivery_foundations.startsAt!==delivery.foundations_call?.startsAt || delivery.delivery_foundations.timeZone!==delivery.foundations_call?.timeZone)) {
+        await tx`update member_registration_messages set status='manual_review',last_error='foundations_schedule_changed_requires_review',
+          locked_at=null,lock_token=null,updated_at=clock_timestamp() where id=${claim.id}::uuid`;
+        return {kind:"manualReview" as const};
+      }
+      // Older frozen welcome bytes keep their original retry semantics. New
+      // messages cannot invent an accepted cohort or promise a closed profile.
+      const hold = !delivery.foundations_call && !delivery.delivery_payload ? "foundations_schedule_unavailable"
+        : delivery.kind==="pre_foundations" && !delivery.registration_ready ? "registration_incomplete"
+        : delivery.kind==="pre_foundations" && !delivery.profile_activated_at ? "profile_not_ready" : null;
+      if (delivery.kind==="pre_foundations") {
+        const preferences=await getMemberCommunicationPreferences(tx,claim.member_id,{email:delivery.email,phone:null});
+        const suppressed=await tx`select id from communication_contacts where email_normalized=${delivery.email} and delivery_state<>'active' for share`;
+        const expired=delivery.foundations_call && Date.parse(delivery.foundations_call.startsAt)<=Date.now();
+        if (preferences.email!==true || suppressed.length || expired) {
+          const status=delivery.first_send_attempt_at ? "manual_review" : "cancelled";
+          const reason=expired ? "foundations_already_started" : "membership_email_unavailable";
+          await tx`update member_registration_messages set status=${status},last_error=${reason},
+            locked_at=null,lock_token=null,updated_at=clock_timestamp() where id=${claim.id}::uuid`;
+          return {kind:delivery.first_send_attempt_at ? "manualReview" as const : "cancelled" as const};
+        }
+      }
+      if (hold) {
+        await tx`update member_registration_messages set status='pending',last_error=${hold},
+          attempts=greatest(0,attempts-1),available_at=clock_timestamp()+interval '15 minutes',
+          locked_at=null,lock_token=null,updated_at=clock_timestamp() where id=${claim.id}::uuid`;
+        return {kind:"deferred" as const};
+      }
+    }
+    delivery.template_override=null;
+    if (!delivery.delivery_payload) {
+      const [schema]=await tx`select to_regclass('private.member_communication_template_overrides') is not null as installed`;
+      if (schema?.installed) {
+        const [override]=await tx<RegistrationTemplateOverride[]>`select subject,body from private.member_communication_template_overrides
+          where key=${`registration:${delivery.kind}`} for share`;
+        delivery.template_override=override ?? null;
+      }
+    }
     return { kind: "ok" as const, value: await action(tx, delivery) };
   });
 }
 
 export async function preserveRegistrationMessage(tx: TransactionSql, id: string, payload: RegistrationEmailPayload,
-  paymentReservationId: string | null = null) {
+  paymentReservationId: string | null = null, foundationsCall: RegistrationFoundationsCall | null = null) {
   await tx`update member_registration_messages set delivery_payload=${tx.json(payload)}::jsonb,
     delivery_payment_reservation_id=${paymentReservationId}::uuid,
+    delivery_foundations=coalesce(delivery_foundations,${foundationsCall ? tx.json(foundationsCall) : null}::jsonb),
     first_send_attempt_at=coalesce(first_send_attempt_at,clock_timestamp()),updated_at=clock_timestamp()
     where id=${id}::uuid`;
 }

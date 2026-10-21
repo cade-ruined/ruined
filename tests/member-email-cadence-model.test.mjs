@@ -20,6 +20,35 @@ const configuration = { enabled: true, ready: true, activatedAt: "2026-10-12T18:
 const occurrences = (override = {}, kind = "foundations_01", track = "members") => model.cadenceOccurrences({ ...event, ...override }, kind, track);
 const copy = (override = {}) => cadenceCopy({ event, kind: "foundations_01", track: "members", stage: "day_before", memberName: "Jamie", siteUrl: "https://members.example.test", ...override });
 
+// Source fixture contains only the green CADE call messages reviewed on 2026-10-21.
+test("all fourteen approved CADE call emails retain exact source wording, order and signature", () => {
+  const approved = JSON.parse(readFileSync(new URL("./fixtures/cade-approved-call-copy.json", import.meta.url), "utf8"));
+  assert.equal(approved.length, 14);
+  for (const item of approved) {
+    const title = item.kind.startsWith("foundations_") ? item.kind.replace("foundations_", "FOUNDATIONS ") : "An actual calendar title";
+    const actual = { ...event, title, startsAt: `2026-11-${String(item.day).padStart(2,"0")}T22:00:00Z`,
+      endsAt: `2026-11-${String(item.day).padStart(2,"0")}T${item.kind === "circle" ? "23:00" : "23:30"}:00Z`,
+      ...(item.kind === "membership" ? { callType: "SEE" } : item.kind === "circle" ? { callType: "BUILD", circleName: "Cedar" } : {}) };
+    const result = copy({ event: actual, kind: item.kind, stage: item.stage });
+    const replace = value => value.replaceAll("(NAME)", "Jamie").replaceAll("[GOOGLE MEET LINK OR PROFILE/CALL ACCESS LINK]", result.callUrl)
+      .replaceAll("[GOOGLE MEET LINK/LINK TO THEIR PROFILE]", result.callUrl).replaceAll("[SEE / FACE / CUT / GROW - WHICH EVER ONE APPLIES]", "SEE")
+      .replaceAll("[SEE / FACE / CUT / GROW]", "SEE").replaceAll("[CIRCLE NAME]", "Cedar").replaceAll("[WHY / BUILD]", "BUILD")
+      .replaceAll("[DAY, DATE]", "Thursday, November 5");
+    assert.equal(result.subject, replace(item.subject), `${item.kind}/${item.stage} subject`);
+    const signatureEnd = result.body.indexOf("After the fear.") + "After the fear.".length;
+    assert.equal(result.body.slice(0, signatureEnd), replace(item.body), `${item.kind}/${item.stage} approved body`);
+    assert.match(result.body.slice(signatureEnd), /Manage your email reminders in your account:/);
+  }
+});
+
+test("holiday wording is confined to the actual shifted November 2026 Foundations 04 call", () => {
+  for (const day of ["2026-11-19", "2026-11-30", "2026-12-30", "2027-11-30"]) {
+    const result = copy({ kind: "foundations_04", event: { ...event, startsAt: day + "T22:00:00Z", endsAt: day + "T23:30:00Z" } });
+    assert.equal(result.body.includes("Thanksgiving moved"), day === "2026-11-30", day);
+  }
+  assert.doesNotMatch(copy({ kind: "foundations_03", event: { ...event, startsAt: "2026-11-30T22:00:00Z", endsAt: "2026-11-30T23:30:00Z" } }).body, /Thanksgiving/);
+});
+
 test("cadence stays off without explicit enablement and a real UTC activation timestamp", () => {
   assert.deepEqual(model.getMemberEmailCadenceConfiguration({}), { enabled: false, activatedAt: null, ready: false });
   for (const value of ["", "today", "2026-10-12", "2026-02-30T18:00:00Z", "2026-10-12T25:00:00Z", "2026-10-12T18:00:00-06:00"]) {
@@ -96,23 +125,23 @@ test("October historical founder reminders do not become eligible when the featu
 
 test("copy uses the actual event title, date, duration, named timezone and existing member routes", () => {
   const result = copy({ event: { ...event, id: "circle / 2", title: "BUILD — Cedar", startsAt: "2026-11-12T23:15:00Z", endsAt: "2026-11-13T00:00:00Z" }, kind: "circle" });
-  assert.equal(result.subject, "Tomorrow: BUILD — Cedar.");
-  assert.match(result.body, /Thursday, November 12, 2026/);
-  assert.match(result.body, /4:15 PM MST–5:00 PM MST/);
+  assert.equal(result.subject, "Your Circle meets tomorrow.");
+  assert.match(result.body, /Thursday, November 12/);
+  assert.match(result.body, /4:15–5:00 PM MT/);
   assert.equal(result.callUrl, "https://members.example.test/my/experiences#experience-circle%20%2F%202");
   assert.equal(result.profileUrl, "https://members.example.test/my");
   assert.equal(result.preferencesUrl, "https://members.example.test/my/account#email-reminders");
   assert.match(result.body, /Manage your email reminders in your account:/);
   assert.match(result.body, /^Jamie,/);
-  assert.equal(result.body.match(/All the love,/g).length, 1);
+  assert.equal(result.body.match(/After the fear\./g).length, 1);
 });
 
 test("day-of subject is Today, with Coming up when an early call’s offset is on the preceding date", () => {
   assert.equal(copy({ kind: "membership", stage: "day_of" }).subject, "Today: Foundations 01.");
   const early = { ...event, startsAt: "2026-11-05T08:00:00Z", endsAt: "2026-11-05T09:00:00Z" };
-  assert.equal(copy({ event: early, kind: "circle", stage: "day_of" }).subject, "Coming up: Foundations 01.");
+  assert.equal(copy({ event: early, kind: "circle", stage: "day_of" }).subject, "Your Circle meets soon.");
   const spring = { ...event, startsAt: "2026-03-09T06:30:00Z", endsAt: "2026-03-09T07:30:00Z" };
-  assert.equal(copy({ event: spring, kind: "circle", stage: "day_before" }).subject, "Coming up: Foundations 01.");
+  assert.equal(copy({ event: spring, kind: "circle", stage: "day_before" }).subject, "Your Circle meets soon.");
 });
 
 test("copy has no unresolved placeholders, task promises, or missed/completed claims at any supported stage", () => {

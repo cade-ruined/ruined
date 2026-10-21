@@ -273,3 +273,9 @@ tables. Existing acceptance records must not be rewritten to older versions.
 - [Campaign and message-flow information](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info)
 - [Advanced Opt-Out](https://www.twilio.com/docs/messaging/tutorials/advanced-opt-out)
 - [Webhook security](https://www.twilio.com/docs/usage/webhooks/webhooks-security)
+
+## CADE Foundations 01 timing — October 21, 2026
+
+An explicitly bound `foundations_01` event with private/internal registration now has its SMS reminder due 150 minutes before the actual start, with the existing ten-minute expiry window. Other calls retain their 60-minute notice. Names and titles do not classify the first session. The approved sentence uses the actual local start time and current Google Meet URL; the existing STOP/HELP footer remains. The binding, exact start, meeting link, registration, access and consent are checked again immediately before dispatch.
+
+This does not enable SMS, create new consent, send to an email-only preference, or expand the audience to unreleased/inactive accounts. Existing active/released member requirements still apply. The legacy `:60m` suffix is retained as an immutable occurrence identity even for a 150-minute notice, preventing a second reminder if classification/timing changes. Previously claimed or ambiguous attempts remain non-retryable. A deployment after the 150-minute window does not send a late Foundations 01 reminder at 60 minutes.

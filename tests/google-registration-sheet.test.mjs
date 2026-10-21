@@ -264,9 +264,13 @@ test("the Sheet worker route stays private without a second membership cron owne
   assert.match(route, /"Cache-Control":\s*"private, no-store"/);
   assert.match(route, /export async function GET/);
   assert.match(route, /export async function POST/);
+  const crons = JSON.parse(vercel).crons;
+  assert.equal(new Set(crons.map(cron => cron.path)).size, crons.length, "each scheduled worker has one owner");
+  const byPath = (left, right) => left.path.localeCompare(right.path);
   assert.deepEqual(
-    JSON.parse(vercel).crons,
+    crons.toSorted(byPath),
     [
+      { path: "/api/internal/communications/member-lifecycle", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/member-email", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/member-sms", schedule: "*/5 * * * *" },
       { path: "/api/internal/ops/work-summary", schedule: "*/5 * * * *" },
@@ -278,8 +282,8 @@ test("the Sheet worker route stays private without a second membership cron owne
       { path: "/api/internal/stripe/renewals/process", schedule: "0 13 * * *" },
       { path: "/api/internal/stripe/prepaid/process", schedule: "*/5 * * * *" },
       { path: "/api/internal/communications/group-emails", schedule: "*/5 * * * *" },
-    ],
-    "the public main project owns Sheets; membership owns email and SMS reminders, group email campaigns, operator summaries, member segment sync, registration messages, support, membership, Calendar recovery and billing notices",
+    ].toSorted(byPath),
+    "the public main project owns Sheets; membership owns distinct lifecycle and call reminders, SMS reminders, group email campaigns, operator summaries, member segment sync, registration messages, support, membership, Calendar recovery and billing notices",
   );
 });
 

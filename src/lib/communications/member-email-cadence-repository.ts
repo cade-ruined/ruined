@@ -16,7 +16,14 @@ const iso = (value: Date | string) => new Date(value).toISOString();
 export async function readCadenceEvent(tx: TransactionSql, id: string, lock = false): Promise<CadenceEventSnapshot | null> {
   const [row] = await tx<Array<CadenceEventSnapshot & { startsAt: Date | string; endsAt: Date | string }>>`
     select id,title,starts_at as "startsAt",ends_at as "endsAt",timezone as "timeZone",version::text,
-      visibility,circle_id,block_id,progression_level_slug,registration_mode,kind
+      visibility,circle_id,block_id,progression_level_slug,registration_mode,kind,
+      (select circle.name from circles circle where circle.id=experiences.circle_id) as "circleName",
+      case when kind='weekly_call' and metadata->'badge_credit'->>'track'='membership'
+        and metadata->'badge_credit'->>'stage' in ('see','face','cut','grow') then upper(metadata->'badge_credit'->>'stage')
+      when kind='circle_meeting' and metadata->'badge_credit'->>'track'='circle'
+        and metadata->'badge_credit'->>'stage' in ('why','implementation') then
+          case metadata->'badge_credit'->>'stage' when 'why' then 'WHY' else 'BUILD' end
+      else null end as "callType"
     from experiences where id=${id}::uuid and status='published' and cancelled_at is null
       and starts_at>statement_timestamp() and ends_at is not null
       and kind in ('weekly_call','circle_meeting','academy_session','member_event')

@@ -1,6 +1,6 @@
 # Member email cadence
 
-This release covers event-linked email reminders from the October 2026 founder test and November/future member cadence. It does not turn the entire communications document into a send list. Existing registration welcome delivery and SMS automation remain separate and unchanged.
+This release covers event-linked email reminders from the October 2026 founder test and November/future member cadence. It does not turn the entire communications document into a send list. Registration welcome delivery and SMS automation remain separate workflows. The October 21 update changes their approved copy/timing only as documented in their own setup notes.
 
 ## Operations management
 
@@ -19,6 +19,23 @@ Welcome/profile-ready emails, renewal notices, and the internal work summary app
 Cade approved the email wording shown in this chat: the Foundations introduction, one-week/two-day preparation message, Foundations 01 and 02–04 reminders, Membership reminders, Circle reminders, and shared personalized call details, account links, and sign-off. The wording is implemented in `src/lib/communications/member-email-cadence-copy.ts` at reviewed commit `ac1fc6f148955007c04f97cf72bda3c444e0118e` (SHA-256 `b86736317c0b41c7394a983212c08ac129b98421a42ef11a70776b3da8d96866`).
 
 This records approval of the message copy. Published Resend design binding, call/cohort classification, recipient verification, deployment, and sequence activation remain rollout steps. Unfinished protocols remain inactive; this approval does not change reminder preferences, activate sending, or backfill past messages.
+
+## CADE copy refresh — October 21, 2026
+
+The fourteen green call emails now use the complete CADE wording and paragraph order. The checked-in `tests/fixtures/cade-approved-call-copy.json` contains only those approved source messages. Dates, call names, duration, local time and access links come from the actual event. Membership and Circle type labels use explicit badge-credit metadata (SEE/FACE/CUT/GROW and WHY/BUILD); the actual calendar title is the fallback, never a classification guess. Circle names use the event’s actual Circle. The Thanksgiving sentence applies only to the shifted November 30, 2026 Foundations 04 call in Denver.
+
+Email timing is unchanged. This update does not enable graduation, reveal, missed-session or incomplete protocols and does not expand recipient eligibility. Red/yellow communications are not created as live designs.
+
+### Reviewable rollout of saved overrides
+
+Deployment changes the generated defaults. Existing saved `messages` entries are explicit overrides and continue to win, so code deployment alone does not prove the live approved sequences contain the new copy. Before release activation:
+
+1. Export the current active sequence and future individual-plan revisions and frozen snapshots. Review every stage’s subject/main prose, design version, body/heading targets, fixed design text and signature. Keep an exact before/after artifact and hashes; do not identify generated text using fuzzy matching. Compare against the actual pre-change production generator at `736e8c5b8f618637dab428e91b04f38102b3bc86:src/lib/communications/member-email-cadence-copy.ts`, not the historical October 12 copy.
+2. For the approved reusable rules, reset an override only when its exact saved value is confirmed as the superseded system/rollout text. Preserve unrelated operator-authored changes, manual call approvals, paused child plans and nonmatching event classifications. A manual override requires its own explicit review before changing it.
+3. Preview all stages against current actual calls, review recipients through the existing service, and activate using the returned review hash and expected sequence revision. The normal audited sequence approval increments revision. Reconciliation refreshes only active inherited children whose event snapshot and classification remain unchanged; it never resurrects a paused child or rewrites a manual approval.
+4. Verify future inherited plans contain the reviewed sequence revision and full CADE messages, and inspect a real preview at mobile width. Existing frozen delivery payloads and occurrence identities remain immutable. No historical reminders are backfilled and no recipient preferences are changed.
+
+`renderCadenceDesignMessage` also supports approved non-call lifecycle copy using the same frozen design. It permits literal, member-name, profile and preference bindings and rejects call-specific bindings. It neither persists nor sends.
 
 ## Reusable sequences and event classification
 
@@ -65,7 +82,7 @@ Cohort reconciliation uses the canonical paid-reservation evidence and the membe
 
 Recheck cancellation, schedule, enrollment, preference, and destination changes immediately before sending. Each member/event/schedule/stage must have a durable deduplication identity. Expired, superseded, or no-longer-qualified work is skipped; delivery retries must not replay an uncertain successful send.
 
-Calendar links use `/my/experiences#experience-{id}`; profile links use `/my`. Members manage email reminders at `/my/account#email-reminders`, and each cadence email links directly to that account section. This email-only setting does not change SMS preferences. Templates receive plain text, not arbitrary recipient HTML. The copy includes one “All the love” closing; renderers must not append a second closing from their design.
+Calendar links use `/my/experiences#experience-{id}`; profile links use `/my`. Members manage email reminders at `/my/account#email-reminders`, and each cadence email links directly to that account section. This email-only setting does not change SMS preferences. Templates receive plain text, not arbitrary recipient HTML. The October 21 CADE copy ends with “RU/NED / After the fear.” Foundations emails also include “Tyler, Libby, Cade & Mitch.” An existing matching After-the-fear image is preserved once at that signature; conflicting managed sign-off artwork is replaced with the existing official 440×84 After-the-fear asset at 220×42 display size without changing the provider design. Account controls remain after the signature.
 
 ## Deliberately inactive document workflows
 

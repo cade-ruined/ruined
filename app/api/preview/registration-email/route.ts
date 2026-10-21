@@ -11,7 +11,7 @@ export function GET(request: Request) {
     return new Response("Not found",{status:404});
   }
   const url=new URL(request.url);
-  const kind=url.searchParams.get("kind")==="profile_ready" ? "profile_ready" : "welcome";
+  const kind=url.searchParams.get("kind")==="profile_ready" ? "profile_ready" : url.searchParams.get("kind")==="pre_foundations" ? "pre_foundations" : "welcome";
   const foundingPricing = url.searchParams.get("pricing") === "founding" ? {
     confirmed: true as const, awardedAt: "2026-10-02T18:00:00.000Z",
     monthlyAmountCents: 34_900, annualAmountCents: 349_000, currency: "usd" as const,
@@ -23,6 +23,7 @@ export function GET(request: Request) {
   const message=createRegistrationEmail({kind,memberName:"Alex Rivera",
     completionBasis:paid ? "paid_membership" : url.searchParams.get("funding")==="complimentary" ? "complimentary" : "saved_card",
     foundingPricing,
+    foundationsCall:{startsAt:foundationsBillingScheduleForMonth(url.searchParams.get("cohort")==="december" ? "2026-12" : "2026-11",plan).callStartsAt[0],timeZone:"America/Denver"},
     paidMembership:paid ? {
       offerId:`${foundingPricing ? "founding_individual" : couple ? "couple" : "individual"}_${plan}`,
       billingPlan:plan,amountPaidCents:dues,duesAmountCents:dues,currency:"usd",paidAt:"2026-10-06T18:00:00.000Z",

@@ -23,9 +23,9 @@ type StatusFilter = "all" | CommunicationItem["status"];
 type Filters = { query: string; status: StatusFilter };
 const DEFAULT_FILTERS: Filters = { query: "", status: "all" };
 const STATUS_LABELS: Record<CommunicationItem["status"], string> = {
-  enabled: "Enabled", paused: "Paused", attention: "Needs attention", planned: "Planned", manual: "Manual",
+  enabled: "Enabled", paused: "Paused", attention: "Needs attention", planned: "Planned", manual: "Manual", held: "Held", approved: "Copy approved",
 };
-const STATUS_ORDER: CommunicationItem["status"][] = ["enabled", "attention", "paused", "planned", "manual"];
+const STATUS_ORDER: CommunicationItem["status"][] = ["enabled", "attention", "paused", "held", "approved", "planned", "manual"];
 
 function counts(items: CommunicationItem[]) {
   return STATUS_ORDER.flatMap(status => {
@@ -83,7 +83,7 @@ export default function OperatorCommunicationsCatalog({ items, channel, bucket, 
           <span className={styles.bucketStatuses}>{summary.length ? summary.map(value => <span key={value.status} data-status={value.status}>{value.count} {value.label.toLocaleLowerCase()}</span>) : <span>No communications configured</span>}</span>
         </button>;
       })}</div>
-      <p className={styles.footnote}>Counts refer to communications, not members or deliveries. Planned messages are not active.</p>
+      <p className={styles.footnote}>Counts refer to communications, not members or deliveries. Held and planned messages are not active.</p>
     </> : <>
       <button className={styles.back} type="button" disabled={pending} onClick={() => onBucket(null)}>← Back to buckets</button>
       <header className={styles.bucketHeader}><p className={styles.eyebrow}>{channelLabel}</p><h3 id="communications-catalog-heading" tabIndex={-1}>{currentBucket.label}</h3><p className={styles.description}>{currentBucket.description}</p></header>

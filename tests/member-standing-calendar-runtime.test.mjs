@@ -170,6 +170,7 @@ test("standing call summaries render Join room without Reserve, Register or Rele
     "next/link": ({ children, ...props }) => React.createElement("a", props, children),
     "next/image": Stub,
     "@/lib/events/use-public-events": { usePublicEvents: () => [] },
+    "@/lib/communications/member-lifecycle-email-model": load("src/lib/communications/member-lifecycle-email-model.ts"),
     "./MemberExperiences.module.css": { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
   }).default;
   const html = renderToStaticMarkup(React.createElement(Component, {
@@ -179,4 +180,24 @@ test("standing call summaries render Join room without Reserve, Register or Rele
   assert.match(html, /Join room/);
   assert.match(html, /No reservation needed/);
   assert.doesNotMatch(html, /Reserve place|Release place|Register ↗/);
+});
+
+test("calendar holiday markers keep Christmas and New Year separate, include January 1 and never replace calls", () => {
+  const Component=load("src/components/membership/MemberExperiences.tsx", {
+    "next/link":({children,...props})=>React.createElement("a",props,children), "next/image":()=>null,
+    "@/lib/events/use-public-events":{usePublicEvents:()=>[]},
+    "@/lib/communications/member-lifecycle-email-model":load("src/lib/communications/member-lifecycle-email-model.ts"),
+    "./MemberExperiences.module.css":{__esModule:true,default:new Proxy({},{get:(_,key)=>key})},
+  }).default;
+  const event=(id,date)=>({id,title:`Confirmed call ${id}`,kind:"weekly_call",startsAt:date+"T22:00:00Z",endsAt:null,timezone:"America/Denver",audienceLabel:"Members",detailHref:`/my/experiences#experience-${id}`,registrationState:"none",registrationHref:null,meetingUrl:null});
+  const render=upcoming=>renderToStaticMarkup(React.createElement(Component,{initialExperiences:{access:{capabilities:[]},upcoming,past:[]},writable:false}));
+  const december=render([event("holiday","2026-12-24"),event("between","2026-12-28")]);
+  assert.match(december,/Holiday periods/);assert.match(december,/Confirmed call holiday/);assert.match(december,/Confirmed call between/);
+  assert.deepEqual([...december.matchAll(/data-holiday-date="([^"]+)"/g)].map(match=>match[1]),["2026-12-23","2026-12-24","2026-12-25","2026-12-26","2026-12-27","2026-12-31"]);
+  assert.match(december,/January 1, 2027/);assert.match(december,/Scheduled calls remain listed/);
+  const january=render([event("jan","2027-01-01")]);
+  assert.deepEqual([...january.matchAll(/data-holiday-date="([^"]+)"/g)].map(match=>match[1]),["2027-01-01"]);
+  assert.match(january,/December 31, 2026/);assert.match(january,/Confirmed call jan/);
+  const thanksgiving=render([event("nov","2026-11-26")]);
+  assert.deepEqual([...thanksgiving.matchAll(/data-holiday-date="([^"]+)"/g)].map(match=>match[1]),["2026-11-26","2026-11-27"]);
 });
