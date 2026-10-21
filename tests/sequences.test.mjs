@@ -453,7 +453,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /title: nextByob\.title/);
   assert.match(lobbyIndex, /byobRegistrationOpen \? "Register now" : "Save the date"/);
   assert.doesNotMatch(lobbyIndex, /key: "what-is-this"/);
-  assert.match(lobbyIndex, /href: "#members"/);
+  assert.match(lobbyIndex, /href: MEMBERSHIP_LINKS\.signUp/);
   assert.match(lobbyIndex, /selection\.href\?\.startsWith\("#"\)/);
   assert.match(lobbyIndex, /onClick=\{\(event\) => requestWalkRoom\(event, selection\.href!\)\}/);
   assert.match(indexes, /new CustomEvent\("ruined:home-scene-request"/);

@@ -8,7 +8,7 @@ import type { Product } from "@/data/products";
 import type { Project } from "@/data/projects";
 import type { StudioEvent } from "@/data/events";
 import { EXPLORE_ROOMS, type ExploreRoom } from "@/data/navigation";
-import { MEMBERSHIP_INTRO } from "@/data/public-membership";
+import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 import { getProductColorHref, getProductColorImages } from "@/lib/store/product-colors";
 import JourneyQuickBuy from "./JourneyQuickBuy";
@@ -179,9 +179,9 @@ export function JourneyLobbyIndex({
       : []),
     {
       key: "members-introduction",
-      href: "#members",
+      href: MEMBERSHIP_LINKS.signUp,
       realm: "Members",
-      title: "Join waitlist",
+      title: "Explore memberships",
       meta: "Good company. Real work.",
       image: MEMBERSHIP_INTRO.image,
       alt: MEMBERSHIP_INTRO.alt,
