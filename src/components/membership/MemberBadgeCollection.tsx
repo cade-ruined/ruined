@@ -15,6 +15,21 @@ const actions: Record<string, string> = {
   "full-circle": "Open your Circle", "the-whole-month": "See the Calendar", "open-door": "Open your invitation", "in-real-life": "See the Calendar",
 };
 type Lifecycle = { ownerId: string; controller: AbortController; version: number; refresh: () => Promise<boolean> };
+const badgeStates = ["earned", "earning", "not-earned"] as const;
+type BadgeState = typeof badgeStates[number];
+type BadgeFilter = "all" | BadgeState;
+type BadgeSort = "status" | "progress" | "recent" | "name";
+const stateLabels: Record<BadgeState, string> = { earned: "Earned", earning: "Earning", "not-earned": "Not earned" };
+function badgeState(badge: BadgeCollectionItem): BadgeState {
+  return badge.earnedAt !== null ? "earned" : badge.progress > 0 ? "earning" : "not-earned";
+}
+function compareBadges(a: BadgeCollectionItem, b: BadgeCollectionItem, sort: BadgeSort) {
+  if (sort === "name") return a.label.localeCompare(b.label);
+  if (sort === "recent") return (b.earnedAt ? Date.parse(b.earnedAt) : 0) - (a.earnedAt ? Date.parse(a.earnedAt) : 0);
+  if (sort === "progress") return Number(a.earnedAt !== null) - Number(b.earnedAt !== null)
+    || b.progress / b.target - a.progress / a.target;
+  return badgeStates.indexOf(badgeState(a)) - badgeStates.indexOf(badgeState(b));
+}
 
 function validCollection(value: unknown, ownerId: string): value is Collection {
   if (!value || typeof value !== "object") return false;
@@ -98,6 +113,8 @@ export default function MemberBadgeCollection({ initialCollection, preview = fal
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState(false);
+  const [filter, setFilter] = useState<BadgeFilter>("all");
+  const [sort, setSort] = useState<BadgeSort>("status");
   const lifecycle = useRef<Lifecycle | null>(null);
   const writing = useRef(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -172,6 +189,9 @@ export default function MemberBadgeCollection({ initialCollection, preview = fal
 
   if (!currentCollection) return <section className={styles.collection}><h1>Your badges</h1><p className={styles.sessionNotice}>Your session changed. Reopen your profile to continue.</p><Link className="member-button" href="/my">Open profile</Link></section>;
   const earnedCount = currentCollection.badges.filter(badge => badge.earnedAt).length;
+  const counts = Object.fromEntries(badgeStates.map(state => [state, currentCollection.badges.filter(badge => badgeState(badge) === state).length])) as Record<BadgeState, number>;
+  const visibleBadges = currentCollection.badges.filter(badge => filter === "all" || badgeState(badge) === filter)
+    .sort((a, b) => compareBadges(a, b, sort));
   return <main className={styles.collection}>
     <header className={styles.header}>
       {currentCollection.seenAt !== null ? <Link className={styles.back} href="/my"><span aria-hidden="true">←</span> Your profile</Link> : null}
@@ -181,19 +201,33 @@ export default function MemberBadgeCollection({ initialCollection, preview = fal
       {error && busy !== "visibility" && !selected ? <p className={styles.error} role="alert">{error}</p> : null}
       {refreshError ? <p className={styles.refreshNotice} role="status">Your latest progress couldn’t load. <button type="button" onClick={() => { if (!writing.current) void lifecycle.current?.refresh(); }}>Try again</button></p> : null}
     </header>
-    <ul className={styles.grid} aria-label="Your badge collection">
-      {currentCollection.badges.map((badge, index) => {
+    <div className={styles.toolbar}>
+      <div className={styles.filters} role="group" aria-label="Filter badges">
+        {(["all", ...badgeStates] as const).map(value => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>
+          {value === "all" ? "All" : stateLabels[value]}<span>{value === "all" ? currentCollection.badges.length : counts[value]}</span>
+        </button>)}
+      </div>
+      <label className={styles.sort}>Sort by<select value={sort} onChange={event => setSort(event.currentTarget.value as BadgeSort)}>
+        <option value="status">Status</option><option value="progress">Closest to earning</option><option value="recent">Newest earned</option><option value="name">Name: A–Z</option>
+      </select></label>
+    </div>
+    <p className={styles.resultCount} role="status">{visibleBadges.length} {visibleBadges.length === 1 ? "badge" : "badges"}{filter !== "all" ? ` · ${stateLabels[filter]}` : " in your collection"}</p>
+    {visibleBadges.length === 0 ? <p className={styles.empty}>No badges in this group yet. Choose All to explore your collection.</p> : <ul className={styles.grid} aria-label="Your badge collection">
+      {visibleBadges.map(badge => {
         const artwork = badgeArtwork(badge);
-        return <li key={badge.key}><button type="button" className={styles.tile} data-earned={Boolean(badge.earnedAt)} aria-label={`${badge.label}. ${badge.earnedAt ? "Earned" : badge.progressLabel}. View badge details`} aria-haspopup="dialog" aria-controls={`${id}-dialog`}
+        const state = badgeState(badge);
+        const index = currentCollection.badges.findIndex(item => item.key === badge.key);
+        return <li key={badge.key}><button type="button" className={styles.tile} data-state={state} data-earned={Boolean(badge.earnedAt)} aria-label={`${badge.label}. ${badge.earnedAt ? "Earned" : badge.progressLabel === "Earned" ? "Awaiting confirmation" : badge.progressLabel}. View badge details`} aria-haspopup="dialog" aria-controls={`${id}-dialog`}
           onClick={event => { triggerRef.current = event.currentTarget; setSelectedKey(badge.key); setError(null); setStatus(null); }}>
           <span className={styles.tileTop}><span>{String(index + 1).padStart(2, "0")}</span><span aria-hidden="true">↗</span></span>
-          <span className={styles.artwork} aria-hidden="true">{artwork ? <Image src={artwork.src} alt="" width={360} height={360} sizes="(max-width: 600px) 140px, (max-width: 1000px) 180px, 220px" draggable={false}/> : <span>•</span>}</span>
+          <span className={styles.artwork} aria-hidden="true">{artwork ? <Image src={artwork.src} alt="" width={360} height={360} sizes="(max-width: 600px) 100px, (max-width: 1023px) 180px, 180px" draggable={false}/> : <span>•</span>}</span>
           <span className={styles.badgeName}>{badge.label}</span>
           <span className={styles.rule}>{badge.description}</span>
-          <span className={styles.tileStatus}>{badge.earnedAt ? <><span className={styles.earnedMark} aria-hidden="true">✓</span> Earned<span className={styles.privacyLabel}>{badge.publicVisible ? "Public" : "Private"}</span></> : badge.progressLabel}</span>
+          <span className={styles.tileStatus}>{state === "earned" ? <><span className={styles.earnedMark} aria-hidden="true">✓</span> Earned<span className={styles.privacyLabel}>{badge.publicVisible ? "Public" : "Private"}</span></> : state === "earning" ? <>Earning <span className={styles.percent}>{Math.min(100, Math.floor(badge.progress / badge.target * 100))}%</span></> : "Not earned"}</span>
         </button></li>;
       })}
-    </ul>
+      </ul>
+    }
     <p className={styles.footnote}>Your private Journal stays private. Badge visibility is yours to choose.</p>
     <BadgeDetails badge={selected} id={id} preview={preview} busy={busy !== null} error={error} status={status} returnFocus={triggerRef}
       onDismiss={() => { setSelectedKey(null); setError(null); setStatus(null); }} onVisibility={visible => { void save("visibility", visible); }} onAction={currentCollection.seenAt === null ? href => { void save("seen", undefined, href); } : undefined}/>
