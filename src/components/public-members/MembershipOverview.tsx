@@ -16,7 +16,6 @@ import MembershipMonthlySection from "./MembershipMonthlySection";
 import MembershipCommunitySection from "./MembershipCommunitySection";
 import MembershipOfferSection, { type MembershipLandingMode } from "./MembershipOfferSection";
 import MembershipQuestions from "./MembershipQuestions";
-import MembershipOpportunityCalls from "./MembershipOpportunityCalls";
 import styles from "./MembershipOverview.module.css";
 
 export type MembershipLandingInvitation = PublicMemberInvitation & { token?: string };
@@ -81,8 +80,6 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
         </a>
       </div>
     </section>
-
-    <MembershipOpportunityCalls />
 
     <section className={styles.meetRuined} id="inside-membership" aria-labelledby="inside-heading">
       <button className={styles.featureFilmTrigger} type="button" onClick={openFilm} aria-label="Play Meet Ruined, 2 minutes 15 seconds">

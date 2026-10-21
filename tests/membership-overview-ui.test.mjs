@@ -57,7 +57,6 @@ function hooks() {
 }
 
 const pricing = await load("src/lib/membership/pricing.ts");
-const opportunityCalls = await load("src/data/opportunity-calls.ts");
 
 async function components(react = React, globals = {}) {
   const shared = { react, "next/image": Image, "next/link": Link, "@/lib/membership/pricing": pricing };
@@ -69,7 +68,6 @@ async function components(react = React, globals = {}) {
   const Community = (await load(`${base}MembershipCommunitySection.tsx`, shared, globals)).default;
   const Offers = (await load(`${base}MembershipOfferSection.tsx`, shared, globals)).default;
   const Questions = (await load(`${base}MembershipQuestions.tsx`, shared, globals)).default;
-  const OpportunityCalls = (await load(`${base}MembershipOpportunityCalls.tsx`, { ...shared, "@/data/opportunity-calls": opportunityCalls }, globals)).default;
   const expiration = await load("src/lib/membership/invitation-expiry.ts");
   const invitationExpiry = { useInvitationExpired: value => expiration.memberInvitationExpired(value) };
   const Acceptance = (await load("src/components/membership/PersonalInvitationAcceptance.tsx", {
@@ -90,9 +88,8 @@ async function components(react = React, globals = {}) {
     "./MembershipCommunitySection": Community,
     "./MembershipOfferSection": Offers,
     "./MembershipQuestions": Questions,
-    "./MembershipOpportunityCalls": OpportunityCalls,
   }, globals)).default;
-  return { Overview, Signup, DirectForm, WaitlistForm, Acceptance, Foundations, Monthly, Community, Offers, Questions, OpportunityCalls };
+  return { Overview, Signup, DirectForm, WaitlistForm, Acceptance, Foundations, Monthly, Community, Offers, Questions };
 }
 
 test("landing modes explain the correct next step without registering or charging on render", async () => {
@@ -498,18 +495,14 @@ const issuedInvitation = {
   card: { name: "Cade <Sender>", memberTag: "cade", wearSeed: "inviter-wear", labels: [] },
 };
 
-test("all landing entry points share the public sections and remaining opportunity call with calendar controls", async () => {
+test("all landing entry points share the public sections without opportunity call promotions", async () => {
   const c = await components();
   const descendants = node => [node, ...(node.childNodes ?? []).flatMap(descendants)];
   const attr = (node, name) => node.attrs?.find(attribute => attribute.name === name)?.value;
-  const content = node => node.nodeName === "#text" ? node.value : (node.childNodes ?? []).map(content).join("");
   const sharedSections = [
-    ...["membership-title", "inside-membership", "opportunity-calls", "how-it-works", "foundations", "monthly-work", "circles"].map(id => [id, node => attr(node, "id") === id]),
+    ...["membership-title", "inside-membership", "how-it-works", "foundations", "monthly-work", "circles"].map(id => [id, node => attr(node, "id") === id]),
     ...["heroDescription", "finalNote"].map(className => [className, node => attr(node, "class")?.split(" ").includes(className)]),
     ["film player", node => node.nodeName === "dialog" && attr(node, "aria-label") === "Ruined membership film"],
-  ];
-  const expected = [
-    { date: "Tuesday, October 13", start: "2026-10-13T18:00:00-06:00", dates: "20261014T000000Z/20261014T010000Z", meet: "https://meet.google.com/top-uaii-ofh", file: "/calendar/ruined-opportunity-call-2026-10-13.ics" },
   ];
   const variants = [
     ["public waitlist", {}],
@@ -530,35 +523,8 @@ test("all landing entry points share the public sections and remaining opportuni
     });
     publicSections ??= currentSections;
     assert.deepEqual(currentSections, publicSections, `${variant} keeps the same public content, media, and controls`);
-    const sections = elements.filter(node => attr(node, "id") === "opportunity-calls");
-    assert.equal(sections.length, 1, `${variant} shows one call section`);
-    const articles = descendants(sections[0]).filter(node => node.nodeName === "article");
-    assert.equal(articles.length, 1);
-    assert.deepEqual(elements.filter(node => node.nodeName === "a" && attr(node, "href")?.startsWith("https://meet.google.com/")).map(node => attr(node, "href")), expected.map(call => call.meet));
-    for (const [index, article] of articles.entries()) {
-      const call = expected[index], children = descendants(article);
-      const time = children.find(node => node.nodeName === "time");
-      assert.equal(content(time), call.date);
-      assert.equal(attr(time, "datetime"), call.start);
-      assert.match(content(article), /6–7 PM · Denver time/);
-      const summary = children.find(node => node.nodeName === "summary");
-      assert.match(content(summary), /Add to calendar/);
-      assert.ok(attr(summary, "aria-label").includes(call.date), "calendar controls identify their call date");
-      const links = children.filter(node => node.nodeName === "a");
-      const join = links.find(node => attr(node, "href") === call.meet);
-      assert.ok(join, "each call keeps its own meeting link");
-      assert.ok(attr(join, "aria-label").includes(call.date));
-      const google = links.find(node => attr(node, "href")?.startsWith("https://calendar.google.com/"));
-      assert.ok(google, "each call has a Google Calendar action");
-      const calendar = new URL(attr(google, "href"));
-      assert.equal(calendar.searchParams.get("dates"), call.dates, "calendar actions preserve the 60-minute Denver event");
-      assert.equal(calendar.searchParams.get("stz"), "America/Denver");
-      assert.equal(calendar.searchParams.get("etz"), "America/Denver");
-      assert.equal(calendar.searchParams.get("location"), call.meet);
-      const download = links.find(node => attr(node, "href") === call.file);
-      assert.ok(download, "each call has its matching Apple / Outlook calendar file");
-      assert.equal(attr(download, "download"), "");
-    }
+    assert.doesNotMatch(html, /opportunity[ -]calls?|Tuesday, October 13|meet\.google\.com\/top-uaii-ofh/i,
+      `${variant} has no opportunity call section, date, meeting link, or calendar controls`);
   }
 });
 
