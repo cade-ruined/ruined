@@ -2,7 +2,9 @@ import type { RegistrationFoundingPricing } from "./registration-model";
 import { registrationFoundingConfirmation } from "./registration-pricing-confirmation";
 import { registrationPaidConfirmation, type RegistrationPaidMembership } from "./registration-paid-confirmation";
 
-export type RegistrationMessageKind = "welcome" | "profile_ready";
+export type RegistrationMessageKind = "welcome" | "profile_ready" | "pre_foundations";
+export type RegistrationFoundationsCall = { startsAt: string; timeZone: string };
+export type RegistrationTemplateOverride = { subject: string; body: string };
 export type RegistrationCompletionBasis = "saved_card" | "complimentary" | "paid_membership";
 
 export type RegistrationEmailInput = {
@@ -14,6 +16,8 @@ export type RegistrationEmailInput = {
   invitationImageSrc?: string;
   foundingPricing?: RegistrationFoundingPricing | null;
   paidMembership?: RegistrationPaidMembership | null;
+  foundationsCall?: RegistrationFoundationsCall | null;
+  templateOverride?: RegistrationTemplateOverride | null;
 };
 
 function escapeHtml(value: string): string {
@@ -21,7 +25,7 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-const welcomeParagraphs: Array<{ text: string; bold?: boolean; emphasis?: string; call?: boolean; handwritten?: boolean }> = [
+const welcomeParagraphs: Array<{ text: string; bold?: boolean; emphasis?: string; call?: boolean; farewell?: boolean; handwritten?: boolean }> = [
   { text: "First, thank you.", handwritten: true },
   { text: "Not just for registering, but for trusting us enough to be part of what we’re building from the beginning." },
   { text: "RU/NED was never created because we thought people needed another course, another networking group, or another place to collect information." },
@@ -30,15 +34,55 @@ const welcomeParagraphs: Array<{ text: string; bold?: boolean; emphasis?: string
   { text: "That’s what we’re trying to build here. And now you’re part of it.", bold: true },
   { text: "So, here’s what happens next." },
   { text: "Every RU/NED Membership begins with Foundations. It gives all of us a shared starting point before we move into everything Membership becomes from there.", emphasis: "Foundations" },
-  { text: "Your first Foundations call is November 5 at 3:00PM MT.", bold: true, call: true },
+  { text: "", bold: true, call: true },
   { text: "Between now and then, you don’t need to figure anything out on your own. We’ll be in touch with everything you need to know, including onboarding, access, reminders, and details for your first call." },
   { text: "For now, keep an eye on your inbox. We’ll take it from here." },
   { text: "We have a lot we want to build with RU/NED. We know where we’re going. And some of what we build along the way will exist because of the people who walk through the door and help shape it.", emphasis: "We know where we’re going. And some of what we build along the way will exist because of the people who walk through the door and help shape it." },
   { text: "You’re one of those people now.", bold: true },
   { text: "We’re really glad you’re here." },
-  { text: "See you November 5." },
+  { text: "", farewell: true },
 ];
 
+const followupParagraphs = [
+    "FOUNDATIONS STARTS {{first_call}}.",
+    "Four calls. 90 minutes each. Time to get to work.", "HERE’S THE DEAL:",
+    "Your calendar: The rest of the year lives in your profile, on the left-hand side.",
+    "Your call links: They’re in your calendar. We’ll email them a couple days before each call, too. We’re thoughtful like that.",
+    "Schedule changes: They happen. If they do, you’ll know.",
+    "Questions? Check the FAQs on the RU/NED website or reach us at connect@theruinedproject.com.",
+    "Your profile is home base.", "Everything membership-related lives there.",
+    "And before you start digging around wondering if you missed something: if it needs your attention, we’ll tell you.",
+    "No scavenger hunts.", "No guessing games.", "You handle showing up.", "We’ll handle keeping you in the loop.",
+    "See you in Foundations.", "RU/NED",
+  ];
+
+/** Main copy only. Payment confirmations, accepted terms and functional access
+ * links remain outside the editable body and cannot be removed by an override. */
+export function getRegistrationEditableTemplate(kind: RegistrationMessageKind): RegistrationTemplateOverride & {tokens:string[]} {
+  const tokens=["{{member_name}}","{{profile_url}}",...(kind==="profile_ready" ? [] : ["{{first_call}}","{{first_call_day}}"] )];
+  if (kind==="welcome") return {subject:"Welcome to RU/NED",tokens,body:["{{member_name}}, you’re in.",
+    ...welcomeParagraphs.map(paragraph=>paragraph.call ? "Your first Foundations call is {{first_call}}."
+      : paragraph.farewell ? "See you {{first_call_day}}." : paragraph.text),
+    "Tyler, Libby, Cade & Mitch", "RU/NED", "After the fear."].join("\n\n")};
+  if (kind==="pre_foundations") return {subject:"A few things worth knowing.",tokens,
+    body:["You’re in. Now what?",...followupParagraphs].join("\n\n")};
+  return {subject:"Your Ruined profile is ready",tokens,body:["{{member_name}}, your Ruined profile is now open.",
+    "Add your photo, tell a little of your story, and make this space your own.","After the fear."].join("\n\n")};
+}
+export function validateRegistrationTemplateOverride(kind: RegistrationMessageKind,value: unknown): RegistrationTemplateOverride {
+  if (!value || typeof value!=="object" || Array.isArray(value)) throw new Error("Provide the email subject and body.");
+  const input=value as Record<string,unknown>;
+  if (typeof input.subject!=="string" || typeof input.body!=="string" || Object.keys(input).some(key=>!["subject","body"].includes(key))) throw new Error("Provide only the email subject and body.");
+  const subject=input.subject.trim(),body=input.body.replaceAll("\r\n","\n").trim();
+  if (!subject || subject.length>200 || /[\r\n\u0000]/.test(subject) || !body || body.length>12000 || /\u0000/.test(body)) throw new Error("Use a subject of 1–200 characters and a body of 1–12,000 characters.");
+  const tokens=new Set(getRegistrationEditableTemplate(kind).tokens);
+  for (const text of [subject,body]) {
+    if (/\{\{\{|\}\}\}/.test(text)) throw new Error("Use only the supported email fields.");
+    const remaining=text.replace(/\{\{[a-z_]+\}\}/g,token=>{if(!tokens.has(token))throw new Error(`Unsupported registration field: ${token}`);return "";});
+    if (/\{\{|\}\}/.test(remaining)) throw new Error("Use only the supported email fields.");
+  }
+  return {subject,body};
+}
 // Gmail iOS recolors live text but preserves the ink image. These two layers
 // restore white text there; other clients retain the inline bone color. Scope
 // black layer backgrounds to Gmail CSS, and never wrap artwork or pricing.
@@ -61,27 +105,60 @@ function welcomeBodyHtml(thankYouImage: string, paragraphs = welcomeParagraphs) 
 /** Pure rendering: the worker stores this exact HTML/text before any provider call. */
 export function createRegistrationEmail(input: RegistrationEmailInput) {
   const welcome = input.kind === "welcome";
+  const followup = input.kind === "pre_foundations";
+  const dark = welcome || followup;
   const paid = welcome && input.completionBasis === "paid_membership"
     ? registrationPaidConfirmation(input.paidMembership) : null;
   if (welcome && input.completionBasis === "paid_membership" && !paid) {
     throw new Error("paid_registration_receipt_unavailable");
   }
-  const paragraphs = paid ? welcomeParagraphs.map(paragraph => paragraph.call
-    ? { ...paragraph, text: `Your first Foundations call is ${paid.firstCall}.` }
-    : paragraph.text === "See you November 5." ? { ...paragraph, text: `See you ${paid.firstCallDay}.` } : paragraph) : welcomeParagraphs;
+  const call = input.foundationsCall ?? (input.paidMembership ? {
+    startsAt: input.paidMembership.billingSchedule?.callStartsAt?.[0],
+    timeZone: input.paidMembership.billingSchedule?.timeZone,
+  } : null);
+  let firstCall = "", firstCallDay = "";
+  if (dark) {
+    if (!call || !Number.isFinite(Date.parse(call.startsAt)) || !call.timeZone) throw new Error("registration_foundations_schedule_unavailable");
+    try {
+      firstCall = new Intl.DateTimeFormat("en-US", { timeZone: call.timeZone, month: "long", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit", ...(call.timeZone === "America/Denver" ? {} : { timeZoneName: "short" }) }).format(new Date(call.startsAt))
+        + (call.timeZone === "America/Denver" ? " MT" : "");
+      firstCallDay = new Intl.DateTimeFormat("en-US", { timeZone: call.timeZone, month: "long", day: "numeric" }).format(new Date(call.startsAt));
+    } catch { throw new Error("registration_foundations_schedule_unavailable"); }
+  }
+  const paragraphs = welcomeParagraphs.map(paragraph => paragraph.call
+    ? { ...paragraph, text: `Your first Foundations call is ${firstCall}.` }
+    : paragraph.farewell ? { ...paragraph, text: `See you ${firstCallDay}.` } : paragraph);
   const founding = welcome && input.completionBasis === "saved_card"
     ? registrationFoundingConfirmation(input.foundingPricing) : null;
   const name = input.memberName.trim() || "Friend";
-  const title = welcome ? "Welcome to RU/NED" : "Your profile is ready.";
-  const subject = welcome ? "Welcome to RU/NED" : "Your Ruined profile is ready";
+  let title = welcome ? "Welcome to RU/NED" : "Your profile is ready.";
+  let subject = welcome ? "Welcome to RU/NED" : followup ? "A few things worth knowing." : "Your Ruined profile is ready";
   const eyebrow = welcome ? null : "Make it yours";
   const preheader = welcome
     ? paid ? `${paid.amount}. Your first Foundations call is ${paid.firstCall}.`
-      : "Your first Foundations call is November 5 at 3:00PM MT. We’re really glad you’re here."
-    : "Your profile is open. Your next chapter is yours to build.";
-  const greeting = welcome
+      : `Your first Foundations call is ${firstCall}. We’re really glad you’re here.`
+    : followup ? "Four calls. 90 minutes each. Time to get to work." : "Your profile is open. Your next chapter is yours to build.";
+  let greeting = welcome
     ? `${name}, you’re in.`
-    : `${name}, your Ruined profile is now open.`;
+    : followup ? "You’re in. Now what?" : `${name}, your Ruined profile is now open.`;
+  const editable=getRegistrationEditableTemplate(input.kind);
+  const override=input.templateOverride ? validateRegistrationTemplateOverride(input.kind,input.templateOverride) : null;
+  const customized=override && (override.subject!==editable.subject || override.body!==editable.body);
+  const values: Record<string,string>={"{{member_name}}":name,"{{first_call}}":firstCall,"{{first_call_day}}":firstCallDay,
+    "{{profile_url}}":new URL("/my",input.siteUrl).toString()};
+  const resolve=(copy:string)=>copy.replace(/\{\{[a-z_]+\}\}/g,token=>values[token]);
+  let customParagraphs:string[]|null=null;
+  if (customized) {
+    subject=resolve(override.subject);
+    if (!dark) title=subject;
+    if (subject.length>200 || /[\r\n\u0000]/.test(subject)) throw new Error("The personalized subject is too long or contains an invalid character.");
+    if (override.body!==editable.body) {
+      customParagraphs=resolve(override.body).split(/\n\s*\n/);
+      greeting=customParagraphs.shift()!;
+    }
+  }
+  const resolvedFollowupParagraphs=followupParagraphs.map(paragraph=>paragraph.replace("{{first_call}}",firstCall.toUpperCase()));
   const next = "Add your photo, tell a little of your story, and make this space your own.";
   const charge = input.completionBasis === "paid_membership" ||
     (!welcome && input.completionBasis === "saved_card" && Boolean(input.paidMembership))
@@ -99,16 +176,16 @@ export function createRegistrationEmail(input: RegistrationEmailInput) {
   const imageAlt = welcome && input.invitationImageSrc
     ? "Your original Ruined invitation card in the basement room."
     : "A Ruined invitation card in the basement room.";
-  const logo = new URL(welcome ? "/ruined-wordmark-email-bone.png" : "/ruined-wordmark-email.png", input.siteUrl).toString();
+  const logo = new URL(dark ? "/ruined-wordmark-email-bone.png" : "/ruined-wordmark-email.png", input.siteUrl).toString();
   // Rendered from the actual CadeHandy2 font so email apps do not substitute it.
   const thankYouImage = new URL("/membership/email/first-thank-you-cadehandy2.png", input.siteUrl).toString();
   const signoffImage = new URL("/membership/email/after-the-fear-cadehandy2.png", input.siteUrl).toString();
   const inkTexture = new URL("/membership/design/printers-ink.jpg", input.siteUrl).toString();
   // The HTML background attribute supports email clients that strip background
   // CSS; the ink color stays readable when a client blocks images entirely.
-  const textureAttribute = welcome ? ` background="${escapeHtml(inkTexture)}"` : "";
-  const textureStyle = welcome ? `;background-image:url('${escapeHtml(inkTexture)}'),linear-gradient(#10100f,#10100f);background-position:center top;background-size:600px auto;background-repeat:repeat` : "";
-  const theme = welcome
+  const textureAttribute = dark ? ` background="${escapeHtml(inkTexture)}"` : "";
+  const textureStyle = dark ? `;background-image:url('${escapeHtml(inkTexture)}'),linear-gradient(#10100f,#10100f);background-position:center top;background-size:600px auto;background-repeat:repeat` : "";
+  const theme = dark
     ? { outer: "#080807", paper: "#10100f", ink: "#e9e4d9", muted: "#9b978d", rule: "#36352f" }
     : { outer: "#d6d1c7", paper: "#e9e5da", ink: "#23231f", muted: "#666259", rule: "#cbc6b9" };
   const footer = "This is an update about your Ruined registration, not a newsletter subscription.";
@@ -116,29 +193,48 @@ export function createRegistrationEmail(input: RegistrationEmailInput) {
     ...(paid.responsibility ? [paid.responsibility] : []), paid.profile] : [];
   const paymentTerms = paid ? [paid.commitment, paid.renewal, paid.cancellation, paid.earlyExit,
     ...(paid.founding ? [paid.founding] : [])] : [];
-  const text = (welcome
+  let text = (welcome
     ? [greeting, "", ...paymentSummary.flatMap(paragraph => [paragraph, ""]),
       ...(founding ? [founding.heading, founding.monthly, founding.annual, founding.scope, "", founding.retention, "", founding.payment, ""] : []), ...paragraphs.flatMap(paragraph => [paragraph.text, ""]),
       ...(paid ? ["Your Foundations dates", "Four live virtual sessions, 90 minutes each.", ...paid.calls, "", ...paymentTerms.flatMap(paragraph => [paragraph, ""]),
         `Membership billing: ${billingUrl}`, `Your accepted agreement: ${agreementUrl}`, ""] : []),
       "Tyler, Libby, Cade & Mitch", "RU/NED", "After the fear", "", "Need a hand? connect@theruinedproject.com", footer]
+    : followup ? [greeting, "", ...resolvedFollowupParagraphs.flatMap(paragraph => [paragraph, ""]), `Your profile: ${new URL("/my", input.siteUrl)}`, "", footer]
     : [title, "", greeting, "", next, "", charge, "", `${action}: ${actionUrl}`, "", "After the fear.", "", "Need a hand? connect@theruinedproject.com", footer]
   ).join("\n");
 
   const foundingHtml = founding ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffca2c" style="margin:8px 0 32px;background:#ffca2c;color:#23231f"><tr><td style="padding:24px;color:#23231f"><h3 style="margin:0 0 14px;font-size:20px;line-height:1.3">${escapeHtml(founding.heading)}</h3><p style="margin:0 0 10px;font-size:36px;font-weight:700;line-height:1.2;letter-spacing:-1px">${escapeHtml(founding.monthly)}</p><p style="margin:0 0 8px;font-size:14px;line-height:1.5">${escapeHtml(founding.annual)}</p><p style="margin:0;font-size:12px;line-height:1.5">${escapeHtml(founding.scope)}</p><p style="margin:20px 0 12px;font-size:14px;line-height:1.6">${escapeHtml(founding.retention)}</p><p style="margin:0;font-size:14px;line-height:1.6;font-weight:700">${escapeHtml(founding.payment)}</p></td></tr></table>` : "";
   const paidHtml = paid ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffca2c" style="margin:8px 0 32px;background:#ffca2c;color:#23231f"><tr><td style="padding:24px;color:#23231f"><h3 style="margin:0 0 14px;font-size:20px;line-height:1.3">${escapeHtml(paid.heading)}</h3><p style="margin:0 0 16px;font-size:36px;font-weight:700;line-height:1.2;letter-spacing:-1px">${escapeHtml(paid.amount)}</p>${paymentSummary.slice(2).map(paragraph => `<p style="margin:0 0 12px;font-size:14px;line-height:1.6">${escapeHtml(paragraph)}</p>`).join("")}</td></tr></table>` : "";
   const paidTermsHtml = paid ? welcomeText(`<h3 style="margin:36px 0 14px;font-size:22px;line-height:1.3">Your Foundations dates</h3><p style="margin:0 0 14px;font-size:14px;line-height:1.6">Four live virtual sessions, 90 minutes each.</p>${paid.calls.map(call => `<p style="margin:0 0 8px;font-size:14px;line-height:1.6">${escapeHtml(call)}</p>`).join("")}<h3 style="margin:32px 0 14px;font-size:22px;line-height:1.3">Your membership terms</h3>${paymentTerms.map(paragraph => `<p style="margin:0 0 16px;font-size:14px;line-height:1.7">${escapeHtml(paragraph)}</p>`).join("")}<p style="margin:24px 0 0;font-size:15px;line-height:1.8"><a href="${escapeHtml(billingUrl)}" style="color:#e9e4d9;text-decoration:underline;font-weight:700">Membership billing</a><br><a href="${escapeHtml(agreementUrl!)}" style="color:#e9e4d9;text-decoration:underline">Your accepted agreement</a></p>`) : "";
-  const body = welcome
+  let body = welcome
     ? `${paidHtml}${foundingHtml}${welcomeBodyHtml(thankYouImage, paragraphs)}${paidTermsHtml}${welcomeText('<p style="margin:32px 0 20px;font-size:16px;line-height:1.75"><strong>Tyler, Libby, Cade &amp; Mitch</strong></p>')}<img src="${escapeHtml(logo)}" width="130" height="39" alt="RU/NED" style="display:block;width:130px;height:39px;border:0"><p style="margin:14px 0 0;color:#ffca2c"><img src="${escapeHtml(signoffImage)}" width="220" alt="After the fear" style="display:block;width:220px;max-width:100%;height:auto;border:0;color:#ffca2c;font-size:24px"></p>`
+    : followup ? welcomeBodyHtml(thankYouImage, resolvedFollowupParagraphs.map(text => ({text})))
+      + welcomeText(`<p style="margin:24px 0 0"><a href="${escapeHtml(new URL("/my", input.siteUrl).toString())}" style="color:#ffca2c;text-decoration:underline;overflow-wrap:anywhere">Your profile</a></p>`)
     : `<p style="margin:0 0 26px;font-size:16px;line-height:1.65">${next}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#a83329"><a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:17px 24px;border:1px solid #a83329;color:#fff9ec;font-size:15px;line-height:1.25;font-weight:700;text-decoration:none">${action} &rarr;</a></td></tr></table>
 <p style="margin:28px 0 0;font-size:13px;line-height:1.65;color:#56544d">${charge}</p>
 <p style="margin:38px 0 0;font-family:Georgia,serif;font-size:29px;line-height:1.2">After the fear.</p>`;
 
+  if (customParagraphs) {
+    const profileLink=`<p style="margin:24px 0 0"><a href="${escapeHtml(new URL("/my",input.siteUrl).toString())}" style="color:${theme.ink};text-decoration:underline;overflow-wrap:anywhere">Open your profile</a></p>`;
+    const customHtml=customParagraphs.map(paragraph=>{
+      const content=`<p style="margin:0 0 22px;font-size:16px;line-height:1.75">${escapeHtml(paragraph).replaceAll("\n","<br>")}</p>`;
+      return dark ? welcomeText(content) : content;
+    }).join("\n");
+    body=welcome ? paidHtml+foundingHtml+customHtml+paidTermsHtml
+      : customHtml+(dark ? welcomeText(profileLink) : profileLink)+(!followup ? `<p style="margin:28px 0 0;font-size:13px;line-height:1.65;color:#56544d">${escapeHtml(charge)}</p>` : "");
+    text=[greeting,"",...paymentSummary.flatMap(paragraph=>[paragraph,""]),
+      ...(founding ? [founding.heading,founding.monthly,founding.annual,founding.scope,"",founding.retention,"",founding.payment,""] : []),
+      ...customParagraphs.flatMap(paragraph=>[paragraph,""]),
+      ...(paid ? ["Your Foundations dates",...paid.calls,"",...paymentTerms.flatMap(paragraph=>[paragraph,""]),`Membership billing: ${billingUrl}`,`Your accepted agreement: ${agreementUrl}`,""] : []),
+      ...(!welcome ? [`Open your profile: ${new URL("/my",input.siteUrl)}`,"",...(!followup ? [charge,""] : [])] : []),
+      "Need a hand? connect@theruinedproject.com",footer].join("\n");
+  }
+
   const greetingHtml = `<h2 style="margin:0 0 ${welcome ? "22" : "16"}px;font-size:22px;line-height:1.3;font-weight:700;letter-spacing:-.4px">${escapeHtml(greeting)}</h2>`;
   const helpHtml = `<p style="margin:0 0 12px;font-size:12px;line-height:1.6">Need a hand? <a href="mailto:connect@theruinedproject.com" style="color:${theme.ink};text-decoration:underline">Reply to us.</a></p>`;
   const footerHtml = `<p style="margin:0;font-size:11px;line-height:1.7;color:${theme.muted}">${footer}</p>`;
-  const gmailStyles = welcome ? `
+  const gmailStyles = dark ? `
 u + .ruined-email .gmail-blend-screen{background:#000;mix-blend-mode:screen}
 u + .ruined-email .gmail-blend-difference{background:#000;mix-blend-mode:difference}
 u + .ruined-email .gmail-blend-difference,u + .ruined-email .gmail-blend-difference *{color:#fff!important}
@@ -147,16 +243,16 @@ u + .ruined-email .gmail-blend-difference,u + .ruined-email .gmail-blend-differe
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${escapeHtml(subject)}</title>
 <style>${gmailStyles}@media(max-width:480px){.email-pad{padding-left:24px!important;padding-right:24px!important}.email-title{font-size:42px!important}.email-outer{padding:0!important}}</style></head>
-<body${welcome ? ' class="ruined-email"' : ""} style="margin:0;padding:0;background:${theme.outer};color:${theme.ink};font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%">
+<body${dark ? ' class="ruined-email"' : ""} style="margin:0;padding:0;background:${theme.outer};color:${theme.ink};font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%">
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all">${escapeHtml(preheader)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${theme.outer}"><tr><td class="email-outer" align="center" style="padding:32px 12px">
 <!--[if mso]><table role="presentation" width="600" align="center"><tr><td><![endif]-->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${theme.paper}"${textureAttribute} style="max-width:600px;background:${theme.paper}${textureStyle};color:${theme.ink};border-collapse:collapse">
 <tr><td class="email-pad" style="padding:32px 40px 38px"><img src="${escapeHtml(logo)}" width="150" height="45" alt="Ruined" style="display:block;width:150px;height:45px;border:0"></td></tr>
-${welcome ? "" : `<tr><td class="email-pad" style="padding:0 40px 32px">${eyebrow ? `<p style="margin:0 0 16px;font-size:11px;line-height:1.5;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:#a83329">${eyebrow}</p>` : ""}<h1 class="email-title" style="margin:0;font-size:58px;line-height:1.02;letter-spacing:-2px;font-weight:700">${title}</h1></td></tr>`}
-<tr><td style="padding:0;background:${welcome ? theme.paper : "#181816"}"><img src="${escapeHtml(imageUrl)}" width="600" alt="${escapeHtml(imageAlt)}" style="display:block;width:100%;max-width:600px;height:auto;border:0;color:#e9e5da;font-size:14px"></td></tr>
-<tr><td class="email-pad" style="padding:36px 40px 40px;color:${theme.ink}">${welcome ? welcomeText(greetingHtml) : greetingHtml}${body}</td></tr>
-<tr><td class="email-pad" style="padding:24px 40px 32px;border-top:1px solid ${theme.rule}">${welcome ? welcomeText(helpHtml) + welcomeText(footerHtml, theme.muted) : helpHtml + footerHtml}</td></tr>
+${dark ? "" : `<tr><td class="email-pad" style="padding:0 40px 32px">${eyebrow ? `<p style="margin:0 0 16px;font-size:11px;line-height:1.5;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:#a83329">${eyebrow}</p>` : ""}<h1 class="email-title" style="margin:0;font-size:58px;line-height:1.02;letter-spacing:-2px;font-weight:700">${escapeHtml(title)}</h1></td></tr>`}
+<tr><td style="padding:0;background:${dark ? theme.paper : "#181816"}"><img src="${escapeHtml(imageUrl)}" width="600" alt="${escapeHtml(imageAlt)}" style="display:block;width:100%;max-width:600px;height:auto;border:0;color:#e9e5da;font-size:14px"></td></tr>
+<tr><td class="email-pad" style="padding:36px 40px 40px;color:${theme.ink}">${dark ? welcomeText(greetingHtml) : greetingHtml}${body}</td></tr>
+<tr><td class="email-pad" style="padding:24px 40px 32px;border-top:1px solid ${theme.rule}">${dark ? welcomeText(helpHtml) + welcomeText(footerHtml, theme.muted) : helpHtml + footerHtml}</td></tr>
 </table><!--[if mso]></td></tr></table><![endif]--></td></tr></table></body></html>`;
   return { subject, html, text };
 }

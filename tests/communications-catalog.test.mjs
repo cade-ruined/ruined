@@ -8,7 +8,7 @@ function load(name) {
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const mod = { exports: {} };
   new Function("require", "module", "exports", code)(dependency => {
-    assert.ok(["./member-email-cadence-model", "./email-automation-view"].includes(dependency), `Catalog must remain pure: ${dependency}`);
+    assert.ok(["./member-email-cadence-model", "./email-automation-view", "./cade-communications"].includes(dependency), `Catalog must remain pure: ${dependency}`);
     return load(dependency.slice(2));
   }, mod, mod.exports);
   return mod.exports;
@@ -73,13 +73,18 @@ test("inherited calls do not duplicate a shared stage while independent and miss
 test("registration welcome and profile access have separate homes but retain their actual shared configuration state", () => {
   for (const state of ["configured", "paused", "incomplete"]) {
     const rows = build(overview({ managedElsewhere: [workflow("registration", state)] })).filter(item => item.id.startsWith("workflow:"));
-    assert.equal(rows.length, 2);
-    assert.deepEqual(rows.map(item => item.bucket), ["registration", "pre-foundations"]);
+    assert.equal(rows.length, 3);
+    assert.deepEqual(rows.map(item => item.bucket), ["registration", "pre-foundations", "pre-foundations"]);
     assert.ok(rows.every(item => item.status === { configured: "enabled", paused: "paused", incomplete: "attention" }[state]));
     assert.ok(rows.every(item => item.statusLabel === workflow("registration", state).statusLabel));
     assert.match(rows[0].trigger, /Registration becomes complete/);
-    assert.match(rows[1].trigger, /administrator grants.*profile access/);
-    assert.ok(rows.every(item => item.action.href === "/ops/registration"));
+    assert.match(rows[2].trigger, /administrator grants.*profile access/);
+    assert.ok(rows.every(item => item.action.label === "Edit template"));
+    for (const [index,key] of ["welcome","pre_foundations","profile_ready"].entries()) {
+      const href = new URL(rows[index].action.href,"https://example.test");
+      assert.equal(href.pathname,"/ops/messages");assert.equal(href.searchParams.get("template"),`registration:${key}`);
+      assert.equal(href.searchParams.get("bucket"),index===0?"registration":"pre-foundations");assert.equal(href.hash,"#registration-email-copy");
+    }
   }
   assert.equal(build(overview()).some(item => item.id.startsWith("workflow:")), false, "missing configuration is not invented as enabled");
 });
@@ -123,13 +128,17 @@ test("catalog status does not promise delivery when approval, global configurati
   assert.ok(finished.every(item => item.status === "paused" && item.statusLabel === "No upcoming emails"));
 });
 
-test("unfinished email workflows remain explicitly planned without activation or send actions", () => {
+test("held protocols stay out of the reusable template library while approved manual copy has a composer path", () => {
   const rows = build(overview());
-  const missed = rows.filter(item => item.bucket === "missed-protocol");
-  assert.equal(missed.length, 2);
-  assert.ok(rows.every(item => item.channel === "emails" && item.status === "planned" && item.statusLabel === "Planned" && !item.action));
-  assert.match(rows.find(item => item.id === "planned:email:circle-reveal").detail, /Existing Circle access and in-app notifications remain separate/);
-  assert.ok(rows.some(item => item.title === "Foundations completion email" && item.bucket === "foundations"));
+  const held = rows.filter(item => item.status === "held");
+  assert.equal(held.filter(item => item.bucket === "missed-protocol").length, 1);
+  assert.equal(held.length, 7);
+  assert.ok(held.every(item => item.channel === "emails" && item.statusLabel === "Held" && item.action.href === "/ops/work" && !item.action.selection));
+  const manual = rows.filter(item => item.status === "manual");
+  assert.equal(manual.length, 6);
+  assert.ok(manual.every(item => item.action.href.startsWith("/ops/messages?mode=emails&manualTemplate=")));
+  assert.ok(manual.every(item => !/missed|incomplete|future event/i.test(item.title)));
+  assert.match(manual.find(item => item.id === "manual:clothing-drop").detail, /25%.*not an approved/);
 });
 
 test("supplemental channels retain their facts, merge once and cannot replace a real email workflow", () => {

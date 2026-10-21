@@ -11,6 +11,7 @@ export const MEMBERSHIP_BADGES = {
   "the-whole-month": { label: "The Whole Month", description: "Attend SEE, FACE, CUT, and GROW in the same topic month." },
   "open-door": { label: "Open Door", description: "Invite someone who joins Ruined." },
   "in-real-life": { label: "In Real Life", description: "Attend your first confirmed in-person event." },
+  "one-year": { label: "One Year", description: "Reach the first anniversary of your Ruined registration." },
   "early-supporter": {
     label: "I Was Here",
     description: "Joined the waitlist, then activated a Founders or Originals membership.",

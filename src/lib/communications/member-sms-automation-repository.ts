@@ -57,15 +57,18 @@ export async function enqueueMemberSmsAutomation(sql: Sql, config: MemberSmsAuto
         select consent.member_id,'call_reminder',
           'call:'||experience.id::text||':'||((extract(epoch from experience.starts_at)*1000)::bigint)::text||':60m',
           consent.consent_id,experience.id,experience.starts_at,
-          experience.starts_at-interval '1 hour',experience.starts_at-interval '50 minutes'
+          experience.starts_at-make_interval(mins=>notice.minutes),experience.starts_at-make_interval(mins=>notice.minutes-10)
         from consent_candidates consent cross join experiences experience
+        left join private.member_email_cadence_event_bindings binding on binding.experience_id=experience.id
+        cross join lateral (select case when binding.kind='foundations_01' and experience.visibility='invite_only'
+          and experience.registration_mode='internal' then 150 else 60 end as minutes) notice
         where consent.membership_state='active' and consent.account_state='active'
           and private.ruined_member_profile_released(consent.member_id)
           and experience.kind in ('weekly_call','circle_meeting','academy_session','member_event','public_event')
           and experience.status='published' and experience.cancelled_at is null
-          and experience.starts_at-interval '1 hour'>=${config.activatedAt}::timestamptz
-          and experience.starts_at>statement_timestamp()+interval '50 minutes'
-          and experience.starts_at<=statement_timestamp()+interval '1 hour'
+          and experience.starts_at-make_interval(mins=>notice.minutes)>=${config.activatedAt}::timestamptz
+          and experience.starts_at>statement_timestamp()+make_interval(mins=>notice.minutes-10)
+          and experience.starts_at<=statement_timestamp()+make_interval(mins=>notice.minutes)
           and exists(select 1 from integration_entity_links meeting where meeting.provider='google'
             and meeting.local_entity_type='experience' and meeting.local_entity_id=experience.id::text
             and meeting.external_entity_type='meet_space' and meeting.livemode=${googleCommunicationLivemode()})
@@ -103,11 +106,18 @@ export async function memberSmsAutomationReminder(sql: Sql, job: Job): Promise<M
       expectedConsentId: job.expectedConsentId } : null;
   }
   if (!job.eventId || !job.startsAt) return null;
-  const [event] = await sql<Array<{ title: string; timeZone: string }>>`
-    select title,timezone as "timeZone" from experiences where id=${job.eventId}::uuid`;
+  const [event] = await sql<Array<{ title: string; timeZone: string; foundations01: boolean }>>`
+    select title,timezone as "timeZone",coalesce(binding.kind='foundations_01' and visibility='invite_only'
+      and registration_mode='internal',false) as "foundations01"
+    from experiences left join private.member_email_cadence_event_bindings binding on binding.experience_id=experiences.id
+    where experiences.id=${job.eventId}::uuid`;
+  const meetings = event?.foundations01 ? await sql<Array<{ metadata: unknown }>>`select metadata from integration_entity_links
+    where provider='google' and local_entity_type='experience' and local_entity_id=${job.eventId}
+      and external_entity_type='meet_space' and livemode=${googleCommunicationLivemode()}` : [];
+  const meetingUrl = meetings.map(item=>googleCommunicationUrlFromMetadata("meet",item.metadata)).find(Boolean) ?? undefined;
   if (!event) return null;
   return { memberId: job.memberId, kind: job.kind, reminderKey: job.reminderKey, expectedConsentId: job.expectedConsentId ?? undefined,
-    callDetails: { eventId: job.eventId, startsAt: new Date(job.startsAt).toISOString(), title: event.title, timeZone: event.timeZone } };
+    callDetails: { eventId: job.eventId, startsAt: new Date(job.startsAt).toISOString(), title: event.title, timeZone: event.timeZone, foundations01: event.foundations01, ...(event.foundations01 ? { meetingUrl } : {}) } };
 }
 
 export async function finishMemberSmsAutomationJob(sql: Sql, id: string, outcome: string): Promise<void> {
@@ -154,6 +164,11 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
         and status='accepted' and (delivery_status is null or delivery_status not in ('failed','undelivered')) for share`;
     if (!confirmation) return false;
   }
+  // The explicit event binding supplies timing; names never classify a call.
+  const bindings = await tx<Array<{ kind: string }>>`select kind from private.member_email_cadence_event_bindings
+    where experience_id=${input.callDetails.eventId}::uuid for share`;
+  const foundations01 = bindings[0]?.kind === "foundations_01";
+  const noticeMinutes = foundations01 ? 150 : 60;
   const [event] = await tx<Array<{ id: string; visibility: string; circle_id: string | null; block_id: string | null;
     progression_level_slug: string | null; registration_mode: string }>>`
     select id,visibility,circle_id,block_id,progression_level_slug,registration_mode from experiences
@@ -161,9 +176,11 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
       and title=${input.callDetails.title} and timezone=${input.callDetails.timeZone}
       and kind in ('weekly_call','circle_meeting','academy_session','member_event','public_event')
       and status='published' and cancelled_at is null
-      and starts_at>statement_timestamp()+interval '50 minutes' and starts_at<=statement_timestamp()+interval '1 hour'
+      and starts_at>statement_timestamp()+make_interval(mins=>${noticeMinutes}-10)
+      and starts_at<=statement_timestamp()+make_interval(mins=>${noticeMinutes})
     for share`;
-  if (!event) return false;
+  if (!event || foundations01 !== Boolean(input.callDetails.foundations01)
+    || (foundations01 && (event.visibility !== "invite_only" || event.registration_mode !== "internal"))) return false;
   // Hold the registration-access row, not just a computed boolean, until dispatch commits.
   const accessRows = await tx<Array<{ profile_activated_at: Date | null }>>`
     select profile_activated_at from member_registration_access where member_id=${input.memberId}::uuid for share`;
@@ -181,5 +198,8 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
   const meetings = await tx<Array<{ metadata: unknown }>>`select metadata from integration_entity_links
     where provider='google' and local_entity_type='experience' and local_entity_id=${event.id}
       and external_entity_type='meet_space' and livemode=${googleCommunicationLivemode()} for share`;
-  return meetings.some(meeting => Boolean(googleCommunicationUrlFromMetadata("meet", meeting.metadata)));
+  return meetings.some(meeting => {
+    const url = googleCommunicationUrlFromMetadata("meet", meeting.metadata);
+    return Boolean(url) && (!foundations01 || url === input.callDetails!.meetingUrl);
+  });
 }

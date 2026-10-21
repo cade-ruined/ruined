@@ -3,6 +3,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { Resend } from "resend";
 import { getPlatformConfiguration } from "@/lib/platform/config";
+import { assertCadenceRecipientDeliverable, reserveCadenceProviderSlot } from "@/lib/communications/member-email-cadence-provider";
 import { SUPPORT_EMAIL } from "@/lib/support/model";
 import { createRegistrationEmail } from "./registration-email";
 import { renderRegistrationInvitationHero } from "./registration-invitation-image";
@@ -52,13 +53,23 @@ function assertReplayWindow(message: RegistrationMessageClaim) {
   }
 }
 
-async function sendWithTimeout(client: Resend, payload: RegistrationEmailPayload, id: string) {
+async function followupProvider(email: string, deadline: number) {
+  try { await assertCadenceRecipientDeliverable(email,{deadline}); }
+  catch (error) {
+    const suppressed=error instanceof Error && error.message==="recipient_suppressed";
+    throw new RegistrationDeliveryError(suppressed ? "recipient_suppressed" : "provider_preferences_unavailable",suppressed);
+  }
+}
+
+async function sendWithTimeout(client: Resend, payload: RegistrationEmailPayload, id: string, deadline = Infinity) {
+  const timeout = Math.min(PROVIDER_TIMEOUT_MS,deadline-Date.now());
+  if (timeout<=0) throw new RegistrationDeliveryError("delivery_budget");
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       client.emails.send(payload,{ idempotencyKey: `registration:${id}` }),
       new Promise<never>((_,reject) => {
-        timer=setTimeout(() => reject(new RegistrationDeliveryError("provider_timeout")),PROVIDER_TIMEOUT_MS);
+        timer=setTimeout(() => reject(new RegistrationDeliveryError("provider_timeout")),timeout);
       }),
     ]);
   } finally { clearTimeout(timer); }
@@ -83,6 +94,7 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
         const prepared=await withRegistrationMessage(claim,lease,async (tx,message) => {
           assertReplayWindow(message);
           if (!validEmail(message.email)) throw new RegistrationDeliveryError("recipient_unavailable",true);
+          if (message.kind==="pre_foundations") await followupProvider(message.email,started+BATCH_BUDGET_MS);
           let payload=message.delivery_payload;
           if (!payload) {
             const invitation=message.kind==="welcome" ? message.accepted_invitation : null;
@@ -101,7 +113,7 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
               ...createRegistrationEmail({kind:message.kind,memberName:message.member_name,
                 completionBasis:message.completion_basis,siteUrl:site,
                 foundingPricing:message.founding_pricing,
-                paidMembership:message.paid_membership,
+                paidMembership:message.paid_membership,foundationsCall:message.foundations_call,templateOverride:message.template_override,
                 ...(attachments ? {invitationImageSrc:"cid:ruined-invitation"} : {})}),
               ...(attachments ? {attachments} : {}),
             };
@@ -110,7 +122,7 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
           // Both immutable bytes and the uncertainty fence commit BEFORE the
           // provider call. A crash cannot create a new send after key expiry.
           await preserveRegistrationMessage(tx,message.id,payload,
-            message.kind==="welcome" && message.completion_basis==="paid_membership" ? message.paid_reservation_id : null);
+            message.kind==="welcome" && message.completion_basis==="paid_membership" ? message.paid_reservation_id : null,message.delivery_payload ? message.delivery_foundations : message.foundations_call);
         });
         if (prepared.kind!=="ok") { result[prepared.kind]++;continue; }
         const sent=await withRegistrationMessage(claim,lease,async (tx,message) => {
@@ -118,7 +130,12 @@ export async function processRegistrationMessageBatch(requestedLimit=10,options:
           if (!message.first_send_attempt_at || !message.delivery_payload || message.delivery_payload.to!==message.email) {
             throw new RegistrationDeliveryError("saved_message_changed_requires_review",true);
           }
-          const response=await sendWithTimeout(client,message.delivery_payload,message.id);
+          if (message.kind==="pre_foundations") {
+            await followupProvider(message.email,started+BATCH_BUDGET_MS);
+            try { await reserveCadenceProviderSlot(started+BATCH_BUDGET_MS); }
+            catch { throw new RegistrationDeliveryError("delivery_budget"); }
+          }
+          const response=await sendWithTimeout(client,message.delivery_payload,message.id,message.kind==="pre_foundations" ? started+BATCH_BUDGET_MS : Infinity);
           if (response.error || !response.data?.id) {
             const status=response.error?.statusCode;
             const retryable=!status || status===408 || status===429 || status>=500

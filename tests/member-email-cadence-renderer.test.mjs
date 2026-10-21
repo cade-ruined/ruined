@@ -61,8 +61,8 @@ test("server bindings and body text remain escaped while line breaks and exact U
   assert.equal(all.filter(node => node.tagName === "img").length, 0);
   assert.ok(result.html.includes("&lt;img src=x onerror=&quot;"));
   assert.match(result.html, /<br>/);
-  assert.match(result.text, /Thursday, November 5, 2026/);
-  assert.match(result.text, /3:00 PM MST/);
+  assert.match(result.text, /Thursday, November 5/);
+  assert.match(result.text, /3:00(?:–4:30)? PM M[ST]/);
   assert.match(result.text, /Four calls/);
   const expected = new Set(["https://members.example.test/my/experiences#experience-call-one", "https://members.example.test/my", "https://members.example.test/my/account#email-reminders"]);
   for (const anchor of all.filter(node => node.tagName === "a")) {
@@ -115,7 +115,7 @@ test("static copy targets replace just their selected visible span and preserve 
 test("an authored text alternative cannot retain stale content instead of the new cadence body", () => {
   const result = renderer.renderCadenceEmail(fixture({ text: "Old authored message with obsolete event details." }));
   assert.match(result.text, /Jamie,/);
-  assert.match(result.text, /Thursday, November 5, 2026/);
+  assert.match(result.text, /Thursday, November 5/);
   assert.doesNotMatch(result.text, /Old authored message/);
 });
 
@@ -146,13 +146,17 @@ test("unbound variables, forged bindings and unfinished placeholders stop render
   assert.throws(() => renderer.renderCadenceEmail(f), /Add a value/);
 });
 
-test("the approved sign-off artwork remains once and no second text closing is added", () => {
+test("conflicting managed artwork never changes the approved closing and source remains unchanged", () => {
   const f = fixture({ html: '<html><body><h1>{{{HEADING}}}</h1><p>{{{BODY}}}</p><img data-ruined-sign-off="true" src="https://assets.example.test/sign-off.png" alt="All the love" width="140"></body></html>',
     text: '{{{HEADING}}}\n{{{BODY}}}\n\nAll the love\nRU/NED' });
   assert.equal(f.plan.template.signOffText, "All the love");
   const result = renderer.renderCadenceEmail(f);
   assert.equal(nodes(parse5.parse(result.html)).filter(node => node.tagName === "img" && attr(node, "data-ruined-sign-off") !== undefined).length, 1);
-  assert.equal((result.text.match(/All the love/g) ?? []).length, 1);
+  assert.match(result.html,/membership\/email\/after-the-fear-cadehandy2\.png/);
+  assert.doesNotMatch(result.html,/assets\.example\.test\/sign-off\.png/);
+  assert.equal((result.text.match(/All the love/g) ?? []).length, 0);
+  assert.equal((result.text.match(/After the fear\./g) ?? []).length, 1);
+  assert.match(f.plan.template.html, /alt="All the love"/);
   assert.doesNotMatch(result.html, /All the love,<br>/);
 });
 
@@ -164,7 +168,7 @@ test("a long escaped server-generated body is not cut off by the template variab
   assert.ok(result.text.includes("end-of-name,"));
   assert.ok(result.html.includes("end-of-name,"));
   assert.equal(nodes(parse5.parse(result.html)).some(node => node.tagName === "b"), false);
-  assert.match(result.text, /All the love,\nRU\/NED/);
+  assert.match(result.text, /RU\/NED\nAfter the fear\./);
 });
 
 test("plain-text reminder edits preserve personalization, call details, access and preference links", () => {
@@ -174,8 +178,8 @@ test("plain-text reminder edits preserve personalization, call details, access a
   assert.match(result.text, /Jamie,/);
   assert.match(result.text, /Bring your notebook/);
   assert.match(result.text, /Foundations 01/);
-  assert.match(result.text, /Thursday, November 5, 2026/);
-  assert.match(result.text, /3:00 PM MST/);
+  assert.match(result.text, /Thursday, November 5/);
+  assert.match(result.text, /3:00(?:–4:30)? PM M[ST]/);
   for (const path of ["/my/experiences#experience-call-one", "/my/account#email-reminders", "/my"]) assert.ok(result.text.includes(`https://members.example.test${path}`));
   assert.match(result.html, /&lt;img src=/);
   assert.equal(nodes(parse5.parse(result.html)).filter(node => node.tagName === "img").length, 1, "untrusted prose cannot create an image");
@@ -194,4 +198,30 @@ test("message editing rejects forged stages, headers, oversized text and unfinis
   for (const messages of invalid) assert.throws(() => renderer.renderCadenceEmail(fixture({}, { messages })), error => error.status === 400, JSON.stringify(messages));
   assert.doesNotThrow(() => renderer.renderCadenceEmail(fixture({}, { messages: { day_before: { message: "Notes:\n\tBring a pen." } } })));
   assert.doesNotThrow(() => renderer.renderCadenceEmail(fixture({}, { messages: {} })));
+});
+
+test("approved After-the-fear artwork moves to the signature once with its original asset geometry", () => {
+  const f=fixture({html:'<html><body><h1>{{{HEADING}}}</h1><p>{{{BODY}}}</p><img data-ruined-sign-off="true" src="https://assets.example.test/after-the-fear-cadehandy2.png" width="170" height="60" alt="After the fear"></body></html>'});
+  const result=renderer.renderCadenceEmail(f);
+  const images=nodes(parse5.parse(result.html)).filter(node=>node.tagName==='img');
+  assert.equal(images.length,1);assert.equal(attr(images[0],'width'),'170');assert.equal(attr(images[0],'height'),'60');
+  assert.equal(attr(images[0],'src'),'https://assets.example.test/after-the-fear-cadehandy2.png');
+  assert.equal(attr(images[0],'alt'),'After the fear.');
+  assert.match(result.text,/Tyler, Libby, Cade & Mitch\nRU\/NED\nAfter the fear\./);
+  assert.equal(result.text.match(/After the fear\./g).length,1);
+  assert.ok(result.text.indexOf('After the fear.')<result.text.indexOf('Your profile:'));
+});
+
+test("generic approved-design messages allow identity/account bindings, reject call bindings and escape prose", () => {
+  const f=fixture({variables:[variable('HEADING'),variable('BODY'),variable('NAME')],html:'<html><body><h1>{{{HEADING}}}</h1><p>{{{BODY}}}</p><p>{{{NAME}}}</p></body></html>'},{bindings:{NAME:{source:'member_name'}}});
+  const message={subject:'A milestone.',heading:'A milestone.',body:'A <script>literal</script> note.\nhttps://members.example.test/my\n\nRU/NED\nAfter the fear.',memberName:'Jamie <&>',links:['https://members.example.test/my']};
+  const result=renderer.renderCadenceDesignMessage(f.plan,message);
+  assert.equal(result.subject,message.subject);assert.equal(result.from,'Ruined <sender@example.test>');
+  assert.equal(nodes(parse5.parse(result.html)).filter(node=>node.tagName==='script').length,0);
+  assert.match(result.text,/Jamie <&>/);assert.match(result.text,/A <script>literal<\/script> note\./);
+  assert.match(result.text,/After the fear\./);assert.doesNotMatch(result.text,/Foundations 01|November 5/);
+  for(const source of ['call_title','call_date','call_time','call_url']) {
+    assert.throws(()=>renderer.renderCadenceDesignMessage({...f.plan,bindings:{NAME:{source}}},message),/call-specific/);
+  }
+  assert.throws(()=>renderer.renderCadenceDesignMessage(f.plan,{...message,links:['javascript:alert(1)']}),/website links/);
 });

@@ -1223,6 +1223,18 @@ export async function getOpsMemberOperatingRecord(
 
 export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQueue> {
   const sql = getApplicationDatabase();
+  // Deferred CADE review work is installed only after an authorized admin opens
+  // the queue and the canonical assignee is verified. The queue snapshot below
+  // remains read-only; existing tasks and their manual decisions are preserved.
+  await sql.begin(async (tx) => {
+    const access = await requireOperatorAccess(tx, actorAuthUserId);
+    if (!access.roles.includes("ops_admin")) return;
+    const [seed] = await tx`select to_regprocedure('private.ruined_seed_cade_communications_work()') is not null as installed`;
+    if (!seed?.installed) return;
+    await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
+    await requireOperatorAccess(tx, actorAuthUserId, { lock: true, requireAdmin: true });
+    await tx`select private.ruined_seed_cade_communications_work()`;
+  });
   return sql.begin(async (tx) => {
     await tx`set transaction isolation level repeatable read read only`;
     const access = await requireOperatorAccess(tx, actorAuthUserId);

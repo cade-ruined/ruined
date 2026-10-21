@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { StudioEvent } from "@/data/events";
 import { usePublicEvents } from "@/lib/events/use-public-events";
+import { holidayClosures } from "@/lib/communications/member-lifecycle-email-model";
 import type {
   MemberExperienceSummary,
   MemberExperiencesSnapshot,
@@ -273,6 +274,12 @@ export default function MemberExperiences({
   const monthExperiences = allExperiences.filter(
     (experience) => monthKey(monthForExperience(experience)) === monthKey(calendarMonth),
   );
+  const monthHolidays = useMemo(() => {
+    const first = new Date(Date.UTC(calendarMonth.year, calendarMonth.month, 1)).toISOString().slice(0, 10);
+    const last = new Date(Date.UTC(calendarMonth.year, calendarMonth.month + 1, 0)).toISOString().slice(0, 10);
+    return [...holidayClosures(calendarMonth.year - 1), ...holidayClosures(calendarMonth.year)]
+      .filter(period => period.start <= last && period.end >= first);
+  }, [calendarMonth]);
   const selectedDayKey = selected ? dayKey(dateParts(selected.startsAt, selected.timezone)) : null;
   const selectedDayExperiences = selectedDayKey
     ? allExperiences.filter(
@@ -478,13 +485,17 @@ export default function MemberExperiences({
                       const events = monthExperiences.filter(
                         (experience) => dayKey(dateParts(experience.startsAt, experience.timezone)) === dayKey(cellDate),
                       );
+                      const civilDate = `${cellDate.year}-${String(cellDate.month + 1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+                      const holidays = monthHolidays.filter(period => period.start <= civilDate && period.end >= civilDate);
+                      const holidayLabel = holidays.map(period => period.title).join(", ");
+                      const holidayMarker = holidays.length ? <span aria-label={`${holidayLabel} holiday period`} className="mt-auto block h-1 w-3 shrink-0 bg-[var(--color-shop)]" data-holiday-date={civilDate} title={holidayLabel} /> : null;
                       const selectedHere = events.some((experience) => experience.id === selectedId);
                       return (
                         <td className="align-top" key={day}>
                           {events.length ? (
                             <button
                               aria-controls="experience-detail"
-                              aria-label={`${calendarDateLabel(cellDate)}: ${events.map((experience) => experience.title).join(", ")}`}
+                              aria-label={`${calendarDateLabel(cellDate)}: ${events.map((experience) => experience.title).join(", ")}${holidayLabel ? `; ${holidayLabel} holiday period` : ""}`}
                               aria-pressed={selectedHere}
                               className={`group flex h-[3.25rem] w-full flex-col rounded-[3px] p-1.5 text-left transition-[background-color,box-shadow,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] sm:h-[4.5rem] sm:p-2 ${selectedHere ? "bg-[var(--member-subtle)] text-[var(--member-ink)] shadow-[inset_0_-3px_0_#d0312d]" : "bg-[var(--member-soft)] text-[var(--member-muted)] hover:bg-[var(--member-soft)]"}`}
                               onClick={() => selectExperience(events[0])}
@@ -492,13 +503,15 @@ export default function MemberExperiences({
                             >
                               <span className="font-[var(--font-body)] text-[0.62rem] font-black tabular-nums sm:text-xs">{String(day).padStart(2, "0")}</span>
                               <span className={`mt-1 hidden text-pretty font-[var(--font-body)] text-[0.58rem] font-bold leading-[1.05] sm:line-clamp-2 ${selectedHere ? "text-[var(--member-muted)]" : "text-[var(--member-muted)]"}`}>{events[0].title}</span>
+                              {holidayMarker}
                               <span aria-hidden="true" className="mt-auto flex gap-1">
                                 {events.slice(0, 3).map((experience) => <span className={`h-1.5 w-3 rounded-full ${markerClass(experience)}`} key={experience.id} />)}
                               </span>
                             </button>
                           ) : (
-                            <span className="block h-[3.25rem] rounded-[3px] bg-[var(--member-soft)] p-1.5 font-[var(--font-body)] text-[0.6rem] font-semibold tabular-nums text-[var(--member-muted)] sm:h-[4.5rem] sm:p-2 sm:text-xs">
+                            <span aria-label={holidayLabel ? `${calendarDateLabel(cellDate)}: ${holidayLabel} holiday period` : undefined} className="flex h-[3.25rem] flex-col rounded-[3px] bg-[var(--member-soft)] p-1.5 font-[var(--font-body)] text-[0.6rem] font-semibold tabular-nums text-[var(--member-muted)] sm:h-[4.5rem] sm:p-2 sm:text-xs">
                               {String(day).padStart(2, "0")}
+                              {holidayMarker}
                             </span>
                           )}
                         </td>
@@ -508,6 +521,15 @@ export default function MemberExperiences({
                 ))}
               </tbody>
             </table>
+            {monthHolidays.length ? <aside aria-label="Holiday periods" className="mt-4 border-t border-[var(--member-rule)] px-2 pt-4 text-xs leading-relaxed text-[var(--member-muted)]">
+              <p className="font-semibold text-[var(--member-ink)]">Holiday periods</p>
+              <ul className="mt-2 space-y-1">{monthHolidays.map(period => <li key={period.start + period.title}>
+                <span aria-hidden="true" className="mr-2 inline-block h-1 w-3 bg-[var(--color-shop)]" />
+                {period.title}: <time dateTime={period.start}>{new Intl.DateTimeFormat("en-US", {timeZone:"UTC",month:"long",day:"numeric",year:"numeric"}).format(new Date(period.start+"T12:00:00Z"))}</time>
+                {period.end !== period.start ? <> – <time dateTime={period.end}>{new Intl.DateTimeFormat("en-US", {timeZone:"UTC",month:"long",day:"numeric",year:"numeric"}).format(new Date(period.end+"T12:00:00Z"))}</time></> : null}
+              </li>)}</ul>
+              <p className="mt-2">Scheduled calls remain listed. Check each call’s details for its confirmed time.</p>
+            </aside> : null}
           </section>
         )}
       </section>

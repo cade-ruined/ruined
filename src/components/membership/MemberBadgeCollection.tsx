@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import type { BadgeCollectionItem, MemberBadgeCollection as Collection } from "@/lib/membership/badge-collection-model";
-import { badgeArtwork } from "./MemberBadgeCard";
+import { badgeArtwork, badgeStamp } from "./MemberBadgeCard";
 import styles from "./MemberBadgeCollection.module.css";
 
 const awardDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -82,7 +82,7 @@ function BadgeDetails({ badge, id, preview, busy, error, status, returnFocus, on
     onCancel={event => { event.preventDefault(); onDismiss(); }} onClick={event => { if (event.target === event.currentTarget) onDismiss(); }}>
     {badge ? <div className={styles.detail}>
       <div className={styles.detailTop}><span>{preview ? "Badge preview" : badge.earnedAt ? "Earned badge" : "Not yet earned"}</span><button ref={closeRef} type="button" className={styles.close} aria-label="Close badge details" onClick={onDismiss}>×</button></div>
-      <div className={styles.detailArtwork} data-earned={Boolean(badge.earnedAt)} aria-hidden="true">{artwork ? <Image src={artwork.src} alt="" width={440} height={440} sizes="(max-width: 540px) 200px, 240px" draggable={false}/> : <span>•</span>}</div>
+      <div className={styles.detailArtwork} data-earned={Boolean(badge.earnedAt)} aria-hidden="true">{artwork ? <Image src={artwork.src} alt="" width={440} height={440} sizes="(max-width: 540px) 200px, 240px" draggable={false}/> : <span>{badgeStamp(badge)}</span>}</div>
       <h2 id={`${id}-title`}>{badge.label}</h2>
       <p id={`${id}-description`} className={styles.description}>{badge.description}</p>
       {badge.earnedAt ? <p className={styles.earnedDate}><span>{preview ? "Example earned date" : "Earned"}</span><time dateTime={badge.earnedAt}>{awardDate.format(new Date(badge.earnedAt))}</time></p>
@@ -220,7 +220,7 @@ export default function MemberBadgeCollection({ initialCollection, preview = fal
         return <li key={badge.key}><button type="button" className={styles.tile} data-state={state} data-earned={Boolean(badge.earnedAt)} aria-label={`${badge.label}. ${badge.earnedAt ? "Earned" : badge.progressLabel === "Earned" ? "Awaiting confirmation" : badge.progressLabel}. View badge details`} aria-haspopup="dialog" aria-controls={`${id}-dialog`}
           onClick={event => { triggerRef.current = event.currentTarget; setSelectedKey(badge.key); setError(null); setStatus(null); }}>
           <span className={styles.tileTop}><span>{String(index + 1).padStart(2, "0")}</span><span aria-hidden="true">↗</span></span>
-          <span className={styles.artwork} aria-hidden="true">{artwork ? <Image src={artwork.src} alt="" width={360} height={360} sizes="(max-width: 600px) 100px, (max-width: 1023px) 180px, 180px" draggable={false}/> : <span>•</span>}</span>
+          <span className={styles.artwork} aria-hidden="true">{artwork ? <Image src={artwork.src} alt="" width={360} height={360} sizes="(max-width: 600px) 100px, (max-width: 1023px) 180px, 180px" draggable={false}/> : <span>{badgeStamp(badge)}</span>}</span>
           <span className={styles.badgeName}>{badge.label}</span>
           <span className={styles.rule}>{badge.description}</span>
           <span className={styles.tileStatus}>{state === "earned" ? <><span className={styles.earnedMark} aria-hidden="true">✓</span> Earned<span className={styles.privacyLabel}>{badge.publicVisible ? "Public" : "Private"}</span></> : state === "earning" ? <>Earning <span className={styles.percent}>{Math.min(100, Math.floor(badge.progress / badge.target * 100))}%</span></> : "Not earned"}</span>

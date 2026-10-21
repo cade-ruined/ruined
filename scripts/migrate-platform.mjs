@@ -118,6 +118,11 @@ const migrations = [
   "../db/migrations/20261013210000_admin_email_group_campaigns.sql",
   "../db/migrations/20261015120000_circle_early_reveal.sql",
   "../db/migrations/20261015230000_member_badge_collection.sql",
+  "../db/migrations/20261021190000_cade_registration_followup.sql",
+  "../db/migrations/20261021191000_cade_communications_work.sql",
+  "../db/migrations/20261021192000_member_lifecycle_emails.sql",
+  "../db/migrations/20261021193000_member_communication_template_overrides.sql",
+  "../db/migrations/20261021194000_member_registration_anniversary_badge.sql",
 ];
 
 function migrationBody(migration, migrationName) {

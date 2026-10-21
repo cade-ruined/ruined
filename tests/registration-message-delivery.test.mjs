@@ -21,6 +21,10 @@ const paidConfirmation=await load("src/lib/membership/registration-paid-confirma
 const email=await load("src/lib/membership/registration-email.ts", {
   "./registration-pricing-confirmation":pricingConfirmation,"./registration-paid-confirmation":paidConfirmation,
 });
+const consentModel=await load("src/lib/membership/member-communication-preferences-model.ts");
+const preferences=await load("src/lib/membership/member-communication-preferences.ts",{"server-only":{},"node:crypto":crypto,
+  "./member-communication-preferences-model":consentModel});
+const foundationsCall={startsAt:schedules.foundationsBillingScheduleForMonth("2026-11","monthly").callStartsAt[0],timeZone:"America/Denver"};
 const confirmedFoundingPricing = {confirmed:true,awardedAt:"2026-10-02T18:00:00.000Z",
   monthlyAmountCents:34900,annualAmountCents:349000,currency:"usd"};
 const confirmedPaidMembership = {
@@ -30,7 +34,7 @@ const confirmedPaidMembership = {
 };
 
 test("welcome and profile-ready messages preserve their authored palette instead of requesting client recoloring",()=>{
-  const input={memberName:"Alex",siteUrl:new URL("https://members.example.test")};
+  const input={foundationsCall,memberName:"Alex",siteUrl:new URL("https://members.example.test")};
   for(const variant of [
     {kind:"welcome",completionBasis:"saved_card",foundingPricing:confirmedFoundingPricing},
     {kind:"welcome",completionBasis:"paid_membership",paidMembership:confirmedPaidMembership},
@@ -102,7 +106,7 @@ test("paid welcome fails closed without immutable complete payment evidence",()=
 });
 
 test("welcome confirms only a persisted paid-path founding rate with explicit no-charge terms",()=>{
-  const input={kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
+  const input={foundationsCall,kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
   const founding=email.createRegistrationEmail({...input,foundingPricing:confirmedFoundingPricing});
   for (const output of [founding.html,founding.text]) {
     assert.match(output,/Your Founding rate is locked in/);
@@ -127,14 +131,14 @@ test("welcome confirms only a persisted paid-path founding rate with explicit no
 });
 
 test("visual emails use the supplied welcome letter, escape identity, and preserve the separate profile-ready message",async()=>{
-  const input={kind:"welcome",memberName:'Alex <script> & "Friend"',completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
+  const input={foundationsCall,kind:"welcome",memberName:'Alex <script> & "Friend"',completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")};
   const result=email.createRegistrationEmail(input);
   assert.match(result.html,/Alex &lt;script&gt; &amp; &quot;Friend&quot;/);
   assert.doesNotMatch(result.html,/<script>/);
   assert.equal(result.subject,"Welcome to RU/NED");
   assert.match(result.text,/Alex <script> & "Friend", you’re in\./);
   assert.match(result.text,/First, thank you\./);
-  assert.match(result.html,/<strong>Your first Foundations call is November 5 at 3:00PM MT\.<\/strong>/);
+  assert.match(result.html,/<strong>Your first Foundations call is November 5, 2026 at 3:00 PM MT\.<\/strong>/);
   assert.match(result.html,/begins with <strong>Foundations<\/strong>/);
   assert.match(result.text,/including onboarding, access, reminders, and details for your first call/);
   assert.match(result.text,/See you November 5\.\n\nTyler, Libby, Cade & Mitch\nRU\/NED\nAfter the fear\n/);
@@ -171,7 +175,7 @@ test("visual emails use the supplied welcome letter, escape identity, and preser
 });
 
 test("welcome protects all live ink-background text without blending artwork or the dark-on-yellow price panel",()=>{
-  const input={kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test"),foundingPricing:confirmedFoundingPricing};
+  const input={foundationsCall,kind:"welcome",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test"),foundingPricing:confirmedFoundingPricing};
   const {html}=email.createRegistrationEmail(input);
   const attr=(node,name)=>node.attrs?.find(a=>a.name===name)?.value;
   const hasClass=(node,name)=>attr(node,"class")?.split(/\s+/).includes(name);
@@ -231,9 +235,9 @@ test("paid receipt also protects its live dates and terms while preserving dark 
   assert.ok(paymentText>=7);
 });
 
-async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={}) {
+async function fixture(t,{kind="welcome",activated=false,basis="saved_card",beforeMigration=false}={}) {
   const PGlite=await loadPGliteForSchemaChecks(),pg=new PGlite();
-  const ids=Object.fromEntries(["member","person","auth","message"].map(key=>[key,crypto.randomUUID()]));
+  const ids=Object.fromEntries(["member","person","auth","message","event"].map(key=>[key,crypto.randomUUID()]));
   const migration=await readFile(new URL("../db/migrations/20260930140000_member_registration_access.sql",import.meta.url),"utf8");
   const tables=["member_registration_access","member_registration_messages"].map(name=>{
     const table=migration.match(new RegExp(`create table public\\.${name} \\([\\s\\S]+?\\n\\);`));
@@ -252,7 +256,7 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
   await pg.exec(`create role anon; create role authenticated; create schema private;
     create table people(id uuid primary key,status text);
     create table ruined_members(id uuid primary key,person_id uuid,email_normalized text,deleted_at timestamptz);
-    create table member_lifecycle(member_id uuid primary key,account_state text);
+    create table member_lifecycle(member_id uuid primary key,account_state text,standing_state text default 'pre_active',cancellation_effective_at timestamptz);
     create table person_profiles(person_id uuid primary key,display_name text);
     create table person_private_profiles(person_id uuid primary key,legal_name text);
     create table person_email_addresses(id uuid primary key default gen_random_uuid(),person_id uuid,email_normalized text,verification_state text,retired_at timestamptz);
@@ -283,10 +287,19 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     create function private.ruined_registration_founding_pricing_is_current(uuid) returns boolean language sql as
       'select coalesce((select current from test_registration_pricing_current where member_id=$1),true)';
     ${payloadGuards}
-    ${paidPayloadGuard}`);
+    ${paidPayloadGuard}
+    create table member_consents(id bigint generated always as identity primary key,member_id uuid,consent_type text,
+      policy_version text,decision text,source text,actor_auth_user_id uuid,evidence jsonb);
+    create table communication_contacts(id uuid primary key default gen_random_uuid(),email_normalized text,delivery_state text);
+    create table experiences(id uuid primary key,starts_at timestamptz,ends_at timestamptz,timezone text,visibility text,
+      registration_mode text,status text,cancelled_at timestamptz);
+    create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,member_id uuid,status text,source text);
+    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text);`);
+  const followupMigration=await readFile(new URL("../db/migrations/20261021190000_cade_registration_followup.sql",import.meta.url),"utf8");
+  if (!beforeMigration) await pg.exec(followupMigration);
   await pg.query("insert into people values($1,'active')",[ids.person]);
   await pg.query("insert into ruined_members values($1,$2,'alex@example.test',null)",[ids.member,ids.person]);
-  await pg.query("insert into member_lifecycle values($1,'provisional')",[ids.member]);
+  await pg.query("insert into member_lifecycle(member_id,account_state) values($1,'provisional')",[ids.member]);
   await pg.query("insert into person_profiles values($1,'Alex Rivera')",[ids.person]);
   await pg.query("insert into person_private_profiles values($1,'Alex Rivera')",[ids.person]);
   await pg.query("insert into person_email_addresses(person_id,email_normalized,verification_state) values($1,'alex@example.test','verified')",[ids.person]);
@@ -295,7 +308,15 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
   await pg.query(`insert into member_registration_access(member_id,registered_at,completion_basis,profile_activated_at,activated_by_auth_user_id)
     values($1,now(),$2,case when $3 then now() else null end,case when $3 then $4::uuid else null end)`,[ids.member,basis,activated,ids.auth]);
   await pg.query("insert into member_registration_messages(id,member_id,kind) values($1,$2,$3)",[ids.message,ids.member,kind]);
-  const sends=[],responses=[],faults=[],hooks=[],committed=[],rendered=[];
+  if (beforeMigration) await pg.exec(followupMigration);
+  await pg.query("insert into experiences values($1,'2099-11-05T22:00:00Z','2099-11-05T23:30:00Z','America/Denver','invite_only','internal','published',null)",[ids.event]);
+  await pg.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[ids.event]);
+  await pg.query("insert into experience_registrations(experience_id,member_id,status,source) values($1,$2,'registered','ops')",[ids.event,ids.member]);
+  const consent=async(decision="accepted",destination="alex@example.test")=>pg.query(`insert into member_consents(member_id,consent_type,policy_version,decision,source,actor_auth_user_id,evidence)
+    values($1,'communications','member-communications-v1',$2,'member',$3,$4::jsonb)`,[ids.member,decision,ids.auth,JSON.stringify({
+      context:"member_communication_preferences_v1",purpose:"membership_updates",channel:"email",destination,requested:decision==="accepted",marketingConsent:false})]);
+  await consent();
+  const sends=[],responses=[],faults=[],hooks=[],committed=[],rendered=[],providerChecks=[],providerErrors=[],providerSlots=[],slotErrors=[];
   function wrap(client) {
     const sql=(strings,...params)=>{
       const query=strings.reduce((text,part,index)=>text+(index?`$${index}`:"")+part,"");
@@ -306,7 +327,7 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     sql.json=JSON.stringify;
     sql.begin=async operation=>{
       const result=await client.transaction(tx=>operation(wrap(tx)));
-      committed.push((await pg.query("select * from member_registration_messages where id=$1",[ids.message])).rows[0]);
+      committed.push((await pg.query("select * from member_registration_messages")).rows);
       const hook=hooks.shift();if(hook) await hook();
       return result;
     };
@@ -314,17 +335,21 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
   }
   const repo=await load("src/lib/membership/registration-message-repository.ts",{
     "server-only":{},"@/lib/database/server":{getApplicationDatabase:()=>wrap(pg)},
+    "./foundations-schedule":schedules,"./member-communication-preferences":preferences,
   });
   const worker=await load("src/lib/membership/registration-message-delivery.ts",{
     "server-only":{},"node:crypto":crypto,
     "@/lib/platform/config":{getPlatformConfiguration:()=>({mode:"connected"})},
+    "@/lib/communications/member-email-cadence-provider":{assertCadenceRecipientDeliverable:async (email,options)=>{
+      providerChecks.push({email,options});const error=providerErrors.shift();if(error)throw error;
+    },reserveCadenceProviderSlot:async deadline=>{providerSlots.push({deadline,checks:providerChecks.length,sends:sends.length});const error=slotErrors.shift();if(error)throw error;}},
     "@/lib/support/model":{SUPPORT_EMAIL:"connect@theruinedproject.com"},
     "./registration-email":email,"./registration-message-repository":repo,
     "./registration-invitation-image":{renderRegistrationInvitationHero:async input=>{
       rendered.push(input);return Buffer.from(JSON.stringify(input));
     }},
     resend:{Resend:class{emails={send:async(payload,options)=>{
-      const saved=committed.at(-1);
+      const saved=committed.at(-1).find(row=>row.id===options.idempotencyKey.slice("registration:".length));
       assert.ok(saved.first_send_attempt_at,"uncertainty fence committed before send");
       assert.deepEqual(payload,saved.delivery_payload,"identical bytes committed before send");
       sends.push({payload,options});
@@ -336,7 +361,12 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card"}={})
     RESEND_FROM_EMAIL:"Ruined <connect@theruinedproject.com>",NEXT_PUBLIC_SITE_URL:"https://members.example.test"};
   const old=Object.fromEntries(Object.keys(settings).map(key=>[key,process.env[key]]));Object.assign(process.env,settings);
   t.after(async()=>{for(const [key,value] of Object.entries(old)){if(value===undefined)delete process.env[key];else process.env[key]=value;}await pg.close();});
-  return {pg,ids,worker,sends,responses,faults,hooks,rendered,
+  return {pg,ids,worker,sends,responses,faults,hooks,rendered,consent,providerChecks,providerErrors,providerSlots,slotErrors,
+    mature:async()=>{
+      await pg.query("update member_registration_messages set sent_at=now()-interval '25 hours' where id=$1",[ids.message]);
+      await pg.query("update member_registration_messages set available_at=now()-interval '1 minute' where kind='pre_foundations'");
+    },
+    followup:async()=>(await pg.query("select * from member_registration_messages where kind='pre_foundations'")).rows[0],
     invite:async ({origin="member",owner=crypto.randomUUID(),recipient="Alex from invitation",inviter="Original Inviter",tag="original",member=ids.member,
       issued="2026-09-01T12:00:00.000Z",expires="2026-09-03T12:00:00.000Z",accepted="2026-09-02T12:00:00.000Z"}={})=>{
       const id=crypto.randomUUID();
@@ -397,7 +427,7 @@ test("later payment does not replace an original saved-card welcome with a paid 
   const f=await paidFixture(t,{basis:"saved_card"});
   assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
   assert.deepEqual(f.sends[0].payload.text,email.createRegistrationEmail({kind:"welcome",memberName:"Alex Rivera",
-    completionBasis:"saved_card",siteUrl:new URL("https://members.example.test")}).text);
+    completionBasis:"saved_card",foundationsCall,siteUrl:new URL("https://members.example.test")}).text);
   assert.equal((await f.row()).delivery_payment_reservation_id,null);
   assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
 });
@@ -670,7 +700,7 @@ test("a premature profile-ready message and an unverified identity cannot send",
 test("stale lease can recover; attempts stop at manual review",async t=>{
   const f=await fixture(t);await f.pg.query("update member_registration_messages set status='sending',locked_at=now()-interval '10 minutes',lock_token=$1",[crypto.randomUUID()]);
   assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
-  await f.pg.query("update member_registration_messages set status='failed',attempts=5,sent_at=null,provider_message_id=null,available_at=now()");
+  await f.pg.query("update member_registration_messages set status='failed',attempts=5,sent_at=null,provider_message_id=null,available_at=now() where id=$1",[f.ids.message]);
   assert.equal((await f.worker.processRegistrationMessageBatch()).manualReview,1);assert.equal(f.sends.length,1);
 });
 
@@ -772,4 +802,179 @@ test("welcome preserves a non-expiring accepted member invitation without invent
   assert.equal(f.rendered[0].recipientName, "Alex from invitation");
   assert.equal(f.rendered[0].inviterName, "Original Inviter");
   assert.doesNotMatch(JSON.stringify(f.rendered[0]), /1970/);
+});
+
+test("pre-Foundations uses the approved copy and exact assigned date without a payment receipt or profile drip",()=>{
+  const call={startsAt:"2027-03-04T22:00:00.000Z",timeZone:"America/Denver"};
+  const message=email.createRegistrationEmail({kind:"pre_foundations",memberName:"Alex",completionBasis:"complimentary",
+    siteUrl:new URL("https://members.example.test"),foundationsCall:call});
+  assert.equal(message.subject,"A few things worth knowing.");
+  for(const copy of ["You’re in. Now what?","FOUNDATIONS STARTS MARCH 4, 2027 AT 3:00 PM MT.",
+    "Four calls. 90 minutes each. Time to get to work.","Your calendar: The rest of the year lives in your profile, on the left-hand side.",
+    "Your call links: They’re in your calendar. We’ll email them a couple days before each call, too. We’re thoughtful like that.",
+    "Schedule changes: They happen. If they do, you’ll know.","Questions? Check the FAQs on the RU/NED website or reach us at connect@theruinedproject.com.",
+    "Your profile is home base.","Everything membership-related lives there.",
+    "And before you start digging around wondering if you missed something: if it needs your attention, we’ll tell you.",
+    "No scavenger hunts.","No guessing games.","You handle showing up.","We’ll handle keeping you in the loop.","See you in Foundations.","RU/NED"])
+    assert.ok(message.text.includes(copy),copy);
+  assert.match(message.html,/href="https:\/\/members.example.test\/my"/);
+  assert.match(message.html,/color-scheme" content="light only"/);
+  assert.match(message.html,/gmail-blend/);
+  assert.doesNotMatch(message.text,/November 5|\[|first payment is confirmed|Make yourself recognizable/);
+  for(const basis of ["saved_card","complimentary"]) assert.throws(()=>email.createRegistrationEmail({kind:"welcome",memberName:"Alex",
+    completionBasis:basis,siteUrl:new URL("https://members.example.test")}),/schedule_unavailable/);
+});
+
+test("new welcome success atomically queues exactly one followup a full 24 elapsed hours later",async t=>{
+  const f=await fixture(t);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  const welcome=await f.row(),followup=await f.followup();
+  assert.equal(followup.source_welcome_id,welcome.id);
+  assert.equal(new Date(followup.available_at)-new Date(welcome.sent_at),24*60*60*1000);
+  assert.equal(followup.status,"pending");assert.equal(followup.delivery_payload,null);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+  await assert.rejects(f.pg.query("update member_registration_messages set available_at=now() where id=$1",[followup.id]),/full 24 hours/);
+  await f.pg.query("update member_registration_messages set status='sent' where id=$1",[welcome.id]);
+  assert.equal((await f.pg.query("select count(*)::int as n from member_registration_messages where kind='pre_foundations'")).rows[0].n,1);
+  await f.activate();await f.mature();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.equal(f.sends[1].payload.subject,"A few things worth knowing.");
+  assert.match(f.sends[1].payload.text,/NOVEMBER 5, 2099/);
+  assert.equal(f.providerChecks.length,2);assert.equal(f.providerChecks[0].email,"alex@example.test");
+  assert.equal(f.providerSlots.length,1);assert.equal(f.providerSlots[0].checks,2);assert.equal(f.providerSlots[0].sends,1);
+  assert.equal(f.providerSlots[0].deadline,f.providerChecks[1].options.deadline);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("followup pacing budget stops the provider POST while transactional welcome remains unchanged",async t=>{
+  const f=await fixture(t);assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.equal(f.providerSlots.length,0);await f.activate();await f.mature();
+  f.slotErrors.push(new Error("delivery_budget"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  assert.equal(f.sends.length,1);assert.equal(f.providerSlots.length,1);
+  const followup=await f.followup();assert.equal(followup.status,"failed");assert.equal(followup.last_error,"delivery_budget");
+});
+
+test("migration baselines every old welcome out, including an unsent welcome later accepted by provider",async t=>{
+  const f=await fixture(t,{beforeMigration:true});
+  assert.equal((await f.row()).followup_enabled,false);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.equal(await f.followup(),undefined);
+  await assert.rejects(f.pg.query("update member_registration_messages set followup_enabled=true where id=$1",[f.ids.message]),/origin cannot change/);
+  await assert.rejects(f.pg.query("insert into member_registration_messages(member_id,kind,source_welcome_id,available_at) values($1,'pre_foundations',$2,now()+interval '2 days')",[f.ids.member,f.ids.message]),/delivered welcome/);
+});
+
+test("provider uncertainty never starts the 24-hour clock until welcome acceptance commits",async t=>{
+  const f=await fixture(t);f.responses.push(new Error("lost response"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  assert.equal(await f.followup(),undefined);
+  await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.deepEqual(f.sends[0],f.sends[1]);
+  assert.equal(new Date((await f.followup()).available_at)-new Date((await f.row()).sent_at),86400000);
+});
+
+test("followup pause and profile readiness hold never consume an attempt or grant profile access",async t=>{
+  const f=await fixture(t);await f.worker.processRegistrationMessageBatch();await f.mature();
+  delete process.env.MEMBER_REGISTRATION_EMAILS_ENABLED;
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);assert.equal(f.sends.length,1);
+  process.env.MEMBER_REGISTRATION_EMAILS_ENABLED="true";
+  assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1);
+  assert.equal((await f.followup()).last_error,"profile_not_ready");assert.equal((await f.followup()).attempts,0);
+  assert.equal((await f.pg.query("select profile_activated_at from member_registration_access")).rows[0].profile_activated_at,null);
+  await f.activate();await f.mature();
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+});
+
+test("followup rechecks current email preference and suppression immediately before sending",async t=>{
+  for(const change of [async f=>f.consent("withdrawn"),async f=>f.pg.query("insert into communication_contacts(email_normalized,delivery_state) values('alex@example.test','suppressed')")]) {
+    const f=await fixture(t);await f.worker.processRegistrationMessageBatch();await f.activate();await f.mature();
+    f.hooks.push(()=>change(f));
+    assert.equal((await f.worker.processRegistrationMessageBatch()).manualReview,1);
+    assert.equal(f.sends.length,1,"only the transactional welcome reached the provider");
+    assert.equal((await f.followup()).last_error,"membership_email_unavailable");
+  }
+});
+
+test("followup never sends without consent, to an unverified identity, or after Foundations starts",async t=>{
+  for(const change of [async f=>f.pg.query("delete from member_consents"),async f=>f.pg.query("update member_lifecycle set standing_state='paused'"),async f=>f.consent("accepted","old@example.test"),
+    async f=>f.pg.query("update person_email_addresses set verification_state='unverified'"),async f=>{
+      await f.pg.query("update member_registration_access set registered_at=now()-interval '1 year'");
+      await f.pg.query("update experiences set starts_at=now()-interval '1 hour',ends_at=now()+interval '30 minutes'");
+    }]) {
+    const f=await fixture(t);await f.worker.processRegistrationMessageBatch();await f.activate();await f.mature();await change(f);
+    assert.equal((await f.worker.processRegistrationMessageBatch()).cancelled,1);assert.equal(f.sends.length,1);
+  }
+});
+
+test("nonpaid welcome waits for its unambiguous explicit Foundations invitation, never guesses a cohort",async t=>{
+  const f=await fixture(t,{basis:"complimentary"});
+  await f.pg.query("update experience_registrations set source='member'");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1);
+  assert.equal((await f.row()).last_error,"foundations_schedule_unavailable");assert.equal(f.sends.length,0);
+  await f.pg.query("update experience_registrations set source='ops'");
+  const other=crypto.randomUUID();await f.pg.query("insert into experiences select $1,starts_at+interval '1 month',ends_at+interval '1 month',timezone,visibility,registration_mode,status,cancelled_at from experiences",[other]);
+  await f.pg.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[other]);
+  await f.pg.query("insert into experience_registrations(experience_id,member_id,status,source) values($1,$2,'registered','ops')",[other,f.ids.member]);
+  await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1);assert.equal(f.sends.length,0);
+  await f.pg.query("update experience_registrations set status='cancelled' where experience_id=$1",[other]);
+  await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.match(f.sends[0].payload.text,/November 5, 2099/);assert.doesNotMatch(f.sends[0].payload.text,/November 5, 2026/);
+});
+
+test("frozen followup retries identical bytes/key but stops on changed cohort or provider suppression",async t=>{
+  const f=await fixture(t);await f.worker.processRegistrationMessageBatch();await f.activate();await f.mature();
+  f.responses.push(new Error("lost response"));assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  await f.mature();assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.deepEqual(f.sends[1],f.sends[2]);
+  const g=await fixture(t);await g.worker.processRegistrationMessageBatch();await g.activate();await g.mature();
+  g.hooks.push(()=>g.pg.query("update experiences set starts_at=starts_at+interval '1 hour',ends_at=ends_at+interval '1 hour'"));
+  assert.equal((await g.worker.processRegistrationMessageBatch()).manualReview,1);assert.equal(g.sends.length,1);
+  assert.equal((await g.followup()).last_error,"foundations_schedule_changed_requires_review");
+  const h=await fixture(t);await h.worker.processRegistrationMessageBatch();await h.activate();await h.mature();
+  h.providerErrors.push(new Error("recipient_suppressed"));
+  assert.equal((await h.worker.processRegistrationMessageBatch()).manualReview,1);assert.equal(h.sends.length,1);
+});
+
+test("registration editable defaults reproduce authored output and validate only supported plain-text fields",()=>{
+  for(const kind of ["welcome","pre_foundations","profile_ready"]) {
+    const defaults=email.getRegistrationEditableTemplate(kind);
+    const input={kind,foundationsCall,memberName:"Alex",completionBasis:"complimentary",siteUrl:new URL("https://members.example.test")};
+    assert.deepEqual(email.createRegistrationEmail(input),email.createRegistrationEmail({...input,templateOverride:{subject:defaults.subject,body:defaults.body}}));
+    assert.ok(defaults.tokens.includes("{{member_name}}"));
+    const subjectOnly=email.createRegistrationEmail({...input,templateOverride:{subject:"Edited subject",body:defaults.body}});
+    if(kind==="welcome"){assert.match(subjectOnly.html,/first-thank-you-cadehandy2\.png/);assert.match(subjectOnly.html,/after-the-fear-cadehandy2\.png/);}
+    if(kind!=="profile_ready")assert.equal(subjectOnly.text,email.createRegistrationEmail(input).text);
+    assert.throws(()=>email.validateRegistrationTemplateOverride(kind,{subject:"New\nBcc: other@example.test",body:"Body"}),/subject/);
+    for(const token of ["{{secret}}","{{{member_name}}}","{{member_name", "{{}}"])
+      assert.throws(()=>email.validateRegistrationTemplateOverride(kind,{subject:"New",body:token}),/field/);
+  }
+});
+
+test("registration edits escape content while immutable payment facts, terms and functional profile links survive",()=>{
+  const message=email.createRegistrationEmail({kind:"welcome",memberName:'Alex <script>',completionBasis:"paid_membership",
+    paidMembership:confirmedPaidMembership,siteUrl:new URL("https://members.example.test"),
+    templateOverride:{subject:"Welcome {{member_name}}",body:"{{member_name}}, hello.\n\nYour call: {{first_call}}.\n\n<script>alert(1)</script>"}});
+  assert.match(message.text,/Alex <script>, hello/);assert.match(message.html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(message.html,/<script>/);assert.match(message.text,/\$375\.18 USD paid/);
+  assert.match(message.text,/11 further monthly installments/);assert.match(message.text,/Your accepted agreement:/);
+  assert.match(message.text,/November 5, 2026 at 3:00 PM MT/);
+  assert.match(message.html,/color-scheme" content="light only"/);assert.match(message.html,/gmail-blend/);
+  const profile=email.createRegistrationEmail({kind:"profile_ready",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test"),
+    templateOverride:{subject:'A new <heading>',body:"Hello {{member_name}}.\n\nA different profile note."}});
+  assert.match(profile.html,/A new &lt;heading&gt;/);assert.match(profile.text,/does not authorize future charges/);
+  assert.match(profile.html,/href="https:\/\/members.example.test\/my"/);
+  assert.doesNotMatch(profile.text,/Add your photo/);
+});
+
+test("new registration payload uses current approved override once; uncertain retries never adopt a later edit",async t=>{
+  const f=await fixture(t);
+  await f.pg.exec("create table private.member_communication_template_overrides(key text primary key,subject text,body text)");
+  await f.pg.query("insert into private.member_communication_template_overrides values('registration:welcome',$1,$2)",[
+    "A personal welcome for {{member_name}}","Hello {{member_name}}.\n\nYour first call: {{first_call}}."]);
+  f.responses.push(new Error("uncertain response"));
+  assert.equal((await f.worker.processRegistrationMessageBatch()).failed,1);
+  assert.equal(f.sends[0].payload.subject,"A personal welcome for Alex Rivera");assert.match(f.sends[0].payload.text,/November 5, 2099/);
+  await f.pg.query("update private.member_communication_template_overrides set subject='Changed later',body='Do not replace frozen bytes.'");
+  await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.deepEqual(f.sends[0],f.sends[1]);
 });

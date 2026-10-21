@@ -79,6 +79,7 @@ export default function OperatorWorkQueue({ queue, preview = false }: { queue: O
               </p>
               {item.kind === "task" ? <p className="mt-2 break-words text-sm font-medium text-[color:var(--operator-muted)]">{item.claimedByName ? `${isCircleSizeTask(item) ? "Assigned to" : "Claimed by"} ${item.claimedByName}` : "Unclaimed"}</p> : null}
               {item.kind === "task" && (isCircleSizeTask(item) || item.taskType === "registration.billing_review" || item.taskType?.startsWith("registration.checkpoint.")) && item.description ? <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-[color:var(--operator-muted)]">{item.description}</p> : null}
+              {item.kind === "task" && item.taskType === "communications.cade_review" && item.description ? <details className="mt-3 max-w-3xl text-sm"><summary className="cursor-pointer py-2 font-medium">Full communication and decisions</summary><p className="whitespace-pre-wrap break-words leading-relaxed text-[color:var(--operator-muted)]">{item.description}</p></details> : null}
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[color:var(--operator-muted)]">
                 <span className="capitalize">{item.kind.replaceAll("_", " ")}</span>
                 <StateLabel state={item.state} />

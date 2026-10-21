@@ -52,14 +52,14 @@ async function fixture(t) {
     create table member_consents(id bigint generated always as identity primary key,member_id uuid,consent_type text,
       policy_version text,decision text,accepted_at timestamptz,source text,actor_auth_user_id uuid,evidence jsonb,dedupe_key text unique);
     create table communication_contacts(id uuid primary key default gen_random_uuid(),email_normalized text,delivery_state text);
-    create table circles(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
+    create table circles(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz,name text);
     create table circle_member_assignments(id bigint generated always as identity primary key,member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table membership_blocks(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table member_progression_assignments(id uuid primary key default gen_random_uuid(),member_id uuid,
       progression_level_slug text,assigned_at timestamptz,ended_at timestamptz);
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
-      progression_level_slug text,registration_mode text,status text,starts_at timestamptz,ends_at timestamptz,cancelled_at timestamptz,version integer default 1,capacity integer);
+      progression_level_slug text,registration_mode text,status text,starts_at timestamptz,ends_at timestamptz,cancelled_at timestamptz,version integer default 1,capacity integer,metadata jsonb default '{}'::jsonb);
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,member_id uuid,
       status text,source text default 'member',registered_at timestamptz default clock_timestamp(),metadata jsonb,unique(experience_id,person_id));
     create table experience_registration_events(id uuid primary key default gen_random_uuid(),registration_id uuid,
@@ -164,6 +164,19 @@ async function fixture(t) {
 
 test("cadence repository uses canonical access, exact current consent and durable occurrence delivery", async t => {
   const f = await fixture(t);
+  await t.test("canonical call classification and Circle name enrich new snapshots without invalidating legacy snapshots", async () => {
+    await f.reset(); const event=await f.event({title:"An authored title"});
+    const legacy={...event};delete legacy.callType;delete legacy.circleName;
+    await f.db.query(`update experiences set metadata='{"badge_credit":{"track":"membership","stage":"cut","month":"2026-11"}}' where id=$1`,[event.id]);
+    const updated=await f.repo.readCadenceEvent(f.sql,event.id);
+    assert.equal(updated.callType,"CUT");assert.equal(f.repo.sameCadenceEvent(updated,legacy),true);
+    assert.equal(f.repo.sameCadenceEvent(updated,event),false,"new reviewed metadata changes must be reviewed");
+    const circle=id(9901);await f.db.query("insert into circles(id,status,activated_at,name) values($1,'active',now(),'Cedar')",[circle]);
+    await f.db.query(`update experiences set kind='circle_meeting',visibility='circle',circle_id=$2,metadata='{"badge_credit":{"track":"circle","stage":"implementation","month":"2026-11"}}' where id=$1`,[event.id,circle]);
+    const scoped=await f.repo.readCadenceEvent(f.sql,event.id);assert.equal(scoped.callType,"BUILD");assert.equal(scoped.circleName,"Cedar");
+    await f.db.query("update experiences set metadata='{}' where id=$1",[event.id]);
+    assert.equal((await f.repo.readCadenceEvent(f.sql,event.id)).callType,null,"title does not infer a call stage");
+  });
   await t.test("only confirmed eligible recipients queue once across repeated scheduler runs", async () => {
     await f.reset(); const { m, e } = await f.setup();
     for (const status of ["waitlisted", "cancelled", "attended"]) {
@@ -224,7 +237,7 @@ test("cadence repository uses canonical access, exact current consent and durabl
   });
   await t.test("automatic Circle calls require an existing completed member assignment and recheck its enrollment time", async () => {
     await f.reset(); const circleId = id(90002);
-    await f.db.query("insert into circles values($1,'active',$2,null)", [circleId, ago(2880)]);
+    await f.db.query("insert into circles(id,status,activated_at,ends_at) values($1,'active',$2,null)", [circleId, ago(2880)]);
     const m = await f.member(); await f.consent(m);
     await f.db.query("insert into circle_member_assignments(member_id,circle_id,assigned_at) values($1,$2,$3)", [m.memberId, circleId, ago(2880)]);
     const e = await f.event({ registrationMode: "none", visibility: "circle", kind: "circle_meeting", circleId });
@@ -245,7 +258,7 @@ test("cadence repository uses canonical access, exact current consent and durabl
     for (const late of [false, true]) {
       await f.reset(); const m = await f.member(); await f.consent(m);
       const circleId = id(90003), blockId = id(90004);
-      await f.db.query("insert into circles values($1,'active',$2,null)", [circleId, ago(2880)]);
+      await f.db.query("insert into circles(id,status,activated_at,ends_at) values($1,'active',$2,null)", [circleId, ago(2880)]);
       await f.db.query("insert into membership_blocks values($1,'active',$2,null)", [blockId, ago(2880)]);
       await f.db.query("insert into circle_member_assignments(member_id,circle_id,assigned_at) values($1,$2,$3)", [m.memberId, circleId, ago(2880)]);
       await f.db.query("insert into block_circle_assignments(circle_id,block_id,assigned_at) values($1,$2,$3)", [circleId, blockId, ago(late ? 1 : 2880)]);
@@ -321,7 +334,7 @@ test("cadence repository uses canonical access, exact current consent and durabl
   });
   await t.test("Circle reminders require completed Foundations and an active matching assignment", async () => {
     await f.reset(); const circleId = id(90001);
-    await f.db.query("insert into circles values($1,'active',$2,null)", [circleId, ago(2880)]);
+    await f.db.query("insert into circles(id,status,activated_at,ends_at) values($1,'active',$2,null)", [circleId, ago(2880)]);
     const { m, e } = await f.setup({ event: { visibility: "circle", kind: "circle_meeting", circleId }, plan: { snapshot: { kind: "circle" } } });
     await f.db.query("insert into circle_member_assignments(member_id,circle_id,assigned_at) values($1,$2,$3)", [m.memberId, circleId, ago(2880)]);
     const missingAssignment = await f.member(); await f.consent(missingAssignment); await f.roster(missingAssignment, e);
