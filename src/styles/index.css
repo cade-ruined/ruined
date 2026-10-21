@@ -58,6 +58,18 @@ html {
     cursor: none !important;
   }
 
+  /* Native dialogs sit above the body-rendered brand cursor. Explicit native
+     regions restore a cursor on every descendant, including control icons. */
+  html.ruined-brand-cursor-active :where([data-cursor-native] *) {
+    cursor: inherit !important;
+  }
+
+  html.ruined-brand-cursor-active :where(
+    [data-cursor-native] :is(a[href], button:not([disabled]), [role="button"], [role="link"], summary)
+  ) {
+    cursor: pointer !important;
+  }
+
   html.ruined-brand-cursor-active :where(
     input:not([type="button"]):not([type="submit"]):not([type="reset"]),
     textarea,
@@ -89,7 +101,8 @@ html {
     cursor: not-allowed !important;
   }
 
-  html.ruined-brand-cursor-active [data-cursor-native] {
+  html.ruined-brand-cursor-active [data-cursor-native],
+  html.ruined-brand-cursor-active [data-cursor-native]::backdrop {
     cursor: auto !important;
   }
 
