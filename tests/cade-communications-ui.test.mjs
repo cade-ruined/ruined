@@ -102,7 +102,7 @@ test("lifecycle catalog reports unknown, held, globally paused and ready states 
 function lifecycleFixture({preview=false,failSave=false}={}) {
   const h=harness(),calls=[],overviews=[];h.browser.window.location.search='?lifecycle=checkin_90';
   let item={key:'checkin_90',title:'90-day member check-in',enabled:false,ready:false,missing:['Connect the finalized short check-in form.'],settings:{},subject:'How is it going, {{member_name}}?',body:'Tell us here: {{survey_link}}',tokens:['{{member_name}}','{{survey_link}}'],revision:1,nextDueAt:'2026-11-05T22:00:00Z',eligible:2,lastSentAt:null,preview:null};
-  const Component=compile('src/components/platform/OperatorLifecycleEmails.tsx',{react:h.hooks,'@/lib/communications/member-lifecycle-email-model':model,'@/lib/communications/lifecycle-email-view':view,'./operatorStyles':styles},async(url,options={})=>{
+  const Component=compile('src/components/platform/OperatorLifecycleEmails.tsx',{react:h.hooks,'next/navigation':{useSearchParams:()=>new URLSearchParams(h.browser.window.location.search)},'@/lib/communications/member-lifecycle-email-model':model,'@/lib/communications/lifecycle-email-view':view,'./operatorStyles':styles},async(url,options={})=>{
     calls.push({url,...options});
     if(options.method==='PATCH') {
       if(failSave)return Response.json({error:'This message changed. Refresh before saving.'},{status:409});
@@ -158,7 +158,7 @@ test('reusable manual edits save only on explicit action with revision and prese
 test('registration copy editing is revision guarded and preserves dynamic tokens without sending',async()=>{
   const h=harness(),calls=[];
   let saved={key:'registration:welcome',subject:'Welcome, {{member_name}}.',body:'Your profile: {{profile_url}}',tokens:['{{member_name}}','{{profile_url}}'],revision:2};
-  const Component=compile('src/components/platform/OperatorRegistrationEmailTemplates.tsx',{react:h.hooks,'./operatorStyles':styles},async(url,options={})=>{
+  const Component=compile('src/components/platform/OperatorRegistrationEmailTemplates.tsx',{react:h.hooks,'next/navigation':{useSearchParams:()=>new URLSearchParams(h.browser.window.location.search)},'./operatorStyles':styles},async(url,options={})=>{
     calls.push({url,...options});if(options.method==='PATCH'){const input=JSON.parse(options.body);assert.equal(input.revision,2);assert.equal(input.key,'registration:welcome');saved={...saved,...input,revision:3};}return Response.json(saved);
   },h.browser).default;
   const f=controls(()=>h.render(Component,{}));f.draw();await f.settle();
@@ -171,4 +171,41 @@ test('editing baked lifecycle copy requires saving paused before the updated mes
   const f=lifecycleFixture();f.draw();await f.settle();f.change('lifecycle-surveyUrl','https://example.test/survey');f.change('lifecycle-subject','Tell us, {{member_name}}.');f.change('lifecycle-body','What changed? {{survey_link}}');
   assert.equal(f.button('Enable this email').props.disabled,true);f.button('Save without enabling').props.onClick();await f.settle();
   const change=JSON.parse(f.calls.find(x=>x.method==='PATCH').body);assert.equal(change.enabled,false);assert.equal(change.subject,'Tell us, {{member_name}}.');assert.equal(change.body,'What changed? {{survey_link}}');assert.equal(f.button('Enable this email').props.disabled,false);
+});
+
+for (const kind of ['registration','lifecycle']) test(`${kind} query navigation selects the requested template while preserving unsaved copy`,async()=>{
+  const h=harness(),calls=[];
+  const registration=kind==='registration';
+  const parameter=registration?'template':'lifecycle';
+  const first=registration?'registration:welcome':'anniversary';
+  const second=registration?'registration:pre_foundations':'new_year';
+  h.browser.window.location.search=`?${parameter}=${first}`;
+  const responseFor=key=>registration
+    ? {key,subject:`Subject for ${key}`,body:`Copy for ${key}`,tokens:[],revision:1}
+    : {key,title:key,subject:`Subject for ${key}`,body:`Copy for ${key}`,tokens:[],revision:1,settings:{},enabled:false,ready:true,missing:[],eligible:0,nextDueAt:null,lastSentAt:null};
+  const dependencies={react:h.hooks,'next/navigation':{useSearchParams:()=>new URLSearchParams(h.browser.window.location.search)},'./operatorStyles':styles,
+    ...(!registration?{'@/lib/communications/member-lifecycle-email-model':model,'@/lib/communications/lifecycle-email-view':view}:{})};
+  const Component=compile(`src/components/platform/${registration?'OperatorRegistrationEmailTemplates':'OperatorLifecycleEmails'}.tsx`,dependencies,async(url,options={})=>{
+    calls.push({url,...options});
+    assert.equal(options.method,undefined,'Navigation must never save or enable a message');
+    const key=new URL(url,'https://example.test').searchParams.get('key');
+    return Response.json(key?responseFor(key):{items:[responseFor(first),responseFor(second)],recent:[],deliveryEnabled:false,setupRequired:false});
+  },h.browser).default;
+  const props=registration?{}:{onOverview(){}};
+  const f=controls(()=>h.render(Component,props));
+  const subjectId=registration?'registration-copy-subject':'lifecycle-subject';
+  const subject=()=>f.find(node=>node.props?.id===subjectId)?.props.value;
+  const settle=async()=>{await f.settle();await f.settle();};
+  f.draw();await settle();assert.equal(subject(),`Subject for ${first}`);
+  h.browser.window.location.search=`?${parameter}=${second}`;f.draw();await settle();
+  assert.equal(subject(),`Subject for ${second}`,'The mounted editor follows a client-side query change');
+  f.change(subjectId,'Unsaved work stays here');f.draw();
+  const before=calls.length;
+  h.browser.window.location.search=`?${parameter}=${first}`;f.draw();await settle();
+  assert.equal(subject(),'Unsaved work stays here');
+  assert.equal(calls.length,before,'Back/forward navigation does not load over unsaved edits');
+  assert.match(text(f.draw()),/Save or discard.*before opening another template/);
+  f.button(registration?'Discard copy changes':'Discard changes').props.onClick();f.draw();await settle();
+  assert.equal(subject(),`Subject for ${first}`,'Discarding explicitly permits the requested destination to load');
+  assert.equal(calls.some(call=>call.method),false);
 });

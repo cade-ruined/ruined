@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS } from "./operatorStyles";
 const TEMPLATES = [
   {key:"registration:welcome",title:"Registration welcome"},
@@ -13,9 +14,17 @@ export default function OperatorRegistrationEmailTemplates({preview=false,onDirt
   const [key,setKey]=useState(TEMPLATES[0].key),[saved,setSaved]=useState<Template|null>(null),[subject,setSubject]=useState(""),[body,setBody]=useState("");
   const [pending,setPending]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState(""),[refresh,setRefresh]=useState(0);
   const saving=useRef(false),sequence=useRef(0);
+  const requestedKey=useSearchParams().get("template");
+  const routeSelection=useRef<string|null|undefined>(undefined);
   const dirty=!!saved && (subject!==saved.subject || body!==saved.body);
   useEffect(()=>{onDirtyChange?.(dirty);return()=>onDirtyChange?.(false);},[dirty,onDirtyChange]);
-  useEffect(()=>{const selected=new URLSearchParams(window.location.search).get("template");if(TEMPLATES.some(item=>item.key===selected))setKey(selected!);},[]);
+  useEffect(()=>{
+    if(routeSelection.current===requestedKey)return;
+    if(!TEMPLATES.some(item=>item.key===requestedKey)){routeSelection.current=requestedKey;return;}
+    if(dirty){setError("Save or discard the template changes before opening another template.");return;}
+    if(pending||saving.current)return;
+    routeSelection.current=requestedKey;setKey(requestedKey!);
+  },[requestedKey,dirty,pending]);
   useEffect(()=>{
     if(preview)return;
     const controller=new AbortController(),current=++sequence.current;

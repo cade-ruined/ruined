@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { LIFECYCLE_EMAIL_KEYS, LIFECYCLE_TITLES, isLifecycleKey, type LifecycleEmailKey } from "@/lib/communications/member-lifecycle-email-model";
 import { LIFECYCLE_DESCRIPTIONS, type LifecycleEmailItem, type LifecycleEmailOverview } from "@/lib/communications/lifecycle-email-view";
 import { OPERATOR_BUTTON_CLASS, OPERATOR_FIELD_CLASS } from "./operatorStyles";
@@ -36,11 +37,18 @@ export default function OperatorLifecycleEmails({ preview = false, onOverview, o
   const [error, setError] = useState("");
   const sequence = useRef(0);
   const saving = useRef(false);
+  const requestedKey = useSearchParams().get("lifecycle");
+  const routeSelection = useRef<string | null | undefined>(undefined);
   const dirty = detail && (JSON.stringify(settings) !== JSON.stringify(detail.settings) || !!copy && (copy.subject !== detail.subject || copy.body !== detail.body));
   useEffect(() => { onDirtyChange?.(!!dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
   useEffect(() => {
-    const key = new URLSearchParams(window.location.search).get("lifecycle");
-    if (isLifecycleKey(key)) setSelected(key);
+    if (routeSelection.current === requestedKey) return;
+    if (!isLifecycleKey(requestedKey)) { routeSelection.current = requestedKey; return; }
+    if (dirty) { setError("Save or discard the lifecycle changes before opening another template."); return; }
+    if (pending || saving.current) return;
+    routeSelection.current = requestedKey; setSelected(requestedKey);
+  }, [requestedKey, dirty, pending]);
+  useEffect(() => {
     if (preview) return;
     const controller = new AbortController();
     void request<LifecycleEmailOverview>(API, { signal: controller.signal }).then(value => { setOverview(value); onOverview(value); }).catch(failure => { if (!controller.signal.aborted) { setError(failure.message); onOverview(null); } });
