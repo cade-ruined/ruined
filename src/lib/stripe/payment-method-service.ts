@@ -8,10 +8,11 @@ import { getStripe, getStripeLivemode } from "@/lib/stripe/server";
 import { isUuid } from "@/lib/stripe/membership-state";
 import {
   PAYMENT_SETUP_CONTEXT, PAYMENT_SETUP_CONSENT_VERSION, PAYMENT_SETUP_CONSENT_TEXT, PAYMENT_SETUP_CONSENTS,
+  OPERATOR_PAYMENT_SETUP_CONSENT_VERSION, OPERATOR_PAYMENT_SETUP_CONSENT_TEXT,
   PaymentMethodSetupError, type MemberPaymentMethodStatus, type SavedPaymentMethodDisplay,
 } from "@/lib/stripe/payment-method-model";
 import {
-  findSetupMember, getSetupAccount, getSetupAttempt, hasPaymentInProgress, lockSetupMember,
+  findSetupMember, findOperatorSetupMember, getSetupAccount, getSetupAttempt, hasPaymentInProgress, lockSetupMember,
   methodWasDetached, recordMethodDetached, type SetupAccount, type SetupAttempt, type SetupContext,
 } from "@/lib/stripe/payment-method-repository";
 
@@ -36,15 +37,24 @@ function objectId(value: string | { id: string } | null | undefined) { return ty
 function metadata(attempt: SetupAttempt) {
   return { ruined_context: PAYMENT_SETUP_CONTEXT, ruined_member_id: attempt.member_id,
     ruined_setup_attempt_id: attempt.id, ruined_stripe_account_id: attempt.stripe_account_id,
-    ruined_storage_consent: attempt.consent_version };
+    ruined_storage_consent: attempt.consent_version,
+    ...(attempt.consent_version === OPERATOR_PAYMENT_SETUP_CONSENT_VERSION
+      ? { ruined_setup_actor_id: attempt.consent_auth_user_id, ruined_setup_source: "operator" } : {}) };
 }
 function setupSessionParameters(attempt: SetupAttempt, account: SetupAccount): Stripe.Checkout.SessionCreateParams {
+  const operator = attempt.consent_version === OPERATOR_PAYMENT_SETUP_CONSENT_VERSION;
+  const returnPath = operator ? `/ops/members/${attempt.member_id}` : "/my/payment-method";
   return { mode: "setup", currency: "usd", customer: account.stripe_customer_id!,
-        billing_address_collection: "required", customer_update: { address: "auto", name: "auto" },
+        billing_address_collection: "required",
+        // Cardholder billing details belong on the payment method, never on the member's identity.
+        ...(operator ? {} : { customer_update: { address: "auto", name: "auto" } as const }),
         payment_method_data: { allow_redisplay: "always" },
         client_reference_id: attempt.id, metadata: metadata(attempt), setup_intent_data: { metadata: metadata(attempt), description: attempt.consent_text },
-        custom_text: { submit: { message: "Save only. No charge or membership starts today. Any future checkout requires your confirmation." } },
-        success_url: `${attempt.return_origin}/my/payment-method?setup=returned`, cancel_url: `${attempt.return_origin}/my/payment-method?setup=cancelled`,
+        custom_text: { submit: { message: operator
+          ? "Save this card for the selected member's first payment and recurring membership renewals. No charge today. The member must complete their agreement and checkout before billing begins."
+          : "Save only. No charge or membership starts today. Any future checkout requires your confirmation." } },
+        success_url: `${attempt.return_origin}${returnPath}${operator ? "?paymentSetup=returned#membership" : "?setup=returned"}`,
+        cancel_url: `${attempt.return_origin}${returnPath}${operator ? "?paymentSetup=cancelled#membership" : "?setup=cancelled"}`,
         expires_at: Math.floor(new Date(attempt.expires_at).getTime() / 1000), integration_identifier: "ruined_save_payment_rpkmzvqt" };
 }
 function setupSessionKey(attempt: SetupAttempt) {
@@ -88,21 +98,39 @@ async function assertUnused(tx: BillingTransaction, account: SetupAccount, metho
   }
 }
 
+type SetupActor = { authUserId: string; memberId?: string };
+async function resolveSetupMember(tx: BillingTransaction, actor: SetupActor, minimumAge: number) {
+  return actor.memberId
+    ? findOperatorSetupMember(tx, actor.authUserId, actor.memberId, minimumAge)
+    : findSetupMember(tx, actor.authUserId, minimumAge);
+}
 export async function getMemberPaymentMethodStatus(authUserId: string): Promise<MemberPaymentMethodStatus> {
+  return paymentMethodStatus({ authUserId });
+}
+export async function getOperatorMemberPaymentMethodStatus(authUserId: string, memberId: string): Promise<MemberPaymentMethodStatus> {
+  if (!isUuid(memberId) || !isUuid(authUserId)) throw new PaymentMethodSetupError("Choose a valid member.", 400);
+  return paymentMethodStatus({ authUserId, memberId });
+}
+async function paymentMethodStatus(actor: SetupActor): Promise<MemberPaymentMethodStatus> {
   const config = getPlatformConfiguration();
   const empty: MemberPaymentMethodStatus = { enabled: config.stripePaymentSetupReady, eligible: false, canRemove: false, removalPending: false,
     reason: "Saving a payment method is not available yet.", state: "not_saved", paymentMethod: null };
-  if (config.mode !== "connected" || !process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID) return empty;
-  const context = configuredContext();
+  if (config.mode !== "connected") return empty;
   return getBillingDatabase().begin(async tx => {
-    const member = await findSetupMember(tx, authUserId, config.minimumAge);
+    const member = await resolveSetupMember(tx, actor, config.minimumAge);
     if (!member) return { ...empty, reason: "Sign in to an active member account to continue." };
+    if (!process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID) return empty;
+    const context = configuredContext();
     const account = await getSetupAccount(tx, member.id, context);
     const blocked = await hasPaymentInProgress(tx, member.id);
-    const reason = account?.cleanup_pending ? "Your payment method removal is still being confirmed. Try removing it again."
+    let reason = account?.cleanup_pending ? "Your payment method removal is still being confirmed. Try removing it again."
       : member.reason ?? (blocked ? "Your membership checkout is in progress." : config.stripePaymentSetupReady ? null : empty.reason);
     const validConsent = account?.consent_attempt_id && !account.consent_revoked_at;
     const attempt = validConsent ? await getSetupAttempt(tx, account.consent_attempt_id!) : null;
+    if (actor.memberId && attempt && ["creating", "open"].includes(attempt.status)
+      && (attempt.consent_auth_user_id !== actor.authUserId || attempt.consent_version !== OPERATOR_PAYMENT_SETUP_CONSENT_VERSION)) {
+      reason = "Another card setup is in progress. Ask the person who started it to finish, or wait for the two-hour setup session to expire.";
+    }
     const saved = Boolean(validConsent && account?.stripe_payment_method_id && attempt?.status === "saved");
     return { enabled: config.stripePaymentSetupReady, eligible: !reason, reason,
       canRemove: !blocked && Boolean(account?.stripe_payment_method_id || account?.cleanup_pending || (attempt && ["creating", "open"].includes(attempt.status))),
@@ -112,20 +140,39 @@ export async function getMemberPaymentMethodStatus(authUserId: string): Promise<
   });
 }
 
-export async function startMemberPaymentMethodSetup(input: {
+type SetupInput = {
   authUserId: string; attemptId: string; consentAccepted: unknown; consentVersion: unknown; applicationOrigin: string;
-}): Promise<{ url: string }> {
-  if (!isUuid(input.attemptId) || input.consentAccepted !== true || typeof input.consentVersion !== "string" || !Object.hasOwn(PAYMENT_SETUP_CONSENTS, input.consentVersion)) {
+};
+export async function startMemberPaymentMethodSetup(input: SetupInput): Promise<{ url: string }> {
+  return startPaymentMethodSetup(input);
+}
+export async function startOperatorMemberPaymentMethodSetup(input: SetupInput & { memberId: string }): Promise<{ url: string }> {
+  if (!isUuid(input.memberId) || !isUuid(input.authUserId)) throw new PaymentMethodSetupError("Choose a valid member.", 400);
+  return startPaymentMethodSetup(input);
+}
+async function startPaymentMethodSetup(input: SetupInput & { memberId?: string }): Promise<{ url: string }> {
+  const operator = Boolean(input.memberId);
+  const consentVersion = operator ? OPERATOR_PAYMENT_SETUP_CONSENT_VERSION : PAYMENT_SETUP_CONSENT_VERSION;
+  const consentText = operator ? OPERATOR_PAYMENT_SETUP_CONSENT_TEXT : PAYMENT_SETUP_CONSENT_TEXT;
+  const validVersion = operator ? input.consentVersion === consentVersion
+    : typeof input.consentVersion === "string" && Object.hasOwn(PAYMENT_SETUP_CONSENTS, input.consentVersion);
+  if (!isUuid(input.attemptId) || input.consentAccepted !== true || !validVersion) {
     throw new PaymentMethodSetupError("Confirm that you want to save a payment method before continuing.", 400);
   }
   const config = getPlatformConfiguration();
   if (!config.stripePaymentSetupReady) throw new PaymentMethodSetupError("Saving a payment method is not available yet.", 503);
+  // Reject unauthorized operator calls before any provider request; authorization
+  // is checked again under each member lock as the durable setup progresses.
+  if (operator) await getBillingDatabase().begin(async tx => {
+    const member = await resolveSetupMember(tx, input, config.minimumAge);
+    if (!member || member.reason) throw new PaymentMethodSetupError(member?.reason ?? "This member account is unavailable.", 403);
+  });
   const context = await verifiedContext();
   const reservation = await getBillingDatabase().begin(async tx => {
-    let member = await findSetupMember(tx, input.authUserId, config.minimumAge);
+    let member = await resolveSetupMember(tx, input, config.minimumAge);
     if (!member) throw new PaymentMethodSetupError("An active member account is required.", 403);
     await lockSetupMember(tx, member.id);
-    member = await findSetupMember(tx, input.authUserId, config.minimumAge);
+    member = await resolveSetupMember(tx, input, config.minimumAge);
     if (!member || member.reason) throw new PaymentMethodSetupError(member?.reason ?? "Your member account is unavailable.", 403);
     if (await hasPaymentInProgress(tx, member.id)) throw new PaymentMethodSetupError("Finish your existing membership checkout first.");
     await tx`insert into member_payment_method_accounts(member_id,stripe_account_id,livemode)
@@ -139,17 +186,21 @@ export async function startMemberPaymentMethodSetup(input: {
     const [pending] = await tx<Array<SetupAttempt>>`select * from member_payment_method_setup_attempts
       where member_id=${member.id}::uuid and stripe_account_id=${context.accountId} and livemode=${context.livemode} and status in ('creating','open')`;
     let attempt = pending ?? ownAttempt;
+    if (attempt && (attempt.consent_auth_user_id !== input.authUserId ||
+      (operator ? attempt.consent_version !== consentVersion : attempt.consent_version === OPERATOR_PAYMENT_SETUP_CONSENT_VERSION))) {
+      throw new PaymentMethodSetupError("Another card setup is in progress. Ask the person who started it to finish, or wait for the two-hour setup session to expire.");
+    }
     // Old clients may resume their durable v1 consent, but cannot create new
     // evidence for obsolete wording. A current client may resume that same
     // attempt without changing its provider idempotency parameters or consent.
-    if (input.consentVersion !== PAYMENT_SETUP_CONSENT_VERSION && attempt?.consent_version !== input.consentVersion) {
+    if (input.consentVersion !== consentVersion && attempt?.consent_version !== input.consentVersion) {
       throw new PaymentMethodSetupError("Reload this page to review the current card-storage permission.", 400);
     }
     if (!attempt) {
       [attempt] = await tx<Array<SetupAttempt>>`insert into member_payment_method_setup_attempts
         (id,member_id,stripe_account_id,livemode,consent_auth_user_id,consent_version,consent_text,return_origin,expires_at)
         values(${input.attemptId}::uuid,${member.id}::uuid,${context.accountId},${context.livemode},${input.authUserId}::uuid,
-          ${PAYMENT_SETUP_CONSENT_VERSION},${PAYMENT_SETUP_CONSENT_TEXT},${input.applicationOrigin},clock_timestamp()+interval '2 hours') returning *`;
+          ${consentVersion},${consentText},${input.applicationOrigin},clock_timestamp()+interval '2 hours') returning *`;
       await tx`update member_payment_method_accounts set consent_attempt_id=${attempt.id}::uuid,consent_revoked_at=null,updated_at=clock_timestamp()
         where member_id=${member.id}::uuid and stripe_account_id=${context.accountId} and livemode=${context.livemode}`;
     }
@@ -159,7 +210,7 @@ export async function startMemberPaymentMethodSetup(input: {
   // A timeout after Stripe creates the session must resume the same attempt.
   await getBillingDatabase().begin(async tx => {
     await lockSetupMember(tx, reservation.memberId);
-    const member = await findSetupMember(tx, input.authUserId, config.minimumAge);
+    const member = await resolveSetupMember(tx, input, config.minimumAge);
     if (!member || member.id !== reservation.memberId || member.reason) throw new PaymentMethodSetupError(member?.reason ?? "Your member account is unavailable.", 403);
     let account = (await getSetupAccount(tx, member.id, context))!;
     const attempt = (await getSetupAttempt(tx, reservation.attemptId))!;
@@ -183,7 +234,7 @@ export async function startMemberPaymentMethodSetup(input: {
   // webhook reconciliation can always find every provider object we created.
   const outcome = await getBillingDatabase().begin(async tx => {
     await lockSetupMember(tx, reservation.memberId);
-    const member = await findSetupMember(tx, input.authUserId, config.minimumAge);
+    const member = await resolveSetupMember(tx, input, config.minimumAge);
     if (!member || member.reason) throw new PaymentMethodSetupError(member?.reason ?? "Your member account is unavailable.", 403);
     const account = (await getSetupAccount(tx, member.id, context))!;
     const attempt = (await getSetupAttempt(tx, reservation.attemptId))!;
@@ -390,7 +441,7 @@ export async function withdrawMemberPaymentMethod(authUserId: string): Promise<M
 }
 
 /** Called only AFTER paid Checkout has durably reserved its separately consented attempt. */
-export async function getSavedPaymentMethodForCheckout(memberId: string, checkoutAttemptId: string): Promise<{ customerId: string } | null> {
+export async function getSavedPaymentMethodForCheckout(memberId: string, checkoutAttemptId: string, operatorAuthUserId?: string): Promise<{ customerId: string } | null> {
   return getBillingDatabase().begin(async tx => {
     await lockSetupMember(tx, memberId);
     const [paid] = await tx<Array<{ payment_setup_customer_checked: boolean; payment_setup_customer_id: string | null;
@@ -398,8 +449,31 @@ export async function getSavedPaymentMethodForCheckout(memberId: string, checkou
       select payment_setup_customer_checked,payment_setup_customer_id,payment_setup_account_id,payment_setup_livemode
       from stripe_checkout_attempts where id=${checkoutAttemptId}::uuid and member_id=${memberId}::uuid and status in ('creating','open') for update`;
     if (!paid) throw new PaymentMethodSetupError("Your membership checkout reservation is unavailable.");
-    if (paid.payment_setup_customer_checked && !paid.payment_setup_customer_id) return null;
-    const context = process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ? await verifiedContext() : null;
+    let operatorMember: { email: string; name: string; account_id: string | null; livemode: boolean | null } | null = null;
+    if (operatorAuthUserId) {
+      await tx`select private.ruined_require_operator_membership_actor(${operatorAuthUserId}::uuid)`;
+      const [authorization] = await tx<Array<{ email: string; name: string; account_id: string | null; livemode: boolean | null }>>`select
+        authority.member_email_snapshot as email,authority.member_name_snapshot as name,
+        registration.payment_setup_account_id as account_id,registration.payment_setup_livemode as livemode
+        from stripe_checkout_attempts attempt
+        join operator_membership_authorizations authority on authority.id=attempt.operator_authorization_id
+          and authority.member_id=attempt.member_id and authority.reservation_id=attempt.commercial_reservation_id
+          and authority.actor_auth_user_id=attempt.billing_consent_auth_user_id
+        left join member_registration_access registration on registration.member_id=attempt.member_id
+        where attempt.id=${checkoutAttemptId}::uuid and attempt.member_id=${memberId}::uuid
+          and authority.actor_auth_user_id=${operatorAuthUserId}::uuid`;
+      if (!authorization) throw new PaymentMethodSetupError("The administrator does not match this payment authorization.", 403);
+      operatorMember = authorization;
+    }
+    if (paid.payment_setup_customer_checked && !paid.payment_setup_customer_id) {
+      if (operatorMember) throw new PaymentMethodSetupError("This checkout has no bound member billing identity. Review it before payment.");
+      return null;
+    }
+    const context = operatorMember || process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ? await verifiedContext() : null;
+    if (operatorMember && context && (operatorMember.account_id && operatorMember.account_id !== context.accountId ||
+      operatorMember.livemode !== null && operatorMember.livemode !== context.livemode)) {
+      throw new PaymentMethodSetupError("This registration belongs to a different payment configuration.");
+    }
     if (paid.payment_setup_customer_checked) {
       if (!context || paid.payment_setup_account_id !== context.accountId || paid.payment_setup_livemode !== context.livemode) {
         throw new PaymentMethodSetupError("Your checkout belongs to a different payment configuration.");
@@ -407,7 +481,8 @@ export async function getSavedPaymentMethodForCheckout(memberId: string, checkou
       // Preserve the customer even if the saved method expired/detached. Stripe
       // can collect a replacement during this separately consented paid Checkout.
       const customer = await getStripe().customers.retrieve(paid.payment_setup_customer_id!);
-      if (customer.deleted || customer.livemode !== context.livemode) throw new Error("Reserved Checkout customer is unavailable.");
+      if (customer.deleted || customer.livemode !== context.livemode ||
+        operatorMember && customer.email?.trim().toLowerCase() !== operatorMember.email) throw new Error("Reserved Checkout customer is unavailable.");
       return { customerId: customer.id };
     }
     let customerId: string | null = null;
@@ -426,6 +501,19 @@ export async function getSavedPaymentMethodForCheckout(memberId: string, checkou
           }
         }
       }
+    }
+    if (operatorMember && context) {
+      // A fixed member Customer keeps the operator's payer contact details from
+      // changing the beneficiary identity used by fulfillment. The idempotency
+      // key survives a provider success followed by a database/network failure.
+      const customer = customerId ? await getStripe().customers.retrieve(customerId)
+        : await getStripe().customers.create({ email: operatorMember.email, name: operatorMember.name,
+          metadata: { ruined_member_id: memberId, ruined_checkout_attempt_id: checkoutAttemptId, ruined_checkout_source: "operator" } },
+          { idempotencyKey: `ruined-operator-customer:${context.accountId}:${context.livemode}:${checkoutAttemptId}` });
+      if (customer.deleted || customer.livemode !== context.livemode || customer.email?.trim().toLowerCase() !== operatorMember.email) {
+        throw new PaymentMethodSetupError("The member's Stripe billing identity could not be verified.");
+      }
+      customerId = customer.id;
     }
     await tx`update stripe_checkout_attempts set payment_setup_customer_checked=true,payment_setup_customer_id=${customerId},
       payment_setup_account_id=${context?.accountId ?? null},payment_setup_livemode=${context?.livemode ?? null} where id=${checkoutAttemptId}::uuid`;

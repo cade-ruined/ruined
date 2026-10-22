@@ -16,6 +16,7 @@ const [
   supabaseMiddleware,
   rootMiddleware,
   checkoutRoute,
+  checkoutSession,
   memberJoinPage,
   billingRepository,
   platformMigration,
@@ -40,6 +41,7 @@ const [
   source("src/lib/supabase/middleware.ts"),
   source("middleware.ts"),
   source("app/api/stripe/checkout/route.ts"),
+  source("src/lib/stripe/checkout-session.ts"),
   source("app/my/join/page.tsx"),
   source("src/lib/stripe/billing-repository.ts"),
   source("db/migrations/20260819_platform_foundation.sql"),
@@ -230,11 +232,12 @@ test("Checkout derives identity from verified claims and keeps the offer server-
   assert.match(checkoutRoute, /if \(!viewer\)[\s\S]*status: 401/);
   assert.match(checkoutRoute, /requireActivePlatformMemberLink\(viewer\)/);
   assert.match(checkoutRoute, /normalizeEmail\(viewer\.email\)/);
-  assert.match(checkoutRoute, /customer_email: email/);
+  assert.match(checkoutRoute, /createEmbeddedMembershipSession\(\{[^}]*reservation[^}]*email/);
+  assert.match(checkoutSession, /customer_email: email/);
   assert.doesNotMatch(checkoutRoute, /body\.(?:email|price|priceId|amount|quantity)/);
   assert.match(checkoutRoute, /const priceId = await validateStripeMembershipOfferPrice\(commercial\.offerId\)/);
-  assert.match(checkoutRoute, /line_items: lineItems/);
-  assert.match(checkoutRoute, /integration_identifier: "ruined_my_[a-z]{8}"/);
+  assert.match(checkoutSession, /line_items: lineItems/);
+  assert.match(checkoutSession, /integration_identifier: "ruined_my_[a-z]{8}"/);
 });
 
 test("platform migration creates durable, independent, versioned state", () => {

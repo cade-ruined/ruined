@@ -21,13 +21,14 @@ export async function reconcileNativeCheckoutConsent(tx: BillingTransaction, str
   const attemptId = subscription.metadata.ruined_checkout_attempt_id;
   if (!isUuid(attemptId)) return false;
   const [attempt] = await tx<Array<{
+    operator_authorization_id: string | null; billing_consent_auth_user_id: string | null; payment_setup_customer_id: string | null;
     id: string; member_id: string; stripe_session_id: string | null; stripe_subscription_id: string | null;
     billing_consent_source: "member" | "stripe_checkout"; recurring_payment_accepted_at: Date | null;
     checkout_prepared_at: Date; agreement_acceptance_id: string; agreement_version: string;
     commercial_reservation_id: string; offer_id: MembershipOfferId; billing_plan: string; stripe_price_id: string;
     first_charge_at: Date | null; billing_schedule: FoundationsBillingSchedule | null;
     billing_consent_evidence: { sessionId: string; subscriptionId: string } | null;
-  }>>`select id,member_id,stripe_session_id,stripe_subscription_id,billing_consent_source,recurring_payment_accepted_at,
+  }>>`select operator_authorization_id,billing_consent_auth_user_id,payment_setup_customer_id,id,member_id,stripe_session_id,stripe_subscription_id,billing_consent_source,recurring_payment_accepted_at,
       checkout_prepared_at,agreement_acceptance_id,agreement_version,commercial_reservation_id,offer_id,billing_plan,
       stripe_price_id,first_charge_at,billing_schedule,billing_consent_evidence
     from stripe_checkout_attempts where id=${attemptId}::uuid for update`;
@@ -53,6 +54,10 @@ export async function reconcileNativeCheckoutConsent(tx: BillingTransaction, str
   const offer = MEMBERSHIP_OFFERS[attempt.offer_id];
   if (!offer) return mismatch();
   const expectedMetadata: Record<string, string> = {
+    ...(attempt.operator_authorization_id ? {
+      ruined_checkout_source: "operator", ruined_checkout_actor_id: attempt.billing_consent_auth_user_id!,
+      ruined_operator_authorization_id: attempt.operator_authorization_id,
+    } : {}),
     ruined_member_id: attempt.member_id, ruined_checkout_attempt_id: attempt.id,
     ruined_commercial_reservation_id: attempt.commercial_reservation_id,
     agreement_acceptance_id: attempt.agreement_acceptance_id, agreement_version: attempt.agreement_version,
@@ -60,6 +65,10 @@ export async function reconcileNativeCheckoutConsent(tx: BillingTransaction, str
     ruined_offer_id: attempt.offer_id, billing_terms_version: "membership-billing-v2",
     billing_consent_source: "stripe_checkout", billing_prepared_at: new Date(attempt.checkout_prepared_at).toISOString(),
   };
+  if (attempt.operator_authorization_id && (!attempt.billing_consent_auth_user_id || !attempt.payment_setup_customer_id ||
+    id(session.customer) !== attempt.payment_setup_customer_id || id(subscription.customer) !== attempt.payment_setup_customer_id)) return mismatch();
+  if (!attempt.operator_authorization_id && [session.metadata, subscription.metadata].some(metadata =>
+    metadata?.ruined_checkout_source || metadata?.ruined_checkout_actor_id || metadata?.ruined_operator_authorization_id)) return mismatch();
   for (const [key, value] of Object.entries(expectedMetadata)) {
     if (session.metadata?.[key] !== value || subscription.metadata[key] !== value) return mismatch();
   }

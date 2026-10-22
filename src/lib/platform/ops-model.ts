@@ -66,6 +66,10 @@ export type OpsMemberMembershipRecord = {
     receiptId: string | null;
     receiptState: string;
     version: string | null;
+    signerName?: string | null;
+    signerEmail?: string | null;
+    delegatedForName?: string | null;
+    authorizationId?: string | null;
   };
   billing: {
     cancelAtPeriodEnd: boolean;

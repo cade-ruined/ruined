@@ -14,6 +14,7 @@ export type SetupAttempt = {
   status: "creating" | "open" | "saved" | "expired" | "revoked";
   stripe_session_id: string | null; stripe_setup_intent_id: string | null;
   consent_version: string; consent_text: string;
+  consent_auth_user_id: string;
   consent_revoked_at: Date | null; expires_at: Date; return_origin: string;
 };
 
@@ -65,6 +66,21 @@ export async function findSetupMember(tx: BillingTransaction, authUserId: string
         and grant_row.role_slug='member' and grant_row.revoked_at is null)
     limit 1`;
   return member ?? null;
+}
+
+/** Resolve the target separately from the real, currently authorized operator. */
+export async function findOperatorSetupMember(tx: BillingTransaction, authUserId: string, memberId: string, minimumAge: number): Promise<SetupMember | null> {
+  const [admin] = await tx`select identity.auth_user_id from platform_users identity
+    join platform_role_grants grant_row on grant_row.auth_user_id=identity.auth_user_id
+      and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
+    where identity.auth_user_id=${authUserId}::uuid and identity.status='active'
+    for share of identity,grant_row`;
+  if (!admin) throw new PaymentMethodSetupError("Administrator access is required to add a member's card.", 403);
+  const [owner] = await tx<Array<{ auth_user_id: string }>>`select auth_user_id from platform_users
+    where member_id=${memberId}::uuid and status='active' order by auth_user_id limit 1`;
+  if (!owner) return null;
+  const member = await findSetupMember(tx, owner.auth_user_id, minimumAge);
+  return member?.id === memberId ? member : null;
 }
 
 export async function hasPaymentInProgress(tx: BillingTransaction, memberId: string): Promise<boolean> {

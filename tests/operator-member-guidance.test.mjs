@@ -44,6 +44,8 @@ const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
   "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
   ...guidanceDeps,
   "@/components/platform/OperatorMemberReferrals": empty,
+  "@/components/platform/OperatorMemberPaymentMethod": empty,
+  "@/components/platform/OperatorMemberCheckout": empty,
   "@/components/platform/OperatorMemberSetup": { __esModule: true, default: Setup },
   "@/components/platform/OperatorMemberWorkspace": { __esModule: true, default: ({ children }) => React.createElement("div", null, children) },
   "@/components/platform/OperatorMemberAvatar": empty,

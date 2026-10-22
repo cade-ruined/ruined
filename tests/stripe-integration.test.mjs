@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const checkoutRoute = await readFile(new URL("../app/api/stripe/checkout/route.ts", import.meta.url), "utf8");
+const checkoutRouteSource = await readFile(new URL("../app/api/stripe/checkout/route.ts", import.meta.url), "utf8");
+const checkoutRoute = checkoutRouteSource + await readFile(new URL("../src/lib/stripe/checkout-session.ts", import.meta.url), "utf8");
 const checkoutClient = await readFile(new URL("../src/components/membership/JoinForm.tsx", import.meta.url), "utf8");
 const checkoutCompletionPage = await readFile(new URL("../app/my/join/complete/page.tsx", import.meta.url), "utf8");
 const webhookRoute = await readFile(new URL("../app/api/stripe/webhook/route.ts", import.meta.url), "utf8");
@@ -27,7 +28,7 @@ test("embedded membership Checkout fixes the offer on the server", () => {
   assert.match(checkoutRoute, /redirect_on_completion:\s*"always"/);
   assert.match(
     checkoutRoute,
-    /return_url:\s*reservation\.firstChargeAt\s*\|\|\s*billingSchedule\s*\?\s*`\$\{applicationOrigin\}\/my\/activate\?checkout=returned`\s*:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
+    /:\s*reservation\.firstChargeAt\s*\|\|\s*billingSchedule\s*\?\s*`\$\{applicationOrigin\}\/my\/activate\?checkout=returned`\s*:\s*`\$\{applicationOrigin\}\/my\/join\/complete\?session_id=\{CHECKOUT_SESSION_ID\}`/,
   );
   assert.doesNotMatch(checkoutRoute, /\b(?:success_url|cancel_url|payment_method_types)\s*:/);
   assert.doesNotMatch(checkoutRoute, /reservation\.stripeCustomerId/);

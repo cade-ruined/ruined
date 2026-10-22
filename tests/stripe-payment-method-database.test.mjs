@@ -181,4 +181,68 @@ test("storage-only Checkout binds consent, mode and method without activating me
     assert.equal((await db.query("select stripe_payment_method_id from member_payment_method_accounts")).rows[0].stripe_payment_method_id,null);
   });
 
+  await t.test("an administrator can save their own card for a member without impersonation or payment",async()=>{
+    await db.exec(await source("db/migrations/20261022120000_operator_payment_method_setup.sql"));
+    await db.query("update member_lifecycle set account_state='active' where member_id=$1",[id(1)]);
+    for (const n of [200,210]) {
+      await db.query("insert into ruined_members(id,email,email_normalized) values($1,$2,$2)",[id(n),`operator${n}@example.test`]);
+      const adminPerson=(await db.query("select person_id from ruined_members where id=$1",[id(n)])).rows[0].person_id;
+      await db.query("insert into platform_users(auth_user_id,member_id,person_id,email_normalized,status) values($1,$2,$3,$4,'active')",[id(n+1),id(n),adminPerson,`operator${n}@example.test`]);
+      await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[id(n+1)]);
+    }
+    const operatorInput=attemptId=>({...input(attemptId),authUserId:id(201),memberId:id(1),consentVersion:model.OPERATOR_PAYMENT_SETUP_CONSENT_VERSION});
+    const before=async()=>({
+      member:(await db.query("select membership_state,stripe_customer_id from ruined_members where id=$1",[id(1)])).rows,
+      subscriptions:(await db.query("select * from stripe_subscriptions")).rows,
+      agreements:(await db.query("select * from membership_agreement_acceptances")).rows,
+      reservations:(await db.query("select * from membership_commercial_reservations")).rows,
+    });
+    const initial=await before(), requestCount=requests.length;
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup({...operatorInput(id(300)),authUserId:id(2)}),/Administrator/);
+    await assert.rejects(service.getOperatorMemberPaymentMethodStatus(id(2),id(1)),/Administrator/);
+    assert.equal(requests.length,requestCount);
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup({...operatorInput(id(300)),consentVersion:model.PAYMENT_SETUP_CONSENT_VERSION}),/Confirm/);
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup({...operatorInput(id(300)),consentAccepted:false}),/Confirm/);
+    assert.equal((await service.getOperatorMemberPaymentMethodStatus(id(201),id(1))).eligible,true);
+    failCreateAfterRemote=true;
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup(operatorInput(id(300))),/timeout/);
+    await service.startOperatorMemberPaymentMethodSetup(operatorInput(id(300)));
+    const params=requests.at(-1), sessionId=[...sessions.keys()].at(-1);
+    assert.equal(params.mode,"setup");assert.equal(params.customer,"cus_setup");
+    assert.equal(params.customer_update,undefined,"the sponsor must not overwrite the member name/address");
+    assert.equal(params.metadata.ruined_member_id,id(1));
+    assert.equal(params.metadata.ruined_setup_actor_id,id(201));
+    assert.equal(params.metadata.ruined_setup_source,"operator");
+    assert.equal(params.metadata.ruined_storage_consent,model.OPERATOR_PAYMENT_SETUP_CONSENT_VERSION);
+    assert.equal(params.setup_intent_data.description,model.OPERATOR_PAYMENT_SETUP_CONSENT_TEXT);
+    assert.equal(params.success_url,`https://members.example.test/ops/members/${id(1)}?paymentSetup=returned#membership`);
+    assert.equal(params.cancel_url,`https://members.example.test/ops/members/${id(1)}?paymentSetup=cancelled#membership`);
+    for(const key of ["line_items","subscription_data","payment_intent_data"])assert.equal(params[key],undefined);
+    const consent=(await db.query("select member_id,consent_auth_user_id,consent_version,consent_text from member_payment_method_setup_attempts where id=$1",[id(300)])).rows[0];
+    assert.deepEqual(consent,{member_id:id(1),consent_auth_user_id:id(201),consent_version:model.OPERATOR_PAYMENT_SETUP_CONSENT_VERSION,consent_text:model.OPERATOR_PAYMENT_SETUP_CONSENT_TEXT});
+    await assert.rejects(db.query("update member_payment_method_setup_attempts set consent_auth_user_id=$1 where id=$2",[id(2),id(300)]),/immutable/);
+    await assert.rejects(service.startMemberPaymentMethodSetup(input(id(301))),/Another card setup/);
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup({...operatorInput(id(302)),authUserId:id(211)}),/Another card setup/);
+    assert.equal((await service.getOperatorMemberPaymentMethodStatus(id(211),id(1))).eligible,false);
+    await db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1",[id(201)]);
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup(operatorInput(id(300))),/Administrator/);
+    await db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1",[id(201)]);
+    assert.equal((await service.getOperatorMemberPaymentMethodStatus(id(201),id(1))).state,"pending","a return alone cannot mark the card saved");
+    const completed=complete(sessionId);
+    const wrong=structuredClone(completed);wrong.data.object.metadata.ruined_setup_actor_id=id(211);
+    await assert.rejects(event(wrong),/metadata/);
+    await event(completed);await event(completed);
+    const status=await service.getOperatorMemberPaymentMethodStatus(id(201),id(1));
+    assert.equal(status.state,"saved");assert.equal(status.paymentMethod.last4,"4242");
+    assert.deepEqual(await before(),initial,"saving does not accept membership terms, reserve a plan, or start billing");
+    assert.equal((await chosen(303)).customerId,"cus_setup","member's paid checkout reuses the sponsored card customer");
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup(operatorInput(id(304))),/already saved/);
+    await service.withdrawMemberPaymentMethod(id(2));
+    await insertPaid(305);
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup(operatorInput(id(306))),/existing membership checkout/);
+    await db.query("delete from stripe_checkout_attempts where id=$1",[id(305)]);
+    await db.query("update member_lifecycle set account_state='closed' where member_id=$1",[id(1)]);
+    await assert.rejects(service.startOperatorMemberPaymentMethodSetup(operatorInput(id(307))),/not available/);
+  });
+
 });
