@@ -122,6 +122,7 @@ async function fixture(enabled, options) {
     "@/lib/membership/commercial-repository": {},
     "@/lib/membership/published-agreement": { getPublishedMembershipAgreement: fail },
     "@/lib/stripe/portal": { validateMembershipPortalConfiguration: fail },
+    "@/lib/stripe/checkout-session": { createEmbeddedMembershipSession: fail },
     "@/lib/stripe/membership-state": await load("src/lib/stripe/membership-state.ts"),
     "@/lib/stripe/billing-repository": {
       MembershipCheckoutConflictError: class extends Error {}, MembershipCheckoutPlanConflictError: class extends Error {},
