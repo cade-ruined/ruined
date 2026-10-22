@@ -7,6 +7,11 @@ export const PAYMENT_SETUP_CONSENTS = {
 export const PAYMENT_SETUP_CONSENT_VERSION = "save-payment-method-v2";
 export const PAYMENT_SETUP_CONSENT_TEXT = PAYMENT_SETUP_CONSENTS[PAYMENT_SETUP_CONSENT_VERSION];
 
+// An operator saves their own card for the selected member. This is not the
+// member's agreement, and must never reuse the member's storage consent.
+export const OPERATOR_PAYMENT_SETUP_CONSENT_VERSION = "operator-save-member-card-v1";
+export const OPERATOR_PAYMENT_SETUP_CONSENT_TEXT = "I am the cardholder and authorize this member to use my saved card for their first membership payment and recurring renewals under the plan and terms they review at checkout. Stripe will save my card securely. Saving it today does not charge it, start a subscription, or accept the member's agreement.";
+
 export type SavedPaymentMethodDisplay = {
   type: string;
   label: string;

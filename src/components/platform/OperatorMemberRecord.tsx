@@ -15,6 +15,7 @@ import OperatorMemberDeleteAction from "@/components/platform/OperatorMemberDele
 import OperatorMemberReferrals from "@/components/platform/OperatorMemberReferrals";
 import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspace";
 import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
+import OperatorMemberPaymentMethod from "@/components/platform/OperatorMemberPaymentMethod";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { guidanceForMemberRecord, memberGuidanceAction } from "@/lib/platform/operator-member-guidance";
@@ -180,7 +181,7 @@ export default function OperatorMemberRecord({
               <StateLabel state={membership.onboarding.state} />
             </div>
             {registration ? <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">The five registration checkpoints are shown above. Service setup can remain pending until membership begins.</p> : null}
-            <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">The member completes these steps in their own account. This record is for review, not accepting an agreement or making a payment for them.</p>
+            <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">The member accepts their agreement and completes membership checkout in their own account. An Administrator can save a card for them below; saving a card does not accept the agreement or make a payment.</p>
             <div className="mt-3 grid gap-2">
               {membership.onboarding.requirements.map((requirement) => (
                 <div className="operator-glass flex flex-wrap items-center justify-between gap-2 rounded-none px-3 py-2" key={requirement.key}>
@@ -282,6 +283,7 @@ export default function OperatorMemberRecord({
                 </p>
               </div>
             ) : null}
+            {access.roles.includes("ops_admin") ? <OperatorMemberPaymentMethod key={header.memberId} memberId={header.memberId} memberName={header.preferredName} preview={preview} /> : null}
           </div>
         </div>
         <details className="mt-3 operator-bento-card" aria-labelledby="member-state-details">
