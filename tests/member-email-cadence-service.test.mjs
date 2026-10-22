@@ -145,7 +145,7 @@ test("admin cadence reviews and activations persist safely through real PostgreS
     await f.reset(); const result = await f.service.previewCadence(f.admin, f.draft);
     assert.equal(result.previews.length, 4); assert.equal(result.occurrences.length, 4);
     assert.equal(result.recipients.filter(row => row.eligible).length, 1);
-    for (const preview of result.previews) { assert.match(preview.html, /Foundations/); assert.doesNotMatch(preview.html, /RUINED_CADENCE_BODY/); assert.match(preview.text, /Your call details and access link/); }
+    for (const preview of result.previews) { assert.match(preview.html, /Foundations/); assert.doesNotMatch(preview.html, /RUINED_CADENCE_BODY/); assert.match(preview.text, /Your call details and access link|JOIN HERE:/); }
     const saved = (await f.rows("reviews"))[0];
     assert.equal(typeof saved.snapshot, "object"); assert.deepEqual(saved.snapshot.plan.template, f.template);
     assert.equal(saved.actor_auth_user_id, f.admin); assert.equal(saved.consumed_at, null);
@@ -346,7 +346,7 @@ test("saved automation management reads project approvals without changing deliv
     const detail = await response.json();
     assert.equal(detail.template.version, f.template.version); assert.equal(detail.draft.templateVersion, f.template.version);
     assert.equal(detail.template.html, f.template.html); assert.equal(detail.previews.length, 4); assert.equal(detail.occurrences.length, 4);
-    assert.match(detail.previews[0].text, /Every RU\/NED Membership starts in the same place/);
+    assert.match(detail.previews[0].text, /every RU\/NED Membership starts in the same place/);
     assert.equal(detail.status, "upcoming"); assert.equal(detail.nextReminder.stage, "orientation");
     assert.equal(detail.recipientsChecked, true); assert.equal(detail.recipients.length, 2);
     assert.deepEqual(Object.keys(detail.recipients[0]).sort(), ["eligible", "email", "memberId", "name", "reason"]);
@@ -506,7 +506,7 @@ test("message edits survive review, approval, reopen and revision without changi
     assert.match(preview.text, /Member,/);
     assert.match(preview.text, /Bring one honest question/);
     assert.match(preview.text, /Manage your email reminders/);
-    assert.match(preview.text, /Your call details and access link/);
+    assert.match(preview.text, /Your call details and access link|JOIN HERE:/);
     assert.deepEqual((await f.rows("reviews"))[0].snapshot.plan.messages, messages);
     const active = await f.service.activateCadence(f.admin, reviewed.reviewToken);
     const detail = await f.service.getCadenceManagementDetail(f.admin, scope, active.id);

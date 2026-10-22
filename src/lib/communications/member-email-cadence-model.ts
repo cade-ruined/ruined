@@ -16,7 +16,7 @@ export const CADENCE_STAGE_LABELS: Record<CadenceStage, string> = {
 };
 export const MEMBER_EMAIL_CADENCE_WINDOW_MINUTES = 30;
 
-export type CadenceEvent = { id: string; title: string; startsAt: string; endsAt: string; timeZone: string };
+export type CadenceEvent = { id: string; title: string; startsAt: string; endsAt: string; timeZone: string; callType?: string | null; circleName?: string | null };
 export type CadenceConfiguration = { enabled: boolean; activatedAt: string | null; ready: boolean };
 export type CadenceOccurrence = { stage: CadenceStage; dueAt: string; expiresAt: string };
 

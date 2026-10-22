@@ -69,6 +69,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     create table circle_member_assignments(id bigint generated always as identity primary key,member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table membership_blocks(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
+    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text);
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
       progression_level_slug text,registration_mode text,status text,starts_at timestamptz,cancelled_at timestamptz);
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,member_id uuid,status text,source text default 'member');
@@ -132,7 +133,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     await db.exec(`truncate private.member_sms_automation_jobs,private.member_sms_delivery_attempts,private.member_sms_inbound_receipts,
       private.member_sms_phone_suppressions,member_consents,ruined_members,people,person_private_profiles,person_email_addresses,platform_users,platform_role_grants,
       member_lifecycle,member_registration_access,circles,circle_member_assignments,membership_blocks,block_circle_assignments,
-      experiences,experience_registrations,integration_entity_links,member_complimentary_grants cascade;`);
+      experiences,experience_registrations,integration_entity_links,member_complimentary_grants,private.member_email_cadence_event_bindings cascade;`);
     sends.length = 0; providerFails = false;
   }
   async function nextReminder() {
@@ -165,6 +166,48 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     assert.match(sends[1].body, /TIME \/ SEE starts/); assert.match(sends[1].body, /\/my\/experiences/);
     assert.match(sends[1].body, /M[SD]T/);
     assert.equal((await automation.runMemberSmsAutomation()).processed, 0);
+  });
+  await t.test("only explicit Foundations 01 sends at 150 minutes with approved copy and current Meet link", async () => {
+    for (const minutes of [151,148,139,58]) {
+      await reset(); const m=await member(); await consent(m); const e=await event({ startsAt:ago(-minutes), title:"First call" });
+      await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+      await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[e.eventId]);
+      await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')",[e.eventId,m.personId]);
+      const result=await automation.runMemberSmsAutomation();
+      assert.equal(result.accepted,minutes===148 ? 1 : 0, `${minutes} minutes`);
+      if (minutes===148) {
+        const when=new Intl.DateTimeFormat("en-US",{timeZone:e.timeZone,hour:"numeric",minute:"2-digit",timeZoneName:"shortGeneric"}).format(new Date(e.startsAt));
+        assert.equal(sends[1].body,`RU/NED Foundations starts today at ${when}. Your Google Meet link: https://meet.google.com/abc-defg-hij. We’ll see you soon. Reply STOP to unsubscribe or HELP for help.`);
+        assert.equal((await automation.runMemberSmsAutomation()).processed,0);
+        const job=(await db.query("select reminder_key,extract(epoch from starts_at-due_at)/60 as notice from private.member_sms_automation_jobs where reminder_kind='call_reminder'")).rows[0];
+        assert.equal(Number(job.notice),150);
+        assert.ok(job.reminder_key.endsWith(":60m"),"original occurrence identity survives changed notice timing");
+      }
+    }
+    await reset(); const m=await member(); await consent(m); await event({startsAt:ago(-148),title:"FOUNDATIONS 01"});
+    assert.equal((await automation.runMemberSmsAutomation()).processed,0,"title alone never classifies a call");
+  });
+  await t.test("Foundations 01 timing never grants consent or access and dispatch rechecks classification and exact Meet link", async () => {
+    for (const mutation of [
+      async (_m,e)=>db.query("update private.member_email_cadence_event_bindings set kind='foundations_02' where experience_id=$1",[e.eventId]),
+      async (_m,e)=>db.query(`update integration_entity_links set metadata='{"meetingUri":"https://meet.google.com/xyz-abcd-efg"}' where local_entity_id=$1`,[e.eventId]),
+      async (m)=>db.query("insert into member_registration_access values($1,null)",[m.memberId]),
+      async (m)=>consent(m,ago(0),{decision:"withdrawn"}),
+    ]) {
+      await reset(); const m=await member(); const consentId=await consent(m); await acceptedConfirmation(m,consentId);
+      const e=await event({startsAt:ago(-148)});
+      await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+      await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[e.eventId]);
+      await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')",[e.eventId,m.personId]);
+      const {input,options}=await nextReminder();const reservation=await transport.reserveMemberSmsAttempt(sql,input,"fixture",options);
+      assert.ok(reservation.attemptId);await mutation(m,e);
+      assert.equal((await transport.dispatchReservedMemberSms(sql,input,reservation,()=>assert.fail("Changed Foundations source must not send"),options)).status,"blocked");
+    }
+    await reset();const m=await member();const e=await event({startsAt:ago(-148)});
+    await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+    await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[e.eventId]);
+    await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')",[e.eventId,m.personId]);
+    assert.equal((await automation.runMemberSmsAutomation()).processed,0,"explicit roster never implies SMS consent");
   });
   await t.test("too early, stale, cancelled, draft, offline and wrong-mode calls never generate reminders", async () => {
     await reset(); const m = await member(); await consent(m);

@@ -48,7 +48,7 @@ test("saved email editor exposes every stage and keeps design machinery collapse
   assert.equal(stageButtons[2].props["aria-pressed"], true);
   assert.equal(f.find(node => node.type === "details").props.open, false);
   assert.ok(f.field("cadence-message-subject").props.value.startsWith("Tomorrow:"));
-  assert.match(f.field("cadence-message-body").props.value, /We’re about to begin/);
+  assert.match(f.field("cadence-message-body").props.value, /There’s nothing you need to prepare before tomorrow\. Just come ready to participate\./);
   assert.doesNotMatch(f.field("cadence-message-body").props.value, /https:|All the love|November 5/);
   assert.match(text(f.render()), /greeting, call details, access link, reminder preferences, and sign-off are added automatically/);
 });
@@ -73,12 +73,16 @@ test("draft preview includes custom prose with automatic recipient and call deta
   f.change("cadence-message-subject", "Your next conversation");
   f.change("cadence-message-body", "Bring a notebook and a question.");
   const preview = f.find(node => node.props?.["aria-label"] === "Draft email content");
-  assert.match(text(preview), /Your next conversation/);
-  assert.match(text(preview), /Alex,\n\nBring a notebook and a question\./);
-  assert.match(text(preview), /November 5, 2026/);
-  assert.match(text(preview), /\/my\/experiences#experience-call-1/);
-  assert.match(text(preview), /Manage your email reminders/);
-  assert.match(text(preview), /All the love,\nRU\/NED/);
+  const previewText = text(preview);
+  assert.match(previewText, /Your next conversation/);
+  assert.match(previewText, /Alex, tomorrow we begin\./);
+  assert.match(previewText, /Foundations 01 — November\nThursday, November 5\n3:00–4:30 PM MT/);
+  assert.match(previewText, /\/my\/experiences#experience-call-1/);
+  assert.match(previewText, /Bring a notebook and a question\./);
+  assert.ok(previewText.indexOf("JOIN HERE:") < previewText.indexOf("Bring a notebook and a question."), "call details remain before the editable prose");
+  assert.match(previewText, /Manage your email reminders/);
+  assert.equal(previewText.split("Tyler, Libby, Cade & Mitch\nRU/NED\nAfter the fear.").length - 1, 1, "the approved signature appears once");
+  assert.doesNotMatch(previewText, /All the love/);
   assert.equal(f.reviews(), 0);
 });
 

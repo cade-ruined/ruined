@@ -5,10 +5,10 @@ const earned = collection => collection.badges.filter(x=>x.earnedAt).map(x=>x.ke
 const item = (collection,key)=>collection.badges.find(x=>x.key===key);
 const credit=(track,stage=null,month=null)=>({track,stage,month});
 
-test('ten collection goals are owner scoped; explicit Continue is durable, idempotent and released-account gated',async t=>{
+test('eleven collection goals are owner scoped; explicit Continue is durable, idempotent and released-account gated',async t=>{
   const f=await badgeCollectionFixture(t);
   const first=await f.getMemberBadgeCollection(id(1));
-  assert.equal(first.ownerId,id(1));assert.equal(first.badges.length,10);assert.deepEqual(earned(first),[]);assert.equal(first.seenAt,null);
+  assert.equal(first.ownerId,id(1));assert.equal(first.badges.length,11);assert.deepEqual(earned(first),[]);assert.equal(first.seenAt,null);
   assert.equal(await f.shouldIntroduceMemberBadges(id(1)),true);
   await f.markMemberBadgeCollectionSeen(id(1));const seen=(await f.getMemberBadgeCollection(id(1))).seenAt;
   await f.markMemberBadgeCollectionSeen(id(1));assert.equal((await f.getMemberBadgeCollection(id(1))).seenAt,seen);

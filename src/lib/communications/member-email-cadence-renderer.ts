@@ -9,7 +9,7 @@ const BODY_MARKER="RUINED_CADENCE_BODY_48b79064";
 const escape=(value:string)=>value.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
 const SOURCES: CadenceBindingSource[]=["literal","member_name","call_title","call_date","call_time","call_url","profile_url","preferences_url"];
 
-export function validateCadenceDesign(draft: CadenceDraft,template: ResendEmailTemplate) {
+export function validateCadenceDesign(draft: Pick<CadenceDraft,"bodyTarget"|"headingTarget"|"bindings"|"copy"|"messages">,template: ResendEmailTemplate) {
   const messageError=cadenceMessagesValidationError(draft.messages);
   if (messageError) throw new AdminEmailError(400,messageError);
   if (template.status!=="published" || template.campaignOnly) throw new AdminEmailError(400,"Choose a published individual-email design from Resend.");
@@ -32,7 +32,10 @@ export function validateCadenceDesign(draft: CadenceDraft,template: ResendEmailT
 }
 
 /** Only replace an inspected text node. A body variable in an attribute is never converted into HTML. */
-function bodyHtml(html: string,body: string,links: string[]): string {
+function bodyHtml(html: string,body: string,links: string[],signOff?: string): string {
+  const signature = "RUINED_CADENCE_SIGNATURE_9f62267d";
+  const lastSignOff = body.lastIndexOf("\nAfter the fear.");
+  if (signOff && lastSignOff >= 0) body = body.slice(0,lastSignOff) + "\n" + signature + body.slice(lastSignOff + "\nAfter the fear.".length);
   const document=parse(html,{sourceCodeLocationInfo:true});
   const replacements: Array<{start:number;end:number;value:string}>=[];
   function visit(node: DefaultTreeAdapterTypes.Node,blocked=false) {
@@ -44,8 +47,9 @@ function bodyHtml(html: string,body: string,links: string[]): string {
       const source=html.slice(location.startOffset,location.endOffset);
       const alternatives=links.map(link=>link.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).sort((a,b)=>b.length-a.length);
       const split=new RegExp(`(${alternatives.join("|")})`,"g");
-      const rendered=body.split(split).map(part=>links.includes(part)
+      let rendered=(alternatives.length ? body.split(split) : [body]).map(part=>links.includes(part)
         ? `<a href="${escape(part)}" style="color:#ffca2c;overflow-wrap:anywhere;word-break:break-word;text-decoration:underline">${escape(part)}</a>` : escape(part).replaceAll("\n","<br>")).join("");
+      if (signOff) rendered=rendered.replace(signature,signOff);
       replacements.push({start:location.startOffset,end:location.endOffset,value:source.replaceAll(BODY_MARKER,rendered)});
     }
     if ("childNodes" in node) node.childNodes.forEach(child=>visit(child,hidden));
@@ -55,6 +59,67 @@ function bodyHtml(html: string,body: string,links: string[]): string {
   for (const item of replacements.sort((a,b)=>b.start-a.start)) html=html.slice(0,item.start)+item.value+html.slice(item.end);
   if (html.includes(BODY_MARKER)) throw new AdminEmailError(400,"The message area cannot also be used in a link, image, or hidden field.");
   return html;
+}
+
+export type CadenceDesignPlan = Pick<CadencePlan,"template"|"bodyTarget"|"headingTarget"|"bindings"|"copy"|"siteUrl">;
+export type CadenceDesignMessage = { subject: string; heading: string; body: string; memberName: string; links?: string[] };
+
+/** Reuse only the approved After-the-fear artwork. A different managed sign-off
+ * never adds unrelated wording to an approved message. Original asset geometry
+ * is retained; its alternative text carries the exact approved closing. */
+function matchingSignature(template: ResendEmailTemplate,body: string): string | undefined {
+  if (!body.includes("\nAfter the fear.")) return;
+  // The official 440×84 asset is displayed at half size without changing its geometry.
+  const official='<img data-ruined-sign-off="true" src="https://members.theruinedproject.com/membership/email/after-the-fear-cadehandy2.png" alt="After the fear." width="220" height="42" style="display:block;width:220px;max-width:100%;height:auto;border:0">';
+  if (template.signOffText?.trim().replace(/[.!]$/,"").toLowerCase()!=="after the fear") return template.signOffText ? official : undefined;
+  const document=parse(template.html,{sourceCodeLocationInfo:true}); let markup: string | undefined;
+  function visit(node: DefaultTreeAdapterTypes.Node) {
+    if (markup) return;
+    if ("tagName" in node && node.tagName==="img" && node.sourceCodeLocation) {
+      const attr=(name:string)=>node.attrs.find(item=>item.name===name)?.value;
+      if ((attr("data-ruined-sign-off")!==undefined || /(?:^|\/)after-the-fear-cadehandy2\.png(?:[?#].*)?$/.test(attr("src") ?? ""))
+        && /^https:\/\//.test(attr("src") ?? "") && !attr("src")?.includes("{{")) {
+        const location=node.sourceCodeLocation; markup=template.html.slice(location.startOffset,location.endOffset);
+        const alt=location.attrs?.alt;
+        if (alt) markup=markup.slice(0,alt.startOffset-location.startOffset)+'alt="After the fear."'+markup.slice(alt.endOffset-location.startOffset);
+        else markup=markup.replace(/^<img/i,'<img alt="After the fear."');
+        return;
+      }
+    }
+    if ("childNodes" in node) node.childNodes.forEach(visit);
+  }
+  visit(document);return markup ?? official;
+}
+function renderDesign(plan: CadenceDesignPlan,message: CadenceDesignMessage,sources: Record<string,string>) {
+  validateCadenceDesign(plan,plan.template);
+  for (const link of message.links ?? []) {
+    let url: URL;
+    try { url=new URL(link); } catch { throw new AdminEmailError(400,"Use complete website links in the message."); }
+    if (!["https:","http:"].includes(url.protocol) || url.username || url.password || /[\u0000-\u0020\u007f]/.test(link)) throw new AdminEmailError(400,"Use complete website links in the message.");
+  }
+  const values: Record<string,string>={};const edits: Record<string,string>={...plan.copy};
+  for (const [key,binding] of Object.entries(plan.bindings)) {
+    if (binding.source!=="literal" && !Object.hasOwn(sources,binding.source)) throw new AdminEmailError(400,"This design uses call-specific fields. Choose a message design without call bindings.");
+    values[key]=binding.source==="literal" ? binding.value ?? "" : sources[binding.source];
+  }
+  const set=(target:string,value:string)=>{const key=target.slice(target.indexOf(":")+1);if(target.startsWith("variable:")) values[key]=value;else edits[key]=value;};
+  set(plan.bodyTarget,BODY_MARKER);if(plan.headingTarget)set(plan.headingTarget,message.heading);
+  const artwork=matchingSignature(plan.template,message.body);
+  const rendered=renderResendEmailTemplate(plan.template,{subject:message.subject,values,copy:edits,typography:"ruined",signOff:null},{campaign:false});
+  const html=bodyHtml(rendered.html,message.body,message.links ?? [],artwork);
+  let text=plainTextFromHtml(html,true);
+  for (const link of message.links ?? []) text=text.replaceAll(`${link} (${link})`,link);
+  if (artwork) text=text.replace("RU/NED\n\nAfter the fear.","RU/NED\nAfter the fear.");
+  return {...rendered,from:rendered.from || process.env.RESEND_FROM_EMAIL?.trim() || "",html,text};
+}
+
+/** Render an approved lifecycle message without importing call details or
+ * accepting browser-provided HTML. This function does not persist or send. */
+export function renderCadenceDesignMessage(plan: CadenceDesignPlan,message: CadenceDesignMessage) {
+  const site=new URL(plan.siteUrl);
+  if (!["https:","http:"].includes(site.protocol) || site.username || site.password) throw new AdminEmailError(400,"Choose a valid membership website address.");
+  const profile=new URL("/my",site).toString(),preferences=new URL("/my/account#email-reminders",site).toString();
+  return renderDesign(plan,message,{member_name:message.memberName,profile_url:profile,preferences_url:preferences});
 }
 
 export function renderCadenceEmail(delivery: Pick<CadenceDelivery,"plan"|"event"|"stage"|"memberName"|"email">): CadenceEmailPayload {
@@ -67,18 +132,8 @@ export function renderCadenceEmail(delivery: Pick<CadenceDelivery,"plan"|"event"
     call_time:new Intl.DateTimeFormat("en-US",{timeZone:event.timeZone,hour:"numeric",minute:"2-digit",timeZoneName:"short"}).format(new Date(event.startsAt)),
     call_url:copy.callUrl,profile_url:copy.profileUrl,preferences_url:copy.preferencesUrl,
   };
-  const values: Record<string,string>={}; const edits: Record<string,string>={...plan.copy};
-  for (const [key,binding] of Object.entries(plan.bindings)) values[key]=binding.source==="literal" ? binding.value ?? "" : sources[binding.source];
-  const set=(target:string,value:string)=>{ const colon=target.indexOf(":"); const key=target.slice(colon+1);
-    if (target.startsWith("variable:")) values[key]=value; else edits[key]=value; };
-  set(plan.bodyTarget,BODY_MARKER);
-  if (plan.headingTarget) set(plan.headingTarget,copy.heading);
-  // The approved Resend artwork remains the sign-off where one exists.
-  const body=plan.template.signOffText ? copy.body.replace(/\n\nAll the love,\nRU\/NED$/,"") : copy.body;
-  const rendered=renderResendEmailTemplate(plan.template,{subject:copy.subject,values,copy:edits,typography:"ruined"},{campaign:false});
-  const html=bodyHtml(rendered.html,body,[copy.callUrl,copy.profileUrl,copy.preferencesUrl]);
-  return {...rendered,to:delivery.email,from:rendered.from || process.env.RESEND_FROM_EMAIL?.trim() || "",
-    html,text:plainTextFromHtml(html,true)};
+  return {...renderDesign(plan,{subject:copy.subject,heading:copy.heading,body:copy.body,memberName:delivery.memberName,
+    links:[copy.callUrl,copy.profileUrl,copy.preferencesUrl]},sources),to:delivery.email};
 }
 
 export function cadencePreviewPlan(draft: CadenceDraft,template: ResendEmailTemplate,event: CadencePlan["event"]): CadencePlan {

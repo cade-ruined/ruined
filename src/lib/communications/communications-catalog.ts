@@ -1,3 +1,4 @@
+import { CADE_MANUAL_TEMPLATES } from "./cade-communications";
 import { CADENCE_KIND_LABELS, type CadenceStage } from "./member-email-cadence-model";
 import { AUTOMATION_STAGE_NAMES, automationNeedsAttention, automationStageTiming, automationStages } from "./email-automation-view";
 import type { CadenceManagementOverview, CadenceManagementSummary } from "./member-email-cadence-management";
@@ -27,7 +28,7 @@ export type CommunicationItem = {
   trigger: string;
   audience: string;
   timing: string;
-  status: "enabled" | "paused" | "attention" | "planned" | "manual";
+  status: "enabled" | "paused" | "attention" | "planned" | "manual" | "held" | "approved";
   statusLabel: string;
   detail?: string;
   test?: boolean;
@@ -110,13 +111,14 @@ function cadenceItems(item: CadenceManagementSummary, scope: "event" | "sequence
   });
 }
 
-const PLANNED_EMAILS: ReadonlyArray<Pick<CommunicationItem, "id" | "bucket" | "title" | "trigger" | "audience" | "detail">> = [
-  { id: "planned:email:missed-call", bucket: "missed-protocol", title: "Missed-call follow-up", trigger: "A missed call, once the attendance rule is approved.", audience: "Members meeting the future missed-call criteria.", detail: "Not automated. Attendance evidence, deadlines, follow-up limits, and copy still need approval." },
-  { id: "planned:email:unfinished-work", bucket: "missed-protocol", title: "Unfinished-work follow-up", trigger: "An unfinished requirement, once completion rules are approved.", audience: "Members meeting the future unfinished-work criteria.", detail: "Not automated. Required work, deadlines, escalation, and copy still need approval." },
-  { id: "planned:email:foundations-completion", bucket: "foundations", title: "Foundations completion email", trigger: "Verified Foundations completion, once email rules are approved.", audience: "Members whose completion meets the approved email criteria.", detail: "The completion email is planned. Its timing and copy still need approval; this does not change existing completion or badge behavior." },
-  { id: "planned:email:circle-reveal", bucket: "membership", title: "Circle reveal email", trigger: "Approved Circle placement and readiness, once email rules are approved.", audience: "Members ready to be introduced to their assigned Circle.", detail: "This email is planned. Existing Circle access and in-app notifications remain separate." },
-  { id: "planned:email:milestones", bucket: "misc", title: "Birthdays, anniversaries, and milestones", trigger: "An approved birthday, anniversary, or milestone rule.", audience: "Members meeting the future milestone criteria.", detail: "Not automated. Date anchors, benefits, timing, and copy still need approval." },
-  { id: "planned:email:campaigns", bucket: "misc", title: "Holidays, launches, and clothing drops", trigger: "An approved campaign and scheduled date.", audience: "The campaign's approved marketing audience.", detail: "No recurring campaign is configured here. Dates, benefits, marketing permissions, and copy must be approved separately." },
+const HELD_EMAILS: ReadonlyArray<Pick<CommunicationItem, "id" | "bucket" | "title" | "trigger" | "audience" | "detail" | "timing">> = [
+  { id: "held:email:profile-drip", bucket: "pre-foundations", title: "Make yourself recognizable", trigger: "Proposed profile follow-up after A few things worth knowing.", audience: "Members who still need their profile information.", timing: "Proposed: three days later at 3 p.m. MT; held", detail: "Confirm profile access, the completion link and timing. Full draft and decisions are in Libby’s work queue." },
+  { id: "held:email:foundations-completion", bucket: "foundations", title: "Foundations completion", trigger: "Verified completion of every approved Foundations requirement.", audience: "Completed members only; incomplete members do not graduate through this email.", timing: "Held: confirm the send time after completion", detail: "Resolve completion criteria, Artifact award and fulfillment, leader title and downstream access. No Artifact or completion is inferred from attendance alone." },
+  { id: "held:email:circle-reveal", bucket: "membership", title: "Circle reveal", trigger: "Verified completion and a confirmed Circle placement.", audience: "Completed members with a ready Circle, leader and call access.", timing: "Proposed: 24 hours after completion; held", detail: "Confirm reveal timing, Circle / leader information, access and the actual next calls. Existing placement behavior is separate; this email remains off." },
+  { id: "held:email:missed-incomplete", bucket: "missed-protocol", title: "Missed / incomplete call protocols", trigger: "Unfinished process decision across Foundations, Membership and Circle calls.", audience: "Not selected until attendance, work and escalation rules are approved.", timing: "Not scheduled", detail: "One complete Libby work item contains all drafts and questions for review with Ty and Cade. No reusable templates, automatic follow-ups, deadlines or access consequences are enabled." },
+  { id: "held:email:incomplete-foundations", bucket: "foundations", title: "Incomplete Foundations / blocked progression", trigger: "An incomplete Foundations requirement after the final call, once the process is agreed.", audience: "Not selected until the completion and catch-up rules are approved.", timing: "Not scheduled", detail: "A separate Libby work item retains this Foundations draft and its outstanding requirements, deadline, catch-up and progression decisions. No email or access restriction is enabled by this draft." },
+  { id: "held:email:future-events", bucket: "misc", title: "Future event communications", trigger: "A future event whose process and communication strategy still need approval.", audience: "Not selected until the event category is approved.", timing: "Not scheduled", detail: "One category-level Libby work item holds the source and example. No send template or event automation is created." },
+  { id: "held:email:later-anniversaries", bucket: "misc", title: "Registration anniversaries · year two and beyond", trigger: "A later registration anniversary, after its copy and rules are approved.", audience: "Future eligible anniversary members.", timing: "Not scheduled", detail: "The approved automated anniversary covers year one only. Libby’s work queue holds later-year planning." },
 ];
 
 /** Read-only inventory. Grouping never enrolls a member, creates a plan, or enables delivery. */
@@ -136,16 +138,28 @@ export function buildCommunicationsCatalog(overview: CadenceManagementOverview, 
     if (workflow.id === "registration") {
       items.push({ ...common, id: "workflow:registration-welcome", bucket: "registration", title: "Registration welcome",
         trigger: "Registration becomes complete after its required information and payment requirements are met.",
-        timing: "Once on completed registration. Pending messages are checked every five minutes." });
+        timing: "Once on completed registration. Pending messages are checked every five minutes.",
+        action: { label: "Edit template", href: "/ops/messages?mode=automations&bucket=registration&template=registration:welcome#registration-email-copy" } });
+      items.push({ ...common, id: "workflow:pre-foundations", bucket: "pre-foundations", title: "A few things worth knowing.",
+        trigger: "A new welcome is successfully delivered after this follow-up is released.",
+        timing: "24 elapsed hours after the welcome; checked every five minutes.",
+        action: { label: "Edit template", href: "/ops/messages?mode=automations&bucket=pre-foundations&template=registration:pre_foundations#registration-email-copy" },
+        detail: `${workflow.controlBoundary} Waits for completed registration, a confirmed Foundations schedule and profile access. It does not replay old welcomes or send after the first call starts.` });
       items.push({ ...common, id: "workflow:profile-access", bucket: "pre-foundations", title: "Profile access ready",
         trigger: "An administrator grants the member profile access.",
-        timing: "Once after profile access is granted. Pending messages are checked every five minutes." });
+        timing: "Once after profile access is granted. Pending messages are checked every five minutes.",
+        action: { label: "Edit template", href: "/ops/messages?mode=automations&bucket=pre-foundations&template=registration:profile_ready#registration-email-copy" } });
     } else {
       items.push({ ...common, id: `workflow:${workflow.id}`, bucket: workflow.id === "renewal" ? "membership" : "misc",
         title: workflow.title, trigger: workflow.trigger, timing: workflow.timing });
     }
   }
-  items.push(...PLANNED_EMAILS.map(item => ({ ...item, channel: "emails" as const, status: "planned" as const, statusLabel: "Planned", timing: "Not scheduled" })));
+  items.push(...HELD_EMAILS.map(item => ({ ...item, channel: "emails" as const, status: "held" as const, statusLabel: "Held", action: { label: "View work queue", href: "/ops/work" } })));
+  items.push(...CADE_MANUAL_TEMPLATES.map(item => ({ id: `manual:${item.id}`, channel: item.channel, bucket: item.bucket, title: item.title,
+    trigger: "An administrator selects and completes this approved one-off copy.", audience: "Only the affected, permitted recipients selected and reviewed for this message.",
+    timing: "Manual · as needed", status: "manual" as const, statusLabel: "Copy approved · manual", detail: item.dependency,
+    action: { label: item.channel === "emails" ? "Use in composer" : "Prepare text", href: `/ops/messages?mode=emails&manualTemplate=${item.id}` },
+  })));
   const seen = new Set<string>();
   return [...items, ...supplemental].filter(item => {
     if (!item.id || seen.has(item.id) || !CHANNEL_VALUES.includes(item.channel) || !BUCKET_VALUES.includes(item.bucket)) return false;

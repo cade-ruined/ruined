@@ -18,7 +18,8 @@ const management = compile("src/lib/communications/member-email-cadence-manageme
 const model = compile("src/lib/communications/member-email-cadence-model.ts");
 const copy = compile("src/lib/communications/member-email-cadence-copy.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
 const automationView = compile("src/lib/communications/email-automation-view.ts", name => { assert.equal(name, "./member-email-cadence-model"); return model; });
-const catalog = compile("src/lib/communications/communications-catalog.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
+const manualCopy = compile("src/lib/communications/cade-communications.ts");
+const catalog = compile("src/lib/communications/communications-catalog.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView, "./cade-communications": manualCopy })[name] ?? noDependency(name));
 const navigation = compile("src/lib/communications/email-automation-navigation.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
 const styles = compile("src/components/platform/operatorStyles.ts");
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
@@ -79,6 +80,9 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     return { ...node, props: { ...node.props, children: resolve(node.props?.children, `${path}/children`) } };
   }
   const deps = {
+    "./OperatorRegistrationEmailTemplates": { __esModule: true, default: "registration-email-templates" },
+    "./OperatorLifecycleEmails": { __esModule: true, default: "lifecycle-emails" },
+    "@/lib/communications/lifecycle-email-view": { lifecycleCommunicationItems: () => [] },
     react: hooks, "next/link": { __esModule: true, default: "a" },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
     "@/components/platform/operatorStyles": styles,
@@ -309,7 +313,7 @@ test("local sample preview renders fixed copy edits as text without a provider r
   const html = f.find(node => node.type === "iframe").props.srcDoc;
   assert.match(html, /RU\/NED &lt;team&gt;/);
   assert.doesNotMatch(html, /Hi there,|Your name|<team>/);
-  assert.match(html, /We’re about to begin/);
+  assert.match(html, /tomorrow we begin/);
   assert.equal(f.calls.length, 0);
 });
 
@@ -894,8 +898,8 @@ test("catalog search, status and tests controls filter communication entries wit
   assert.equal(include.props.checked, false);
   include.props.onChange({ currentTarget: { checked: true } });
   assert.ok(displayed().some(id => id.includes(founders.id)));
-  f.change("communications-status", "planned");
-  assert.deepEqual(displayed(), ["planned:email:foundations-completion"]);
+  f.change("communications-status", "held");
+  assert.deepEqual(displayed(), ["held:email:foundations-completion", "held:email:incomplete-foundations"]);
   f.change("communications-search", "no-match");
   assert.deepEqual(displayed(), []);
   assert.match(text(f.draw()), /No communications match these filters/);

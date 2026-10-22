@@ -5,7 +5,7 @@ export type MemberSmsReminder = {
   kind: "call_reminder" | "membership_reminder" | "opt_in_confirmation";
   /** Confirmation is bound to the exact authenticated checkbox event. */
   expectedConsentId?: string;
-  callDetails?: { eventId: string; title: string; startsAt: string; timeZone: string };
+  callDetails?: { eventId: string; title: string; startsAt: string; timeZone: string; foundations01?: boolean; meetingUrl?: string };
 };
 export type MemberSmsBlockedReason = "member_inactive" | "phone_missing" | "no_current_consent" | "phone_suppressed" | "source_ineligible";
 export type MemberSmsSendResult =
@@ -28,6 +28,13 @@ export function memberSmsReminderBody(input: MemberSmsReminder, publicOrigin: st
     const { title, startsAt, timeZone, eventId } = input.callDetails;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId) || !title.trim() || title.length > 200 || !Number.isFinite(Date.parse(startsAt))) {
       throw new Error("Invalid call reminder details.");
+    }
+    if (input.callDetails.foundations01) {
+      const meeting = new URL(input.callDetails.meetingUrl ?? "");
+      if (meeting.protocol !== "https:" || meeting.hostname !== "meet.google.com" || meeting.username || meeting.password
+        || meeting.search || meeting.hash || !/^\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(meeting.pathname)) throw new Error("Invalid Foundations call link.");
+      const when = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", timeZoneName: "shortGeneric" }).format(new Date(startsAt));
+      return `RU/NED Foundations starts today at ${when}. Your Google Meet link: ${meeting.toString()}. We’ll see you soon. Reply STOP to unsubscribe or HELP for help.`;
     }
     const when = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric",
       hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(startsAt));
