@@ -1,4 +1,5 @@
 import "server-only";
+import type { AgreementReceiptDelegation } from "./agreement-receipt";
 import { getMemberCommunicationPreferences, saveMemberCommunicationPreferences } from "./member-communication-preferences";
 import type { MemberCommunicationPreferencesInput } from "./member-communication-preferences-model";
 import { recordRegistrationLegalAcknowledgment } from "./registration-legal";
@@ -1093,6 +1094,7 @@ export type AgreementReceiptDownload = {
     id: string;
     signerEmail: string;
     signerName: string;
+    delegation?: AgreementReceiptDelegation | null;
   };
   receipt: {
     byteSize: number;
@@ -1134,6 +1136,8 @@ export async function getAgreementReceiptDownload(
       signer_name_snapshot: string;
       storage_bucket: string | null;
       storage_path: string | null;
+      operator_authorization_id: string | null;
+      delegation: AgreementReceiptDelegation | null;
     }>
   >`
     select
@@ -1155,10 +1159,19 @@ export async function getAgreementReceiptDownload(
       acceptance.agreement_version_snapshot,
       acceptance.agreement_title_snapshot,
       acceptance.agreement_content_sha256,
-      acceptance.agreement_body_snapshot
+      acceptance.agreement_body_snapshot,
+      acceptance.operator_authorization_id,
+      case when authority.id is not null then jsonb_build_object(
+        'authorizationId',authority.id,'authorizedAt',authority.authorized_at,
+        'memberName',authority.member_name_snapshot,'memberEmail',authority.member_email_snapshot,
+        'authorityVersion',authority.authority_version,'authorityText',authority.authority_text
+      ) end as delegation
     from membership_agreement_receipts receipt
     join membership_agreement_acceptances acceptance
       on acceptance.id = receipt.acceptance_id
+    left join operator_membership_authorizations authority on authority.id=acceptance.operator_authorization_id
+      and authority.member_id=acceptance.member_id and authority.person_id=acceptance.person_id
+      and authority.actor_auth_user_id=acceptance.accepted_by_auth_user_id
     where acceptance.member_id = ${identity.memberId}::uuid
       and acceptance.person_id = ${identity.personId}::uuid
     order by receipt.generated_at desc
@@ -1166,6 +1179,7 @@ export async function getAgreementReceiptDownload(
   `;
   const row = rows[0];
   if (!row) return null;
+  if (row.operator_authorization_id && !row.delegation) throw new Error("Agreement authorization evidence is unavailable.");
   return {
     acceptance: {
       acceptedAt: toIso(row.accepted_at)!,
@@ -1178,6 +1192,7 @@ export async function getAgreementReceiptDownload(
       id: row.acceptance_id,
       signerEmail: row.signer_email_snapshot,
       signerName: row.signer_name_snapshot,
+      delegation: row.delegation ? { ...row.delegation, authorizedAt: toIso(row.delegation.authorizedAt)! } : null,
     },
     receipt: {
       byteSize: Number(row.byte_size),

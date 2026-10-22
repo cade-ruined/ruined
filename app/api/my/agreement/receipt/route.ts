@@ -40,6 +40,7 @@ export async function GET() {
         agreementVersion: download.acceptance.agreementVersion,
         signerEmail: download.acceptance.signerEmail,
         signerName: download.acceptance.signerName,
+        delegation: download.acceptance.delegation,
       });
       const renderedByteSize = Buffer.byteLength(receiptText, "utf8");
       const renderedSha256 = agreementReceiptSha256(receiptText);

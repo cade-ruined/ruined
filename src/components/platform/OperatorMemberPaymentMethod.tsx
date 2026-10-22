@@ -102,8 +102,8 @@ export default function OperatorMemberPaymentMethod({ memberId, memberName, prev
   const saved = status?.state === "saved";
   const canSave = status?.enabled && status.eligible && !saved && !status.removalPending;
   return <section className="operator-glass mt-4 rounded-none p-4" aria-label={`Saved card for ${memberName}`}>
-    <h4 className="ui-heading text-sm font-semibold">{saved ? "Saved payment method" : "Add a card for this member"}</h4>
-    <p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">Save a card for {memberName}. No charge is made here; the member still accepts the membership agreement and completes checkout.</p>
+    <h4 className="ui-heading text-sm font-semibold">{saved ? "Saved payment method" : "Save a card for later (optional)"}</h4>
+    <p className="mt-2 text-sm leading-relaxed text-[color:var(--operator-muted)]">Save a card for {memberName} without starting checkout. No charge is made here. To accept the agreement and pay now, use Complete membership above.</p>
     {preview ? <p className="mt-2 text-xs text-[color:var(--operator-muted)]">Preview only. No card is saved or charged.</p> : null}
     {loading ? <p className="mt-3 text-sm" role="status">Checking saved payment method…</p> : saved ? <div className="mt-3 text-sm" role="status">
       <p className="font-semibold">{status.paymentMethod?.label ?? "Payment method saved"}</p>

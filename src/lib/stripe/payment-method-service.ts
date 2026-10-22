@@ -441,7 +441,7 @@ export async function withdrawMemberPaymentMethod(authUserId: string): Promise<M
 }
 
 /** Called only AFTER paid Checkout has durably reserved its separately consented attempt. */
-export async function getSavedPaymentMethodForCheckout(memberId: string, checkoutAttemptId: string): Promise<{ customerId: string } | null> {
+export async function getSavedPaymentMethodForCheckout(memberId: string, checkoutAttemptId: string, operatorAuthUserId?: string): Promise<{ customerId: string } | null> {
   return getBillingDatabase().begin(async tx => {
     await lockSetupMember(tx, memberId);
     const [paid] = await tx<Array<{ payment_setup_customer_checked: boolean; payment_setup_customer_id: string | null;
@@ -449,8 +449,31 @@ export async function getSavedPaymentMethodForCheckout(memberId: string, checkou
       select payment_setup_customer_checked,payment_setup_customer_id,payment_setup_account_id,payment_setup_livemode
       from stripe_checkout_attempts where id=${checkoutAttemptId}::uuid and member_id=${memberId}::uuid and status in ('creating','open') for update`;
     if (!paid) throw new PaymentMethodSetupError("Your membership checkout reservation is unavailable.");
-    if (paid.payment_setup_customer_checked && !paid.payment_setup_customer_id) return null;
-    const context = process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ? await verifiedContext() : null;
+    let operatorMember: { email: string; name: string; account_id: string | null; livemode: boolean | null } | null = null;
+    if (operatorAuthUserId) {
+      await tx`select private.ruined_require_operator_membership_actor(${operatorAuthUserId}::uuid)`;
+      const [authorization] = await tx<Array<{ email: string; name: string; account_id: string | null; livemode: boolean | null }>>`select
+        authority.member_email_snapshot as email,authority.member_name_snapshot as name,
+        registration.payment_setup_account_id as account_id,registration.payment_setup_livemode as livemode
+        from stripe_checkout_attempts attempt
+        join operator_membership_authorizations authority on authority.id=attempt.operator_authorization_id
+          and authority.member_id=attempt.member_id and authority.reservation_id=attempt.commercial_reservation_id
+          and authority.actor_auth_user_id=attempt.billing_consent_auth_user_id
+        left join member_registration_access registration on registration.member_id=attempt.member_id
+        where attempt.id=${checkoutAttemptId}::uuid and attempt.member_id=${memberId}::uuid
+          and authority.actor_auth_user_id=${operatorAuthUserId}::uuid`;
+      if (!authorization) throw new PaymentMethodSetupError("The administrator does not match this payment authorization.", 403);
+      operatorMember = authorization;
+    }
+    if (paid.payment_setup_customer_checked && !paid.payment_setup_customer_id) {
+      if (operatorMember) throw new PaymentMethodSetupError("This checkout has no bound member billing identity. Review it before payment.");
+      return null;
+    }
+    const context = operatorMember || process.env.STRIPE_PAYMENT_SETUP_ACCOUNT_ID?.trim() ? await verifiedContext() : null;
+    if (operatorMember && context && (operatorMember.account_id && operatorMember.account_id !== context.accountId ||
+      operatorMember.livemode !== null && operatorMember.livemode !== context.livemode)) {
+      throw new PaymentMethodSetupError("This registration belongs to a different payment configuration.");
+    }
     if (paid.payment_setup_customer_checked) {
       if (!context || paid.payment_setup_account_id !== context.accountId || paid.payment_setup_livemode !== context.livemode) {
         throw new PaymentMethodSetupError("Your checkout belongs to a different payment configuration.");
@@ -458,7 +481,8 @@ export async function getSavedPaymentMethodForCheckout(memberId: string, checkou
       // Preserve the customer even if the saved method expired/detached. Stripe
       // can collect a replacement during this separately consented paid Checkout.
       const customer = await getStripe().customers.retrieve(paid.payment_setup_customer_id!);
-      if (customer.deleted || customer.livemode !== context.livemode) throw new Error("Reserved Checkout customer is unavailable.");
+      if (customer.deleted || customer.livemode !== context.livemode ||
+        operatorMember && customer.email?.trim().toLowerCase() !== operatorMember.email) throw new Error("Reserved Checkout customer is unavailable.");
       return { customerId: customer.id };
     }
     let customerId: string | null = null;
@@ -477,6 +501,19 @@ export async function getSavedPaymentMethodForCheckout(memberId: string, checkou
           }
         }
       }
+    }
+    if (operatorMember && context) {
+      // A fixed member Customer keeps the operator's payer contact details from
+      // changing the beneficiary identity used by fulfillment. The idempotency
+      // key survives a provider success followed by a database/network failure.
+      const customer = customerId ? await getStripe().customers.retrieve(customerId)
+        : await getStripe().customers.create({ email: operatorMember.email, name: operatorMember.name,
+          metadata: { ruined_member_id: memberId, ruined_checkout_attempt_id: checkoutAttemptId, ruined_checkout_source: "operator" } },
+          { idempotencyKey: `ruined-operator-customer:${context.accountId}:${context.livemode}:${checkoutAttemptId}` });
+      if (customer.deleted || customer.livemode !== context.livemode || customer.email?.trim().toLowerCase() !== operatorMember.email) {
+        throw new PaymentMethodSetupError("The member's Stripe billing identity could not be verified.");
+      }
+      customerId = customer.id;
     }
     await tx`update stripe_checkout_attempts set payment_setup_customer_checked=true,payment_setup_customer_id=${customerId},
       payment_setup_account_id=${context?.accountId ?? null},payment_setup_livemode=${context?.livemode ?? null} where id=${checkoutAttemptId}::uuid`;

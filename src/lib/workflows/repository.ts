@@ -5,9 +5,10 @@ import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import {
-  AGREEMENT_RECEIPT_GENERATOR_VERSION,
+  agreementReceiptGeneratorVersion,
   agreementReceiptSha256,
   renderAgreementReceipt,
+  type AgreementReceiptDelegation,
 } from "@/lib/membership/agreement-receipt";
 import { getApplicationDatabase } from "@/lib/database/server";
 
@@ -397,6 +398,8 @@ async function generateAgreementReceipt(action: WorkflowAction): Promise<Record<
       agreementVersion: number;
       signerEmail: string;
       signerName: string;
+      operatorAuthorizationId: string | null;
+      delegation: AgreementReceiptDelegation | null;
     }>>`
       select
         acceptance.id as "acceptanceId",
@@ -408,18 +411,30 @@ async function generateAgreementReceipt(action: WorkflowAction): Promise<Record<
         acceptance.agreement_title_snapshot as "agreementTitle",
         acceptance.agreement_version_snapshot as "agreementVersion",
         acceptance.signer_email_snapshot as "signerEmail",
-        acceptance.signer_name_snapshot as "signerName"
+        acceptance.signer_name_snapshot as "signerName",
+        acceptance.operator_authorization_id as "operatorAuthorizationId",
+        case when authority.id is not null then jsonb_build_object(
+          'authorizationId',authority.id,'authorizedAt',authority.authorized_at,
+          'memberName',authority.member_name_snapshot,'memberEmail',authority.member_email_snapshot,
+          'authorityVersion',authority.authority_version,'authorityText',authority.authority_text
+        ) end as delegation
       from membership_agreement_acceptances acceptance
+      left join operator_membership_authorizations authority on authority.id=acceptance.operator_authorization_id
+        and authority.member_id=acceptance.member_id and authority.person_id=acceptance.person_id
+        and authority.actor_auth_user_id=acceptance.accepted_by_auth_user_id
       where acceptance.id = ${acceptanceId}::uuid
       limit 1
-      for share
+      for share of acceptance
     `;
     const source = rows[0];
     if (!source) throw new Error("Agreement acceptance does not exist.");
-    const receipt = renderAgreementReceipt({
+    if (source.operatorAuthorizationId && !source.delegation) throw new Error("Agreement authorization evidence is unavailable.");
+    const receiptSource = {
       ...source,
       acceptedAt: new Date(source.acceptedAt).toISOString(),
-    });
+      delegation: source.delegation ? { ...source.delegation, authorizedAt: new Date(source.delegation.authorizedAt).toISOString() } : null,
+    };
+    const receipt = renderAgreementReceipt(receiptSource);
     const receiptHash = agreementReceiptSha256(receipt);
     const inserted = await tx<Array<{ id: string }>>`
       insert into membership_agreement_receipts (
@@ -440,7 +455,7 @@ async function generateAgreementReceipt(action: WorkflowAction): Promise<Record<
         'text/plain; charset=utf-8',
         ${Buffer.byteLength(receipt, "utf8")},
         ${receiptHash},
-        ${AGREEMENT_RECEIPT_GENERATOR_VERSION},
+        ${agreementReceiptGeneratorVersion(receiptSource)},
         statement_timestamp()
       )
       on conflict (acceptance_id) do nothing

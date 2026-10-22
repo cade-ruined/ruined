@@ -9,6 +9,9 @@ async function load(relativePath, dependencies = {}) {
   const output = ts.transpileModule(await readFile(new URL(relativePath, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
+  if (relativePath.endsWith("checkout/route.ts")) {
+    dependencies["@/lib/stripe/checkout-session"] = await load("../src/lib/stripe/checkout-session.ts", { ...dependencies, "server-only": {} });
+  }
   const loaded = { exports: {} };
   new Function("require", "module", "exports", output)((name) => {
     assert.ok(name in dependencies, `Unexpected dependency: ${name}`);

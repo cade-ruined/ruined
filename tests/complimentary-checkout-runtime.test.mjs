@@ -14,6 +14,7 @@ for (const funding of ["operator", "complimentary", "self"]) test(`checkout chec
   let configurationReads = 0;
   const dependencies = {
     ...prepaidFixtureDependencies,
+    "@/lib/stripe/checkout-session": {},
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => ({ authUserId: uuid }) },
     "@/lib/membership/commercial-repository": {},

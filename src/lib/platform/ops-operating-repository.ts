@@ -558,15 +558,26 @@ export async function getOpsMemberOperatingRecord(
           agreement_content_sha256: string;
           agreement_version_snapshot: number | string;
           receipt_id: string | null;
+          signer_name_snapshot: string;
+          signer_email_snapshot: string;
+          operator_authorization_id: string | null;
+          delegated_member_name: string | null;
         }>>`
           select
             acceptance.accepted_at,
             acceptance.agreement_version_snapshot,
             acceptance.agreement_content_sha256,
-            receipt.id as receipt_id
+            receipt.id as receipt_id,
+            acceptance.signer_name_snapshot,
+            acceptance.signer_email_snapshot,
+            acceptance.operator_authorization_id,
+            authority.member_name_snapshot as delegated_member_name
           from membership_agreement_acceptances acceptance
           left join membership_agreement_receipts receipt
             on receipt.acceptance_id = acceptance.id
+          left join operator_membership_authorizations authority on authority.id=acceptance.operator_authorization_id
+            and authority.member_id=acceptance.member_id and authority.person_id=acceptance.person_id
+            and authority.actor_auth_user_id=acceptance.accepted_by_auth_user_id
           where acceptance.member_id = ${memberId}::uuid
           order by acceptance.accepted_at desc
           limit 1
@@ -1023,10 +1034,10 @@ export async function getOpsMemberOperatingRecord(
       })),
       ...(agreement
         ? [{
-            actor: base.preferred_name,
+            actor: agreement.signer_name_snapshot,
             occurredAt: asIso(agreement.accepted_at)!,
             source: "agreement",
-            summary: `Membership agreement version ${String(agreement.agreement_version_snapshot)} accepted.`,
+            summary: `Membership agreement version ${String(agreement.agreement_version_snapshot)} accepted${agreement.operator_authorization_id ? ` on behalf of ${agreement.delegated_member_name ?? base.preferred_name}` : ""}.`,
           }]
         : []),
     ]
@@ -1131,6 +1142,10 @@ export async function getOpsMemberOperatingRecord(
           receiptId: agreement?.receipt_id ?? null,
           receiptState: agreement?.receipt_id ? "generated" : "not_recorded",
           version: agreement ? String(agreement.agreement_version_snapshot) : null,
+          signerName: agreement?.signer_name_snapshot ?? null,
+          signerEmail: agreement?.signer_email_snapshot ?? null,
+          delegatedForName: agreement?.delegated_member_name ?? null,
+          authorizationId: agreement?.operator_authorization_id ?? null,
         },
         billing: billing
           ? {

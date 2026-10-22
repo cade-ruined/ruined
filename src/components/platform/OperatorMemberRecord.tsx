@@ -16,6 +16,7 @@ import OperatorMemberReferrals from "@/components/platform/OperatorMemberReferra
 import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspace";
 import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
 import OperatorMemberPaymentMethod from "@/components/platform/OperatorMemberPaymentMethod";
+import OperatorMemberCheckout from "@/components/platform/OperatorMemberCheckout";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { guidanceForMemberRecord, memberGuidanceAction } from "@/lib/platform/operator-member-guidance";
@@ -181,12 +182,12 @@ export default function OperatorMemberRecord({
               <StateLabel state={membership.onboarding.state} />
             </div>
             {registration ? <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">The five registration checkpoints are shown above. Service setup can remain pending until membership begins.</p> : null}
-            <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">The member accepts their agreement and completes membership checkout in their own account. An Administrator can save a card for them below; saving a card does not accept the agreement or make a payment.</p>
+            <p className="mt-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">The member can complete checkout in their own account. An Administrator with the member’s authorization can also accept the agreement on their behalf and pay below. The record retains who accepted it.</p>
             <div className="mt-3 grid gap-2">
               {membership.onboarding.requirements.map((requirement) => (
                 <div className="operator-glass flex flex-wrap items-center justify-between gap-2 rounded-none px-3 py-2" key={requirement.key}>
                   <div>
-                    <p className="text-sm text-[color:var(--operator-ink)]/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Agreement accepted by member" : requirement.key === "billing" ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? requirement.label : registration ? "Membership billing active" : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
+                    <p className="text-sm text-[color:var(--operator-ink)]/72">{requirement.key === "private_profile" ? "Profile details" : requirement.key === "agreement" ? "Membership agreement accepted" : requirement.key === "billing" ? ((membership.membershipFunding === "operator" || membership.membershipFunding === "complimentary") ? requirement.label : registration ? "Membership billing active" : "Payment confirmation") : requirement.key === "verified_email" ? "Email verified by member" : requirement.label}</p>
                     <p className="mt-1 text-xs text-[color:var(--operator-muted)]">
                       {requirement.state === "not_required" ? "Not required" : requirement.required ? "Required" : "Collected when needed"}
                     </p>
@@ -220,6 +221,8 @@ export default function OperatorMemberRecord({
 
         {profileSupport ? <OperatorProfileSupport memberId={header.memberId} profile={profileSupport} preview={preview} /> : null}
 
+        {access.roles.includes("ops_admin") ? <OperatorMemberCheckout key={header.memberId} memberId={header.memberId} memberName={header.preferredName} preview={preview} /> : null}
+
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="operator-bento-card">
             <div className="flex items-start justify-between gap-4">
@@ -234,6 +237,10 @@ export default function OperatorMemberRecord({
                 <dt className="text-xs text-[color:var(--operator-muted)]">Accepted</dt>
                 <dd className="text-sm">{formatDate(membership.agreement.acceptedAt)}</dd>
               </div>
+              {membership.agreement.authorizationId ? <>
+                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2"><dt className="text-xs text-[color:var(--operator-muted)]">Accepted by</dt><dd className="min-w-0 break-words text-sm">{membership.agreement.signerName ?? "Administrator"}{membership.agreement.signerEmail ? <span className="mt-1 block break-all text-xs text-[color:var(--operator-muted)]">{membership.agreement.signerEmail}</span> : null}</dd></div>
+                <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2"><dt className="text-xs text-[color:var(--operator-muted)]">On behalf of</dt><dd className="min-w-0 break-words text-sm">{membership.agreement.delegatedForName ?? header.preferredName}</dd></div>
+              </> : null}
               <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-2 py-2">
                 <dt className="text-xs text-[color:var(--operator-muted)]">Receipt</dt>
                 <dd className="text-sm capitalize">{membership.agreement.receiptState.replaceAll("_", " ")}</dd>

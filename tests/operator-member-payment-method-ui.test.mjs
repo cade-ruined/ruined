@@ -51,7 +51,8 @@ test("operator card setup names the target member and requires fresh sponsor con
   const f = await fixture();
   assert.match(text(f.render()), /Aaron Lee/);
   assert.match(text(f.render()), /No charge is made here/);
-  assert.match(text(f.render()), /accepts the membership agreement and completes checkout/);
+  assert.match(text(f.render()), /To accept the agreement and pay now, use Complete membership above/);
+  assert.match(text(f.render()), /Save a card for later \(optional\)/);
   assert.ok(text(f.render()).includes(model.OPERATOR_PAYMENT_SETUP_CONSENT_TEXT));
   assert.equal(f.consent().props.checked, false);
   assert.equal(f.button("Add card securely").props.disabled, true);
@@ -116,6 +117,7 @@ test("ineligible members have no save controls and preview performs no reads or 
 test("member record exposes card setup only to administrators and carries target identity and preview scope", () => {
   const blank = () => null;
   const Payment = () => null;
+  const Checkout = () => null;
   const deps = {
     "next/link": { __esModule: true, default: "a" },
     "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"),
@@ -123,6 +125,7 @@ test("member record exposes card setup only to administrators and carries target
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: blank, OperatorTaskCreateAction: blank, OperatorOverrideAction: blank },
     "@/components/platform/OperatorMemberPaymentMethod": { __esModule: true, default: Payment },
+    "@/components/platform/OperatorMemberCheckout": { __esModule: true, default: Checkout },
   };
   for (const name of ["OperatorMemberDeleteAction", "OperatorMemberCheckpoints", "CirclePlacementRecommendations", "OperatorPageFrame", "OperatorMemberSetup", "OperatorProfileSupport", "OperatorProgress", "OperatorMemberAvatar", "OperatorMemberReferrals", "OperatorMemberWorkspace", "StateLabel"]) deps[`@/components/platform/${name}`] = { __esModule: true, default: blank };
   const Record = load("src/components/platform/OperatorMemberRecord.tsx", deps).default;
@@ -131,5 +134,14 @@ test("member record exposes card setup only to administrators and carries target
     const panels = nodes(Record({ record: { ...record, access: { ...record.access, roles: [role] } }, preview: true })).filter(node => node.type === Payment);
     assert.equal(panels.length, role === "ops_admin" ? 1 : 0);
     if (panels[0]) assert.deepEqual(panels[0].props, { memberId: record.header.memberId, memberName: record.header.preferredName, preview: true });
+    const checkouts = nodes(Record({ record: { ...record, access: { ...record.access, roles: [role] } }, preview: true })).filter(node => node.type === Checkout);
+    assert.equal(checkouts.length, role === "ops_admin" ? 1 : 0);
+    if (checkouts[0]) assert.deepEqual(checkouts[0].props, { memberId: record.header.memberId, memberName: record.header.preferredName, preview: true });
   }
+  record.membership.agreement = { ...record.membership.agreement, authorizationId: "authority-one", signerName: "Cade Mang", signerEmail: "cade@example.test", delegatedForName: "Aaron Lee" };
+  const agreementSection = nodes(Record({ record })).find(node => node.type === "h3" && text(node) === "Agreement");
+  assert.ok(agreementSection);
+  const recordText = text(Record({ record }));
+  assert.match(recordText, /Accepted byCade Mangcade@example.test/);
+  assert.match(recordText, /On behalf ofAaron Lee/);
 });

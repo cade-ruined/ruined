@@ -22,6 +22,8 @@ export type BillingMember = {
 };
 
 export type MembershipCheckoutReservation = {
+  operatorAuthorizationId: string | null;
+  operatorActorAuthUserId: string | null;
   agreementAcceptanceId: string;
   agreementAcceptedAt: Date;
   agreementContentSha256: string;
@@ -161,12 +163,15 @@ export async function findBillingMemberById(memberId: string): Promise<BillingMe
 
 export async function getMembershipCheckoutForReservation(reservationId: string, memberId: string): Promise<{
   id: string; status: string; stripeSessionId: string | null; consentSource: "member" | "stripe_checkout";
+  expiresAt: Date; operatorAuthorizationId: string | null; actorAuthUserId: string | null;
 } | null> {
   const sql = getBillingDatabase();
-  const [row] = await sql<Array<{ id: string; status: string; stripe_session_id: string | null; billing_consent_source: "member" | "stripe_checkout" }>>`
-    select id,status,stripe_session_id,billing_consent_source from stripe_checkout_attempts
+  const [row] = await sql<Array<{ id: string; status: string; stripe_session_id: string | null; billing_consent_source: "member" | "stripe_checkout";
+    expires_at: Date; operator_authorization_id: string | null; billing_consent_auth_user_id: string | null }>>`
+    select id,status,stripe_session_id,billing_consent_source,expires_at,operator_authorization_id,billing_consent_auth_user_id from stripe_checkout_attempts
     where commercial_reservation_id=${reservationId}::uuid and member_id=${memberId}::uuid limit 1`;
-  return row ? { id: row.id,status: row.status,stripeSessionId: row.stripe_session_id,consentSource: row.billing_consent_source } : null;
+  return row ? { id: row.id,status: row.status,stripeSessionId: row.stripe_session_id,consentSource: row.billing_consent_source,
+    expiresAt: row.expires_at, operatorAuthorizationId: row.operator_authorization_id, actorAuthUserId: row.billing_consent_auth_user_id } : null;
 }
 
 export async function reserveMembershipCheckout({
@@ -179,6 +184,7 @@ export async function reserveMembershipCheckout({
   paidAgreementVersion,
   commercialReservationId,
   consentSource = "member",
+  operatorMemberId,
 }: {
   acceptanceId: string;
   attemptId: string;
@@ -189,12 +195,16 @@ export async function reserveMembershipCheckout({
   paidAgreementVersion: string;
   commercialReservationId: string;
   consentSource?: "member" | "stripe_checkout";
+  /** Server-authorized beneficiary; authUserId remains the real administrator. */
+  operatorMemberId?: string;
 }): Promise<MembershipCheckoutReservation> {
   if (!commercialReservationId || attemptId !== commercialReservationId) throw new MembershipCheckoutConflictError();
+  if (operatorMemberId && consentSource !== "stripe_checkout") throw new MembershipCheckoutConflictError();
   const sql = getBillingDatabase();
   const emailNormalized = normalizeEmail(email);
 
   return sql.begin(async (tx) => {
+    if (operatorMemberId) await tx`select private.ruined_require_operator_membership_actor(${authUserId}::uuid)`;
     // Serialize attempts for one email so parallel tabs cannot create two
     // open Checkout Sessions before either webhook arrives.
     await tx`select pg_advisory_xact_lock(hashtext(${emailNormalized}), 0)`;
@@ -218,7 +228,9 @@ export async function reserveMembershipCheckout({
       join ruined_members member on member.person_id = platform_user.person_id
       join member_lifecycle lifecycle on lifecycle.member_id = member.id
       join person_private_profiles private_profile on private_profile.person_id = member.person_id
-      where platform_user.auth_user_id = ${authUserId}::uuid
+      where (( ${operatorMemberId ?? null}::uuid is null and platform_user.auth_user_id = ${authUserId}::uuid)
+          or (${operatorMemberId ?? null}::uuid is not null and member.id=${operatorMemberId ?? null}::uuid
+            and platform_user.member_id=member.id))
         and platform_user.email_normalized = ${emailNormalized}
         and platform_user.status = 'active'
         and lifecycle.account_state = 'active'
@@ -248,12 +260,14 @@ export async function reserveMembershipCheckout({
     // ledger; preserve that order while binding the quote and billing attempt.
     const commercial = await lockCommercialMembershipReservation(commercialReservationId, tx);
     if (!commercial || commercial.status !== "reserved" || commercial.plan !== plan ||
-      commercial.stripePriceId !== stripePriceId || commercial.memberId !== member.id) throw new MembershipCheckoutConflictError();
+      commercial.stripePriceId !== stripePriceId || commercial.memberId !== member.id ||
+      (operatorMemberId && commercial.kind !== "individual")) throw new MembershipCheckoutConflictError();
     const offer = MEMBERSHIP_OFFERS[commercial.offerId];
 
     const acceptanceRows = await tx<
       Array<{
         accepted_at: Date;
+        operator_authorization_id: string | null;
         age_attested_at: Date;
         agreement_key: string;
         agreement_version: number;
@@ -263,12 +277,14 @@ export async function reserveMembershipCheckout({
     >`
       select
         acceptance.id,
+        acceptance.operator_authorization_id,
         acceptance.accepted_at,
         age_attestation.accepted_at as age_attested_at,
         agreement.agreement_key,
         agreement.version as agreement_version,
         agreement.content_sha256
       from membership_agreement_acceptances acceptance
+      left join operator_membership_authorizations delegation on delegation.id=acceptance.operator_authorization_id
       join membership_agreement_versions agreement
         on agreement.id = acceptance.agreement_version_id
       join member_consents age_attestation
@@ -280,6 +296,13 @@ export async function reserveMembershipCheckout({
         and acceptance.member_id = ${member.id}::uuid
         and acceptance.person_id = ${member.person_id}::uuid
         and acceptance.accepted_by_auth_user_id = ${authUserId}::uuid
+        and ((${operatorMemberId ?? null}::uuid is null and acceptance.operator_authorization_id is null)
+          or (${operatorMemberId ?? null}::uuid is not null
+            and delegation.id=${commercial.id}::uuid and delegation.reservation_id=${commercial.id}::uuid
+            and delegation.member_id=acceptance.member_id and delegation.person_id=acceptance.person_id
+            and delegation.actor_auth_user_id=${authUserId}::uuid and delegation.billing_plan=${plan}
+            and delegation.agreement_version_id=agreement.id and delegation.agreement_content_sha256=agreement.content_sha256
+            and private.ruined_operator_membership_target_ready(acceptance.member_id,delegation.minimum_age)))
         and agreement.agreement_key = 'ruined_membership'
         and agreement.status = 'published'
         and (agreement.effective_at is null or agreement.effective_at <= statement_timestamp())
@@ -345,11 +368,13 @@ export async function reserveMembershipCheckout({
         commercial_reservation_id: string | null;
         offer_id: string | null;
         recurring_payment_terms: { version?: string } | null;
+        billing_consent_auth_user_id: string | null;
+        operator_authorization_id: string | null;
       }>
     >`
       select
         billing_plan, stripe_price_id, expires_at, first_charge_at, billing_schedule, recurring_payment_accepted_at, billing_consent_source, checkout_prepared_at,
-        commercial_reservation_id, offer_id, recurring_payment_terms,
+        commercial_reservation_id, offer_id, recurring_payment_terms, billing_consent_auth_user_id, operator_authorization_id,
         id,
         stripe_session_id,
         agreement_acceptance_id,
@@ -366,6 +391,8 @@ export async function reserveMembershipCheckout({
     const existingAttempt = attemptRows[0];
 
     if (existingAttempt) {
+      if (existingAttempt.billing_consent_auth_user_id !== authUserId ||
+        existingAttempt.operator_authorization_id !== acceptance.operator_authorization_id) throw new MembershipCheckoutConflictError();
       if (!sameBillingSchedule(existingAttempt.billing_schedule, commercial.billingSchedule)) throw new MembershipCheckoutConflictError();
       if ((existingAttempt.first_charge_at?.getTime() ?? null) !== (commercial.firstChargeAt?.getTime() ?? null)) throw new MembershipCheckoutConflictError();
       // Never resume an older policy's session under newly displayed v2 consent.
@@ -384,6 +411,8 @@ export async function reserveMembershipCheckout({
         throw new MembershipCheckoutConflictError();
       }
       return {
+        operatorAuthorizationId: acceptance.operator_authorization_id,
+        operatorActorAuthUserId: acceptance.operator_authorization_id ? authUserId : null,
         agreementAcceptanceId: acceptance.id,
         agreementAcceptedAt: acceptance.accepted_at,
         agreementContentSha256: acceptance.content_sha256,
@@ -438,6 +467,7 @@ export async function reserveMembershipCheckout({
         recurring_payment_accepted_at,
         billing_consent_source,
         billing_consent_auth_user_id,
+        operator_authorization_id,
         recurring_payment_terms,
         commercial_reservation_id,
         offer_id,
@@ -457,6 +487,7 @@ export async function reserveMembershipCheckout({
         case when ${consentSource}='stripe_checkout' then null else statement_timestamp() end,
         ${consentSource},
         ${authUserId}::uuid,
+        ${acceptance.operator_authorization_id}::uuid,
         ${tx.json({ version: "membership-billing-v2", ...offer, firstPayment: commercial.billingSchedule ? "prepaid" : commercial.firstChargeAt ? "scheduled" : "upfront", billingSchedule: commercial.billingSchedule ?? null, firstChargeAt: commercial.firstChargeAt?.toISOString() ?? null, recurring: true,
           offerId: offer.id, buyoutCap: 150_000, buyoutReplacesRemainingInstallments: true,
           commercialReservationId: commercial.id,
@@ -471,6 +502,8 @@ export async function reserveMembershipCheckout({
     `;
 
     return {
+      operatorAuthorizationId: acceptance.operator_authorization_id,
+      operatorActorAuthUserId: acceptance.operator_authorization_id ? authUserId : null,
       agreementAcceptanceId: acceptance.id,
       agreementAcceptedAt: acceptance.accepted_at,
       agreementContentSha256: acceptance.content_sha256,
