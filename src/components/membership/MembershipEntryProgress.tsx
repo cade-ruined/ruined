@@ -50,8 +50,12 @@ export function useMembershipEntryProgressStage(stage: MembershipEntryStage) {
 
 export function MembershipEntryProgress({ complimentary = false }: { complimentary?: boolean }) {
   const stage = useContext(EntryProgressContext)?.stage ?? "profile";
-  const currentIndex = MEMBERSHIP_ENTRY_STAGES.findIndex((item) => item.id === stage);
-  const current = MEMBERSHIP_ENTRY_STAGES[currentIndex];
+  const stages = [
+    MEMBERSHIP_ENTRY_STAGES[0],
+    { id: "agreement", label: complimentary ? "Membership" : "Review & pay" },
+  ];
+  const currentIndex = stage === "profile" ? 0 : 1;
+  const current = stages[currentIndex];
 
   return (
     <section
@@ -61,22 +65,19 @@ export function MembershipEntryProgress({ complimentary = false }: { complimenta
       <div
         aria-atomic="true"
         aria-live="polite"
-        className="flex items-baseline justify-between gap-4"
+        className="sr-only"
         role="status"
       >
         <p
           className="text-[0.68rem] font-medium uppercase tracking-[0.05em] text-[var(--member-muted)]"
           id="membership-entry-progress-label"
         >
-          {complimentary && current.id === "payment" ? "Activation" : current.label}
-        </p>
-        <p className="text-[0.66rem] uppercase tracking-[0.05em] text-[var(--member-muted)]">
-          Step {currentIndex + 1} of 3
+          {current.label}
         </p>
       </div>
 
-      <ol aria-label="Membership entry steps" className="mt-2 grid grid-cols-3 gap-2">
-        {MEMBERSHIP_ENTRY_STAGES.map((item, index) => {
+      <ol aria-label="Membership entry steps" className="grid grid-cols-2 gap-3">
+        {stages.map((item, index) => {
           const status = index < currentIndex
             ? "complete"
             : index === currentIndex
@@ -86,11 +87,11 @@ export function MembershipEntryProgress({ complimentary = false }: { complimenta
           return (
             <li
               aria-current={status === "current" ? "step" : undefined}
-              className="flex h-[2px] items-end"
+              className="flex flex-col gap-2"
               key={item.id}
             >
-              <span className="sr-only">
-                Step {index + 1}: {complimentary && item.id === "payment" ? "Activation" : item.label} — {status}
+              <span className={`whitespace-nowrap text-[0.68rem] uppercase tracking-[0.05em] ${status === "current" ? "font-semibold text-[var(--member-ink)]" : "font-medium text-[var(--member-muted)]"}`}>
+                {item.label}<span className="sr-only"> — {status}</span>
               </span>
               <span
                 aria-hidden="true"

@@ -1,6 +1,6 @@
 export const MEMBERSHIP_ENTRY_STAGES = [
-  { id: "profile", label: "Profile" },
-  { id: "agreement", label: "Agreement" },
+  { id: "profile", label: "Details" },
+  { id: "agreement", label: "Membership" },
   { id: "payment", label: "Payment" },
 ] as const;
 

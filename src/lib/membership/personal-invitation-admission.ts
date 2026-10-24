@@ -1,4 +1,4 @@
-import { enrollNewMemberRegistration } from "@/lib/membership/registration-repository";
+import { enrollNewMemberRegistration, reconcileMemberRegistration } from "@/lib/membership/registration-repository";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -215,5 +215,14 @@ export async function completePersonalInvitationClaim(tx: TransactionSql, viewer
     await tx`select private.ruined_bind_member_referral(
       (select person_id from ruined_members where id = ${memberId}::uuid), ${email})`;
   }
-  if (invitation.origin !== "ruined_direct") await tx`select private.ruined_redeem_complimentary_invitation(${invitation.id}::uuid, ${memberId}::uuid, ${viewer.authUserId}::uuid)`;
+  if (invitation.origin !== "ruined_direct") {
+    await tx`select private.ruined_redeem_complimentary_invitation(${invitation.id}::uuid, ${memberId}::uuid, ${viewer.authUserId}::uuid)`;
+    if (invitation.membership_type === "complimentary") {
+      // Claim owns the member lock and the newly inserted funding grant. A
+      // returning registrant may already have supplied every required detail;
+      // redeeming their waiver must finish registration in this same mutation.
+      // Canonical readiness still requires verified identity, intake, and terms.
+      await reconcileMemberRegistration(tx, memberId);
+    }
+  }
 }

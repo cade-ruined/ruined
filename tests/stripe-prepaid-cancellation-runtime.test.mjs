@@ -20,7 +20,7 @@ const schedule = await load("src/lib/membership/foundations-schedule.ts");
 const prepaid = await load("src/lib/stripe/prepaid-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing, "@/lib/membership/foundations-schedule": schedule });
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
 
-async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false, timeoutAfterRefund = false, missedCutoff = false, scheduleVersion } = {}) {
+async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false, timeoutAfterRefund = false, missedCutoff = false, scheduleVersion, linkPayment = false } = {}) {
   const now = new Date(), currentSchedule = schedule.createFoundationsBillingSchedule(now, "monthly");
   const billingSchedule = scheduleVersion ? schedule.foundationsBillingScheduleForMonth(currentSchedule.cohortMonth, "monthly", scheduleVersion) : currentSchedule;
   const contract = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member",
@@ -35,7 +35,7 @@ async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false,
     metadata: { billing_terms_version: "membership-billing-v2", ruined_member_id: contract.memberId,
       ruined_billing_plan: "monthly", ...prepaid.prepaidBillingMetadata(billingSchedule) },
     items: { data: [{ id: "si_member", current_period_end: Date.parse(billingSchedule.prepaidThrough) / 1000, price: { id: contract.priceId } }] } };
-  const payment = { invoiceId: "in_first", paymentIntentId: "pi_first", chargeId: "ch_first", amount: 52993, currency: "usd",
+  const payment = { invoiceId: "in_first", paymentIntentId: "pi_first", chargeId: linkPayment ? "py_3ExampleLinkPayment12345678" : "ch_first", amount: 52993, currency: "usd",
     periodStart: contract.startsAt, periodEnd: billingSchedule.prepaidThrough, refund: null,
     invoice: { status_transitions: { paid_at: missedCutoff ? Date.parse(billingSchedule.cutoffAt)/1000 + 60 : Math.floor(now.getTime()/1000) } } };
   const proof = { contractId: contract.id, subscriptionId: contract.subscriptionId, invoiceId: payment.invoiceId, paymentIntentId: payment.paymentIntentId,
@@ -73,7 +73,7 @@ async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false,
       assert.equal(sub.status, "canceled", "no refund may leave renewals running");
       assert.equal(cancellation.status, "collection_in_flight", "refund intent must be durable first");
       calls.push({ action: "refund", input, options });
-      payment.refund = { id: "re_first", status: refundStatus, amount: input.amount, metadata: input.metadata };
+      payment.refund = { id: linkPayment ? "pyr_link_refund" : "re_first", status: refundStatus, amount: input.amount, metadata: input.metadata };
       if (timeoutAfterRefund) { timeoutAfterRefund = false; throw Error("Timeout after provider refund"); }
       return structuredClone(payment.refund);
     } },
@@ -293,4 +293,23 @@ test("prepaid account summary resumes the same pending cancellation and requires
   assert.equal((await read()).canceledBeforeStart, true);
   row.prestartCanceled = false; proof.refundState = "none";
   assert.equal((await read()).status, "review_required", "external cancellation cannot imply money was returned");
+});
+
+
+test("Link py_ payments quote, stop renewal and record one exact pyr_ refund", async () => {
+  for (const missedCutoff of [false, true]) {
+    const f = await fixture({ linkPayment: true, missedCutoff });
+    if (missedCutoff) {
+      const result = await f.service.refundMissedFoundationsEnrollment({ subscriptionId: f.contract.subscriptionId, livemode: false });
+      assert.equal(result.cancellation.refundStatus, "succeeded");
+    } else {
+      const quote = await f.service.createMemberCancellationQuote(f.contract.memberId, "cancel_before_start");
+      assert.equal(quote.refundAmount, f.payment.amount);
+      assert.equal((await f.service.confirmMemberCancellation(f.contract.memberId, quote.id)).refundStatus, "succeeded");
+    }
+    assert.equal(f.proofs[0].chargeId, "py_3ExampleLinkPayment12345678");
+    assert.equal(f.proofs[0].refundId, "pyr_link_refund");
+    assert.equal(f.proofs[0].amount, f.payment.amount);
+    assert.deepEqual(f.calls.map(call => call.action), ["cancel", "refund"]);
+  }
 });

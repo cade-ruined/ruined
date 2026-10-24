@@ -291,7 +291,7 @@ export function quoteMembershipPrepaidCancellation(contract: MembershipCommitmen
     || provider.subscriptionId !== contract.subscriptionId || provider.customerId !== contract.customerId
     || provider.livemode !== contract.livemode || provider.status !== "trialing" || provider.canceledAt !== null
     || provider.serviceStartsAt !== contract.startsAt || provider.prepaidThrough !== schedule.prepaidThrough
-    || !provider.invoiceId.startsWith("in_") || !provider.paymentIntentId.startsWith("pi_") || !provider.chargeId.startsWith("ch_")
+    || !provider.invoiceId.startsWith("in_") || !provider.paymentIntentId.startsWith("pi_") || !/^(ch|py)_[A-Za-z0-9][A-Za-z0-9_]*$/.test(provider.chargeId)
     || provider.currency !== contract.currency || !Number.isSafeInteger(provider.amount) || provider.amount < contract.installmentDues
     || provider.pendingInvoiceItems || timestamp(provider.observedAt) > now.getTime()
     || now.getTime() - timestamp(provider.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {
@@ -316,7 +316,7 @@ export function quoteMembershipMissedCohortCancellation(contract: MembershipComm
     || provider.serviceStartsAt !== contract.startsAt || provider.prepaidThrough !== schedule.prepaidThrough
     || !provider.invoicePaidAt || timestamp(provider.invoicePaidAt) < timestamp(schedule.cutoffAt)
     || timestamp(provider.invoicePaidAt) > now.getTime()
-    || !provider.invoiceId.startsWith("in_") || !provider.paymentIntentId.startsWith("pi_") || !provider.chargeId.startsWith("ch_")
+    || !provider.invoiceId.startsWith("in_") || !provider.paymentIntentId.startsWith("pi_") || !/^(ch|py)_[A-Za-z0-9][A-Za-z0-9_]*$/.test(provider.chargeId)
     || provider.currency !== contract.currency || !Number.isSafeInteger(provider.amount) || provider.amount < contract.installmentDues
     || provider.pendingInvoiceItems || timestamp(provider.observedAt) > now.getTime()
     || now.getTime() - timestamp(provider.observedAt) > MEMBERSHIP_COMMITMENT_RECONCILIATION_MAX_AGE_MS) {

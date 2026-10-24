@@ -97,11 +97,16 @@ test("return query alone never claims a scheduled payment; status comes from per
   }, { fetch: async () => ({ ok: true, json: async () => response }) })).default;
   const props = { onboarding, enabled: true, disabledReason: null, initialPlan: "monthly", firstChargeAt: offer.firstChargeAt, minimumAge: 18, publishableKey: "pk_live_example", returnedFromCheckout: true };
   h.render(Component, props); await h.effects(); let tree = h.render(Component, props);
-  assert.match(visible(tree), /Waiting for Stripe confirmation/);
+  assert.match(visible(tree), /Confirming your membership/);
   assert.equal(nodes(tree).some(node => node.type === Form), false);
   response = { commitment: { startsAt: offer.firstChargeAt, initialTermEndsAt: "2027-11-01T06:00:00Z", plan: "monthly", installmentDues: 34900, status: "pending_payment", canCancelBeforeStart: false } };
-  nodes(tree).find(node => node.type === "button" && /Check confirmation/.test(visible(node))).props.onClick();
-  h.render(Component, props); await h.effects(); tree = h.render(Component, props);
+  // A fresh server-backed load, not the return URL, supplies this pending commitment.
+  const pendingHooks = hooks();
+  const Pending = (await load("src/components/membership/MemberActivation.tsx", {
+    react: pendingHooks.react, "next/link": Link, "@/components/membership/JoinForm": Form,
+    "@/components/membership/MembershipCancellation": Stub, "@/lib/membership/pricing": pricing,
+  }, { fetch: async () => ({ ok: true, json: async () => response }) })).default;
+  pendingHooks.render(Pending, props); await pendingHooks.effects(); tree = pendingHooks.render(Pending, props);
   assert.match(visible(tree), /first payment is pending/);
   assert.doesNotMatch(visible(tree), /Membership billing confirmed|first payment is scheduled/);
 });
@@ -147,7 +152,7 @@ test("only a verified prestart cancellation can be explicitly reviewed again, an
       const form = nodes(tree).find(node => node.type === Form);
       assert.ok(form, "Member must be able to reach a new offer after explicit review action");
       assert.equal(form.props.enabled, true); assert.equal(form.props.initialQuote, null);
-      assert.doesNotMatch(visible(tree), /Waiting for Stripe confirmation/);
+      assert.doesNotMatch(visible(tree), /Confirming your membership/);
     } else assert.equal(review, undefined);
     assert.equal(reads, 1, "Opening a new review performs no billing mutation");
   }
@@ -339,14 +344,17 @@ test("new members see a quote before signing, and agreement acceptance opens pen
   const f=await joinFixture({streamlinedPayment:true,initialQuote:{...offer,firstChargeAt:null,billingSchedule:schedule},
     initialOnboarding:{...onboarding,profile:{legalName:"Alex Member"},agreement:{...onboarding.agreement,acceptanceId:null}}});
   let tree=f.render();
-  assert.equal(nodes(tree).find(node=>node.props.name==="signer-name").props.defaultValue,"Alex Member");
+  assert.equal(nodes(tree).some(node=>node.props.name==="signer-name"),false,"Saved full name does not have to be typed a second time");
+  assert.match(visible(tree),/Agreement for Alex Member/);
+  f.formValues["signer-name"]="This input is not rendered";
   const disclosures=visible(tree);
-  for(const phrase of ["$349","12-month commitment","$4,188","November 5, 2026","December 5, 2026","November 5, 2027","$1,500","full refund","Agree & continue"])
+  for(const phrase of ["$349","12-month commitment","$4,188","November 5, 2026","December 5, 2026","November 5, 2027","$1,500","full refund","Continue to secure payment"])
     assert.ok(disclosures.includes(phrase),phrase);
   assert.equal(f.calls.length,0);
   await nodes(tree).find(node=>node.type==="form").props.onSubmit({preventDefault(){},currentTarget:{}});
   assert.deepEqual(f.calls.map(call=>call.url),["/api/my/agreement","/api/stripe/checkout"]);
   assert.equal(f.calls[0].body.ageConfirmed,true);
+  assert.equal(f.calls[0].body.signerName,"Alex Member","Acceptance records the saved signer displayed above the checkbox");
   assert.equal(f.calls[1].body.acceptanceId,"fresh-acceptance");
   assert.equal(f.calls[1].body.commercialReservationId,"quote-id");
   assert.deepEqual(f.calls[1].body.billingSchedule,schedule);
@@ -508,4 +516,28 @@ test("the Stripe form is retained until its change-plan release has been confirm
   tree = f.render(); await f.effects();
   assert.equal(nodes(tree).some(node => typeof node.type === "function" && node.type.name === "EmbeddedCheckout"), false);
   assert.equal(f.calls.length, 2);
+});
+
+
+test("compact agreement uses the saved signer only after fresh consent and preserves a missing-name fallback", async () => {
+  const saved = await joinFixture({ streamlinedPayment: true, initialOnboarding: { ...onboarding, profile: { legalName: "  Alex Member  " }, agreement: { ...onboarding.agreement, acceptanceId: null } } });
+  saved.formValues["agreement-accepted"] = "";
+  let tree = saved.render();
+  assert.match(visible(tree), /Agreement for Alex Member/);
+  assert.equal(nodes(tree).some(node => node.props.name === "signer-name"), false);
+  const consent = nodes(tree).find(node => node.props.name === "agreement-accepted");
+  assert.equal(consent.props.defaultChecked, undefined);
+  assert.equal(consent.props.checked, undefined);
+  await nodes(tree).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} });
+  assert.deepEqual(saved.calls, [], "A displayed saved name is not acceptance");
+  assert.match(visible(saved.render()), /Read and accept/);
+  for (const legalName of [undefined, "   ", "a".repeat(181)]) {
+    const missing = await joinFixture({ streamlinedPayment: true, initialOnboarding: { ...onboarding, profile: { legalName }, agreement: { ...onboarding.agreement, acceptanceId: null } } });
+    tree = missing.render();
+    assert.ok(nodes(tree).some(node => node.props.name === "signer-name" && node.props.required));
+    missing.formValues["signer-name"] = "";
+    await nodes(tree).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: {} });
+    assert.deepEqual(missing.calls, [], "Missing signer details cannot accept terms or create a payment session");
+    assert.match(visible(missing.render()), /Enter the full name saved in your registration/);
+  }
 });

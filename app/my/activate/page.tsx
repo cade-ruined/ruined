@@ -31,6 +31,23 @@ export default async function MembershipActivationPage({ searchParams }: {
   const preview = context.state === "preview";
   const registration = context.viewer ? await getMemberRegistration(context.viewer.authUserId) : null;
   const complimentary = context.data.membershipFunding === "operator" || context.data.membershipFunding === "complimentary";
+  // A complimentary member has no payment step. Resolve their own intake and
+  // registration before loading any offer, payment dates, or Stripe UI.
+  if (!preview && complimentary) {
+    if (!registration || registration.state === "activated") {
+      redirect(context.data.state === "completed" ? "/my" : "/my/join");
+    }
+    if (!registration.profileComplete) redirect("/my/join");
+    if (registration.state === "registered" && registration.ready) redirect("/my/registered");
+    // A partial completion needs attention; neither this GET nor a return URL
+    // should manufacture registration success or open a payment form.
+    return <main className="mx-auto min-h-[72vh] max-w-3xl px-5 pb-16 pt-10 text-[var(--member-ink)] sm:px-8 sm:pt-16">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Ruined membership</p>
+      <h1 className="mt-4 font-[var(--font-display)] text-[clamp(2.5rem,7vw,3.75rem)] leading-[1.04] tracking-[-0.04em]">Your membership is complimentary.</h1>
+      <p className="mt-6 text-base leading-relaxed text-[var(--member-muted)]">No card or payment is needed. Your details are saved, but your registration has not finished. Contact us and we’ll help complete it.</p>
+      <a className="mt-6 inline-flex min-h-12 items-center border border-current px-5 py-3 text-sm font-semibold" href="mailto:connect@theruinedproject.com">Contact Ruined</a>
+    </main>;
+  }
   const completingRegistration = preview ? context.configuration.membershipPrepaymentRequired :
     Boolean(registration && (registration.requiresInitialPayment || registration.requiresPaymentMethod) && registration.state !== "activated" &&
       (!registration.registeredAt || parameters.checkout === "returned"));

@@ -125,6 +125,7 @@ const migrations = [
   "../db/migrations/20261021194000_member_registration_anniversary_badge.sql",
   "../db/migrations/20261022120000_operator_payment_method_setup.sql",
   "../db/migrations/20261022140000_operator_membership_checkout.sql",
+  "../db/migrations/20261024183000_prepaid_provider_payment_ids.sql",
 ];
 
 function migrationBody(migration, migrationName) {

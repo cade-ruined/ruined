@@ -152,7 +152,13 @@ async function fixture(t) {
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
   });
-  basic["@/lib/membership/registration-repository"] = registration;
+  basic["@/lib/membership/registration-repository"] = {
+    ...registration,
+    // This fixture isolates invitation identity/funding and predates held
+    // registrations. The full migration-backed completion path is exercised in
+    // member-registration-access.test.mjs, including a later complimentary grant.
+    reconcileMemberRegistration: async () => {},
+  };
   const identity = await load("src/lib/identity/repository.ts", basic);
   const database = { getApplicationDatabase: () => wrap(db), withFreshApplicationDatabaseRead: (_stage, read) => read() };
   const signup = await load("src/lib/membership/public-signup-admission.ts", {

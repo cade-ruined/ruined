@@ -16,11 +16,19 @@ export default async function MemberRegisteredPage() {
     { registration: memberRegistrationPreview("registered"), invitedCalendarAvailable: false },
     async authUserId => {
       const registration = await getMemberRegistration(authUserId);
-      return {
-        registration,
-        invitedCalendarAvailable: registration?.state === "registered" && registration.ready
-          ? await hasEligibleExplicitExperienceInvitations(authUserId) : false,
-      };
+      let invitedCalendarAvailable = false;
+      if (registration?.state === "registered" && registration.ready) {
+        try {
+          invitedCalendarAvailable = await hasEligibleExplicitExperienceInvitations(authUserId);
+        } catch (error) {
+          // Calendar is an optional next step. Its availability must not hide a
+          // registration that has already been confirmed by the server.
+          console.error("Registration calendar availability could not be loaded", {
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          });
+        }
+      }
+      return { registration, invitedCalendarAvailable };
     },
     "registration",
   );
@@ -31,7 +39,12 @@ export default async function MemberRegisteredPage() {
   if (!registration || registration.state === "activated") redirect("/my");
   const paidCheckoutAvailable = context.configuration.stripeActivationReady || context.configuration.stripeCheckoutReady;
   if (!registration.ready) redirect(memberRegistrationDestination(registration, paidCheckoutAvailable) ?? "/my");
-  if (registration.state !== "registered") return <PlatformUnavailable accessHref="/my/activate" />;
+  if (registration.state !== "registered") return <main className="mx-auto min-h-[72vh] max-w-3xl px-5 pb-16 pt-10 text-[var(--member-ink)] sm:px-8 sm:pt-16">
+    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-red)]">Ruined membership</p>
+    <h1 className="mt-4 font-[var(--font-display)] text-[clamp(2.5rem,7vw,3.75rem)] leading-[1.04] tracking-[-0.04em]">Your registration needs a final check.</h1>
+    <p className="mt-6 text-base leading-relaxed text-[var(--member-muted)]">Your information is saved, but registration is not complete yet. Contact us and we’ll help finish it.</p>
+    <a className="mt-6 inline-flex min-h-12 items-center border border-current px-5 py-3 text-sm font-semibold" href="mailto:connect@theruinedproject.com">Contact Ruined</a>
+  </main>;
   return <MemberRegistrationReceipt
     email={context.viewer?.email ?? "you@example.com"}
     registeredAt={registration.registeredAt}
