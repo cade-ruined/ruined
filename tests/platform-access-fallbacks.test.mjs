@@ -28,11 +28,13 @@ test("permission and connection fallbacks use distinct plain-language copy", asy
   assert.match(component, /email tied to your Ruined Membership/);
   assert.match(component, /title: "Operator access required\."/);
   assert.match(component, /does not have an active operator role/);
-  assert.match(component, /title: "Connection required\."/);
-  assert.match(component, /unavailable until its secure connection returns/);
-  assert.match(component, /accessHref && reason === "connection"/);
-  assert.match(component, /text-black\/58/);
-  assert.doesNotMatch(component, /text-white\/50/);
+  assert.match(component, /title: "We couldn’t load this page\."/);
+  assert.match(component, /Please try again/);
+  assert.match(component, /window\.location\.reload\(\)/);
+  assert.match(component, /mailto:connect@theruinedproject\.com/);
+  assert.match(component, /var\(--member-muted,var\(--operator-muted,currentColor\)\)/);
+  assert.match(component, /var\(--member-ink,var\(--operator-ink,currentColor\)\)/);
+  assert.doesNotMatch(component, /text-black|border-black|text-white|Connection required|being imitated/);
 });
 
 test("every member page context handles denied before its unavailable fallback", async () => {

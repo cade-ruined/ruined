@@ -36,7 +36,7 @@ const onboarding = {
   agreement: { id: "agreement", version: 3, acceptanceId: "accepted", body: "Published agreement" },
 };
 const paidRegistration = {
-  state: "registered", ready: true, profileComplete: true,
+  memberId: "10000000-0000-4000-8000-000000000001", state: "registered", ready: true, profileComplete: true,
   requiresInitialPayment: true, registeredAt: "2026-10-06T18:00:00Z",
   completionBasis: "paid_membership", initialPayment: { billingSchedule: schedule },
 };
@@ -44,17 +44,18 @@ class MemberRegistrationError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-async function statusRoute({ signedIn = true, registration = paidRegistration, error } = {}) {
-  const reads = [];
+async function statusRoute({ signedIn = true, registration = paidRegistration, error, needsSupport = false } = {}) {
+  const reads = [], supportReads = [];
   const route = await load("app/api/my/registration/status/route.ts", {
     "next/server": { NextResponse: { json: (body, options) => new Response(JSON.stringify(body), options) } },
     "@/lib/auth/session": { getCurrentPlatformViewer: async () => signedIn ? { authUserId: "authenticated-owner" } : null },
+    "@/lib/membership/checkout-confirmation-repository": { memberCheckoutConfirmationNeedsSupport: async memberId => { supportReads.push(memberId); return needsSupport; } },
     "@/lib/membership/registration-repository": {
       MemberRegistrationError,
       getMemberRegistration: async id => { reads.push(id); if (error) throw error; return registration; },
     },
   });
-  return { route, reads };
+  return { route, reads, supportReads };
 }
 
 test("payment status requires authentication and does not read registration for a signed-out caller", async () => {
@@ -72,7 +73,7 @@ test("payment status reads only the signed-in owner and returns no account or pa
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(reads, ["authenticated-owner"]);
-  assert.deepEqual(await response.json(), { paymentConfirmed: true });
+  assert.deepEqual(await response.json(), { paymentConfirmed: true, confirmationState: "confirmed" });
 });
 
 test("payment status never treats saved cards, complimentary grants, incomplete or refunded registrations as paid", async () => {
@@ -85,8 +86,23 @@ test("payment status never treats saved cards, complimentary grants, incomplete 
     { ...paidRegistration, completionBasis: "complimentary", initialPayment: null },
   ]) {
     const { route } = await statusRoute({ registration });
-    assert.deepEqual(await (await route.GET()).json(), { paymentConfirmed: false });
+    assert.deepEqual(await (await route.GET()).json(), { paymentConfirmed: false, confirmationState: "processing" });
   }
+});
+
+test("failed checkout fulfillment returns a support state without claiming payment or exposing provider errors", async () => {
+  const registration = { ...paidRegistration, registeredAt: null, ready: false, initialPayment: null };
+  const { route, supportReads } = await statusRoute({ registration, needsSupport: true });
+  const response = await route.GET(new Request("https://example.test/api/my/registration/status?memberId=someone-else"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { paymentConfirmed: false, confirmationState: "needs_support" });
+  assert.deepEqual(supportReads, [registration.memberId]);
+  const paid = await statusRoute({ needsSupport: true });
+  assert.deepEqual(await (await paid.route.GET()).json(), { paymentConfirmed: true, confirmationState: "confirmed" });
+  assert.deepEqual(paid.supportReads, [], "Canonical paid registration wins over a stale failed-event signal");
+  const comp = await statusRoute({ registration: { ...registration, requiresInitialPayment: false, requiresPaymentMethod: false }, needsSupport: true });
+  assert.deepEqual(await (await comp.route.GET()).json(), { paymentConfirmed: false, confirmationState: "processing" });
+  assert.deepEqual(comp.supportReads, [], "Complimentary registrations never query payment confirmation failures");
 });
 
 test("payment status fails closed for revoked account access and transient storage errors", async () => {
@@ -193,7 +209,7 @@ test("a refunded completed registration can review a new payment while its compl
 
 test("complimentary accounts never pay and historical unfinished registrations can review paid checkout", async () => {
   const complimentary = await activationPage({ data: { ...onboarding, membershipFunding: "complimentary" } });
-  assert.equal(nodes(await complimentary.render()).find(node => node.type === Activation).props.enabled, false);
+  await assert.rejects(complimentary.render, error => error instanceof Redirect && error.destination === "/my/registered");
   const legacy = await activationPage({ registration: { ...paidRegistration, requiresInitialPayment: false, requiresPaymentMethod: true, ready: false, registeredAt: null, initialPayment: null } });
   const component = nodes(await legacy.render()).find(node => node.type === Activation);
   assert.equal(component.props.enabled, true);
@@ -221,23 +237,23 @@ function JoinForm() { return null; }
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const commitment = { startsAt: schedule.serviceStartsAt, initialTermEndsAt: schedule.initialTermEndsAt,
   plan: "monthly", installmentDues: 34900, billingSchedule: schedule, status: "scheduled", canCancelBeforeStart: true };
-async function activationView({ completingRegistration = false, paymentConfirmed = true, billing = commitment, complimentary = false } = {}) {
+async function activationView({ completingRegistration = false, paymentConfirmed = true, billing = commitment, complimentary = false, returnedFromCheckout = false, confirmationState = "processing", statusCode = 200, billingStatusCode = 200 } = {}) {
   const state = hooks(), reads = [], navigations = [], timers = new Map();
   let timerId = 0;
   const Component = (await load("src/components/membership/MemberActivation.tsx", {
     react: state.react, "next/link": Link, "@/components/membership/JoinForm": JoinForm,
     "@/components/membership/MembershipCancellation": Cancellation, "@/lib/membership/pricing": pricing,
   }, {
-    fetch: async (url, options) => { assert.equal(options.method, undefined); reads.push(url); return { ok: true, json: async () => url === "/api/my/registration/status" ? { paymentConfirmed } : { commitment: billing } }; },
+    fetch: async (url, options) => { assert.equal(options.method, undefined); reads.push(url); return { ok: (url === "/api/my/registration/status" ? statusCode : billingStatusCode) === 200, status: url === "/api/my/registration/status" ? statusCode : billingStatusCode, json: async () => url === "/api/my/registration/status" ? { paymentConfirmed, confirmationState } : { commitment: billing } }; },
     window: { location: { replace: url => navigations.push(url) } },
-    setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
+    setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
     clearTimeout: id => timers.delete(id),
   })).default;
   const props = { onboarding: complimentary ? { ...onboarding, membershipFunding: "complimentary" } : onboarding, enabled: !complimentary, disabledReason: complimentary ? "Your membership is complimentary. No payment is needed." : null, initialPlan: "monthly", firstChargeAt: null,
-    billingSchedule: schedule, minimumAge: 18, publishableKey: "pk_test_inert_fixture", completingRegistration };
+    billingSchedule: schedule, minimumAge: 18, publishableKey: "pk_test_inert_fixture", completingRegistration, returnedFromCheckout };
   const render = () => state.render(Component, props);
   render(); await state.effects(); render(); await state.effects();
-  return { render, state, reads, navigations, timers };
+  return { render, state, reads, navigations, timers, setPaymentConfirmed(value) { paymentConfirmed = value; } };
 }
 
 test("normal billing management retains refund controls and never polls or auto-navigates to registration", async t => {
@@ -282,7 +298,7 @@ test("a historical saved-card registration returns to its paid receipt after ver
   const fixture = await activationPage({ registration, searchParams: { checkout: "returned" } });
   assert.equal(nodes(await fixture.render()).find(node => node.type === Activation).props.completingRegistration, true);
   const { route } = await statusRoute({ registration });
-  assert.deepEqual(await (await route.GET()).json(), { paymentConfirmed: true });
+  assert.deepEqual(await (await route.GET()).json(), { paymentConfirmed: true, confirmationState: "confirmed" });
 });
 
 test("complimentary membership explains that no payment is needed without the paid-checkout instruction", async t => {
@@ -293,4 +309,53 @@ test("complimentary membership explains that no payment is needed without the pa
   assert.doesNotMatch(visible(tree), /pay your first period|Your saved card alone/);
   assert.equal(nodes(tree).some(node => node.type === JoinForm), false);
   assert.ok(nodes(tree).some(node => node.props.href === "mailto:connect@theruinedproject.com"));
+});
+
+
+test("a delayed webhook keeps polling past thirty seconds and navigates once canonical payment arrives", async t => {
+  const fixture = await activationView({ completingRegistration: true, returnedFromCheckout: true, paymentConfirmed: false, billing: null });
+  t.after(fixture.state.dispose);
+  for (let i=0;i<23;i++) {
+    const [id, timer] = fixture.timers.entries().next().value;
+    fixture.timers.delete(id);
+    await timer.callback();
+    await flush();
+  }
+  assert.deepEqual(fixture.navigations, []);
+  assert.equal(fixture.timers.size, 1, "Confirmation continues without another button press");
+  assert.equal([...fixture.timers.values()][0].delay, 10000, "Long waits back off instead of hammering the status endpoint");
+  assert.match(visible(fixture.render()), /still checking automatically/);
+  assert.equal(nodes(fixture.render()).some(node => node.type === JoinForm), false, "Uncertain billing never opens another checkout");
+  fixture.setPaymentConfirmed(true);
+  const [id, timer] = fixture.timers.entries().next().value;
+  fixture.timers.delete(id);
+  await timer.callback();
+  assert.deepEqual(fixture.navigations, ["/my/registered"]);
+  assert.equal(fixture.timers.size, 0);
+  assert.ok(fixture.reads.every(url => ["/api/stripe/cancellation", "/api/my/registration/status"].includes(url)));
+});
+
+test("confirmation distinguishes failed fulfillment, expired sign-in and a transient outage without inviting another payment", async t => {
+  for (const [confirmationState, statusCode, message, continues] of [
+    ["needs_support", 200, /couldn’t finish confirming your membership/, true],
+    ["processing", 401, /Your session has ended/, false],
+    ["processing", 403, /We need to check your account/, false],
+    ["processing", 503, /trouble checking the confirmation/, true],
+  ]) {
+    const fixture = await activationView({ completingRegistration: true, returnedFromCheckout: true, paymentConfirmed: false, billing: null, confirmationState, statusCode });
+    t.after(fixture.state.dispose);
+    assert.match(visible(fixture.render()), message);
+    assert.equal(fixture.timers.size > 0, continues);
+    assert.deepEqual(fixture.navigations, []);
+    assert.equal(nodes(fixture.render()).some(node => node.type === JoinForm), false);
+  }
+});
+
+
+test("a billing read failure cannot hide the sign-in recovery on checkout return", async t => {
+  const fixture = await activationView({ completingRegistration: true, returnedFromCheckout: true, paymentConfirmed: false, billing: null, statusCode: 401, billingStatusCode: 401 });
+  t.after(fixture.state.dispose);
+  assert.match(visible(fixture.render()), /Your session has ended/);
+  assert.ok(nodes(fixture.render()).some(node => node.props.href === "/my/access"));
+  assert.doesNotMatch(visible(fixture.render()), /Check billing again/);
 });

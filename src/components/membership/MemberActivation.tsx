@@ -41,6 +41,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
   const [refresh, setRefresh] = useState(0);
   const [reviewAgain, setReviewAgain] = useState(false);
   const [confirmationSlow, setConfirmationSlow] = useState(false);
+  const [confirmationProblem, setConfirmationProblem] = useState<"needs_support" | "signed_out" | "access_denied" | "unavailable" | null>(null);
   const confirmationNavigation = useRef(false);
   const refreshStatus = useCallback(() => { setLoading(true); setLoadError(null); setRefresh(value => value + 1); }, []);
 
@@ -77,20 +78,35 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
     setConfirmationSlow(false);
+    setConfirmationProblem(null);
     async function checkRegistration() {
       attempts++;
       try {
         const response = await fetch("/api/my/registration/status", { cache: "no-store", signal: controller.signal });
+        if (controller.signal.aborted) return;
+        if (response.status === 401 || response.status === 403) {
+          setConfirmationProblem(response.status === 401 ? "signed_out" : "access_denied");
+          return;
+        }
+        if (!response.ok) throw new Error("Confirmation is temporarily unavailable.");
         const result = await response.json();
-        if (response.ok && result.paymentConfirmed === true && !controller.signal.aborted) {
+        if (controller.signal.aborted) return;
+        if (result.paymentConfirmed === true) {
           confirmationNavigation.current = true;
           window.location.replace("/my/registered");
           return;
         }
-      } catch { /* A delayed webhook or read failure must never claim success. */ }
+        setConfirmationProblem(result.confirmationState === "needs_support" ? "needs_support" : null);
+      } catch {
+        // Network errors are different from a pending payment. Neither can
+        // claim success or make another Checkout available.
+        if (!controller.signal.aborted) setConfirmationProblem("unavailable");
+      }
       if (controller.signal.aborted) return;
-      if (attempts < 20) timer = setTimeout(checkRegistration, 1500);
-      else setConfirmationSlow(true);
+      if (attempts >= 20) setConfirmationSlow(true);
+      // Provider retries can outlast the first thirty seconds. Keep checking
+      // without requiring another click, but back off to avoid a tight loop.
+      timer = setTimeout(checkRegistration, attempts < 20 ? 1500 : 10000);
     }
     void checkRegistration();
     return () => { controller.abort(); clearTimeout(timer); };
@@ -98,7 +114,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
 
   return <div className="mt-7">
     {preview ? <p className="mb-6 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">Preview only. No agreement is accepted and no billing is authorized.</p> : null}
-    {loading ? <p className="py-6 text-sm" role="status">Checking your membership billing…</p> : loadError ? <section className="border-t border-[var(--member-rule)] py-6" role="alert">
+    {loading ? <p className="py-6 text-sm" role="status">Checking your membership billing…</p> : loadError && (!returnedFromCheckout || !completingRegistration) ? <section className="border-t border-[var(--member-rule)] py-6" role="alert">
       <p>{loadError}</p><button className={linkClass + " mt-3"} type="button" onClick={refreshStatus}>Check billing again</button>
       <p className="mt-2 text-sm text-[var(--member-muted)]">Contact Ruined if you need help before a scheduled payment.</p>
     </section> : commitment && !reviewingCanceledOffer ? <section className="border-t border-[var(--member-rule)] pt-6" aria-label="Membership billing status">
@@ -125,9 +141,15 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
           : <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Manage renewal or review cancellation below. Profile access remains separate from billing.</p>{!preview ? <MembershipCancellation initialCommitment={commitment} onCanceled={refreshStatus} /> : null}</>}
       {completingRegistration && commitment.billingSchedule && ["scheduled", "active"].includes(status ?? "") ? <p className="mt-6 text-sm" role="status">Opening your registration confirmation…</p> : null}
     </section> : returnedFromCheckout && !preview && !reviewingCanceledOffer ? <section className="border-t border-[var(--member-rule)] py-6" aria-live="polite">
-      <h2 className="text-2xl font-semibold">Waiting for Stripe confirmation.</h2>
-      <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Your confirmation has not reached this account yet. Check again in a moment before starting another checkout.</p>
-      <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation</button>
+      <h2 className="text-2xl font-semibold">{confirmationProblem === "needs_support" ? "We couldn’t finish confirming your membership." : confirmationProblem === "signed_out" ? "Sign in to see your confirmation." : confirmationProblem === "access_denied" ? "We need to check your account." : "Confirming your membership."}</h2>
+      <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{confirmationProblem === "needs_support"
+        ? "Please contact Ruined so we can finish this for you. Do not submit another payment. This page will update when confirmation is complete."
+        : confirmationProblem === "signed_out" ? "Your session has ended. Sign back in with the same email to check the payment you already started."
+          : confirmationProblem === "access_denied" ? "Contact Ruined for help checking your membership. Do not submit another payment."
+            : confirmationProblem === "unavailable" ? "We’re having trouble checking the confirmation right now. We’ll retry automatically. You do not need to pay again."
+              : "This page updates automatically when your payment is confirmed. You do not need to pay again."}</p>
+      {confirmationProblem === "signed_out" ? <Link className={linkClass + " mt-4"} href="/my/access">Sign in</Link>
+        : confirmationSlow || confirmationProblem === "unavailable" ? <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation again</button> : null}
     </section> : <>
       {agreementOnlyReturnHref ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Accept the membership agreement, then return to approve your shared membership. Your partner will handle the payment.</p> : !completingRegistration && !complimentary ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Review your membership and pay your first period below." : future ? `Your first charge is ${future}. Nothing is charged today.` : "Review your membership and payment terms below."} Your saved card alone does not authorize billing.</p> : null}
       {disabledReason && !preview ? <p className="mt-5 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">{disabledReason}</p> : null}
@@ -149,7 +171,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
           billingTermsVersion: "membership-billing-v2", buyoutCap: 150000, participants: [{ memberId: "preview-member", name: "Preview Member" }], firstChargeAt: billingSchedule ? null : firstChargeAt, ...(billingSchedule ? { billingSchedule, expiresAt: billingSchedule.cutoffAt } : {}) } : null}
       /> : null}
     </>}
-    {confirmationSlow ? <p className="mt-5 text-sm" role="status">Confirmation is taking a little longer. Your payment will not be repeated. <button type="button" className={linkClass} onClick={refreshStatus}>Check confirmation again</button></p> : null}
+    {confirmationSlow && !confirmationProblem ? <p className="mt-5 text-sm" role="status">Confirmation is taking a little longer. We’re still checking automatically; no further payment is needed.</p> : null}
     <nav className="mt-10 flex flex-wrap gap-x-7 border-t border-[var(--member-rule)] pt-5" aria-label="Registration and support">
       {!completingRegistration ? <><Link className={linkClass} href="/my/registered">Your registration</Link>
       <Link className={linkClass} href="/my/payment-method">Manage saved card</Link></> : null}

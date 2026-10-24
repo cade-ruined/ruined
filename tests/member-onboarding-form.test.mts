@@ -127,7 +127,8 @@ test("member entry uses a live accessible step rail beneath the header", () => {
   ]) {
     assert.ok(entryProgress.includes(token), `missing progress token: ${token}`);
   }
-  assert.match(entryProgress, /Step \{currentIndex \+ 1\} of 3/);
+  assert.doesNotMatch(entryProgress, /Step \{currentIndex \+ 1\} of 3/);
+  assert.deepEqual(MEMBERSHIP_ENTRY_STAGES.map(({ label }) => label), ["Details", "Membership", "Payment"]);
   assert.doesNotMatch(entryProgress, /color-highlight|sticky|rounded/);
   assert.match(joinForm, /useMembershipEntryProgressStage\(stage\)/);
   assert.match(joinForm, /previousStage\.current === stage[\s\S]*stageHeadingRef\.current\?\.focus\(\)/);

@@ -1493,7 +1493,7 @@ export async function recordPrepaidMembershipRefund(tx: BillingTransaction, inpu
     || proof.chargeId !== input.chargeId || proof.currency !== input.currency || proof.livemode !== input.livemode
     || !Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > proof.amountPaid
     || proof.refundId && proof.refundId !== input.refundId || proof.cancellationId && proof.cancellationId !== input.cancellationId
-    || !/^re_[A-Za-z0-9_]+$/.test(input.refundId)) throw new MembershipCheckoutConflictError("prepaid_refund_identity_mismatch");
+    || !/^(re|pyr)_[A-Za-z0-9][A-Za-z0-9_]*$/.test(input.refundId)) throw new MembershipCheckoutConflictError("prepaid_refund_identity_mismatch");
   if (proof.refundState === "refunded") return proof;
   if (proof.refundVerifiedAt && prepaymentDate(input.verifiedAt) < proof.refundVerifiedAt) return proof;
   const state = input.status === "succeeded" ? input.amount === proof.amountPaid ? "refunded" : "partial"

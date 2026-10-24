@@ -459,6 +459,40 @@ test("registration holds survive launch changes and release profiles only after 
     assert.equal((await row("select completion_basis from member_registration_access where member_id=$1",[complimentary.member_id])).completion_basis,"complimentary");
     assert.equal((await row("select count(*)::int as count from member_payment_method_accounts where member_id=$1",[complimentary.member_id])).count,0);
   });
+  await t.test("a later complimentary invitation completes an existing registration without card collection", async () => {
+    const returning = await member("returning-complimentary@example.test");
+    await profile(returning);
+    const before = await registration.getMemberRegistration(returning.authUserId);
+    assert.equal(before.profileComplete, true);
+    assert.equal(before.registeredAt, null);
+    assert.equal(before.ready, false);
+
+    const invitationId = randomUUID(), token = randomUUID().replaceAll("-", "") + "abc12345678";
+    await db.query(`insert into member_personal_invitations(id,member_id,request_id,public_token,recipient_name,recipient_email_normalized,
+      inviter_name,email_requested,membership_type,complimentary_reason,complimentary_authorized_by_auth_user_id)
+      values($1,$2,$3,$4,'Returning Member',$5,'Test Admin',false,'complimentary','TEST ONLY later complimentary invitation',$6)`,
+      [invitationId, admin.member_id, randomUUID(), token, returning.email, admin.authUserId]);
+    const platform = load("src/lib/auth/platform-access.ts");
+    await platform.completePlatformSignIn(returning, { invitationToken: token });
+    const completed = await registration.getMemberRegistration(returning.authUserId);
+    assert.equal(completed.state, "registered");
+    assert.equal(completed.ready, true);
+    assert.ok(completed.registeredAt);
+    assert.equal(completed.requiresPaymentMethod, false);
+    assert.equal(completed.requiresInitialPayment, false);
+    assert.equal(await registration.getMemberRegistrationDestination(returning.authUserId), "/my/registered");
+    assert.equal((await row("select completion_basis from member_registration_access where member_id=$1", [returning.member_id])).completion_basis, "complimentary");
+    assert.equal((await row("select private.ruined_member_profile_released($1) as released", [returning.member_id])).released, false);
+    assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='welcome'", [returning.member_id])).count, 1);
+    for (const table of ["member_payment_method_accounts", "stripe_subscriptions", "stripe_checkout_attempts"]) {
+      assert.equal((await row(`select count(*)::int as count from ${table} where member_id=$1`, [returning.member_id])).count, 0);
+    }
+
+    // Reopening the accepted invitation is idempotent: no second completion or welcome.
+    await platform.completePlatformSignIn(returning, { invitationToken: token });
+    assert.deepEqual(await registration.getMemberRegistration(returning.authUserId), completed);
+    assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='welcome'", [returning.member_id])).count, 1);
+  });
   await t.test("paid agreement acceptance requires the activation gate and complete intake without opening held profiles", async () => {
     const target = await member("paid-agreement-held@example.test");
     await profile(target); await savedCard(target); await registration.completeMemberRegistration(target.authUserId);

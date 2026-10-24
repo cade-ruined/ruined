@@ -135,3 +135,15 @@ test("wrong consent, price, settlement, partial refund and disputed charge canno
     const f = fixture(); mutate(f); await assert.rejects(f.inspect({ allowRefund: true }), /requires_review/);
   }
 });
+
+
+test("provider inspection retains Link py_ charge identity and verifies matching pyr_ refund readback", async () => {
+  const f = fixture(); f.charge.id = "py_3ExampleLinkPayment12345678";
+  assert.equal((await f.inspect()).chargeId, f.charge.id);
+  f.refunds.push({ id: "pyr_verified_link", status: "succeeded", amount: f.invoice.total,
+    currency: "usd", charge: f.charge.id, payment_intent: "pi_first", metadata: {} });
+  f.charge.amount_refunded = f.invoice.total; f.charge.refunded = true;
+  assert.equal((await f.inspect({ allowRefund: true })).refund.id, "pyr_verified_link");
+  f.refunds[0].charge = "py_other";
+  await assert.rejects(f.inspect({ allowRefund: true }), /requires_review/);
+});

@@ -370,7 +370,7 @@ export async function recordMembershipPrepaidRefundEvidence(tx: CommitmentTransa
   refund: CommitmentPrepaidRefundEvidence, now = new Date()): Promise<boolean> {
   const cancellation = await getMembershipCancellation(tx, cancellationId), payment = cancellation?.quote.prepaidProviderSnapshot;
   if (!cancellation || !payment || cancellation.quote.intent !== "cancel_before_start"
-    || refund.cancellationId !== cancellationId || !refund.id.startsWith("re_")
+    || refund.cancellationId !== cancellationId || !/^(re|pyr)_[A-Za-z0-9][A-Za-z0-9_]*$/.test(refund.id)
     || refund.invoiceId !== payment.invoiceId || refund.paymentIntentId !== payment.paymentIntentId || refund.chargeId !== payment.chargeId
     || refund.amount !== payment.amount || refund.amount !== cancellation.quote.refundAmount || refund.currency !== payment.currency
     || refund.livemode !== payment.livemode || !Number.isFinite(Date.parse(refund.observedAt))

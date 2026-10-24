@@ -242,6 +242,8 @@ export default function JoinForm({
   const noSeparatePayment = complimentary || sharedMembership;
   const prelaunch = registrationOnly || !noSeparatePayment && onboarding.billingState === "pending" && !checkoutEnabled;
   const compactCheckout = streamlinedPayment && !noSeparatePayment && !prelaunch && !agreementOnlyReturnHref;
+  const savedLegalName = onboarding.profile.legalName?.trim() ?? "";
+  const savedSignerName = savedLegalName.length > 0 && savedLegalName.length <= 180 ? savedLegalName : null;
   const agreementComplete = Boolean(acceptanceId);
   const stage = membershipEntryStage(profileComplete, agreementComplete);
   const testCheckout = publishableKey?.startsWith("pk_test_") ?? false;
@@ -475,6 +477,10 @@ export default function JoinForm({
     if (compactCheckout && (!quote || offerExpired(quote))) {
       setQuote(null); setError("Your offer has expired. Review a new price and Foundations dates before continuing."); setSubmitting(false); return;
     }
+    const signerName = compactCheckout && savedSignerName ? savedSignerName : String(form.get("signer-name") ?? "").trim();
+    if (!signerName || signerName.length > 180) {
+      setError("Enter the full name saved in your registration before continuing."); setSubmitting(false); return;
+    }
     try {
       const response = await fetch("/api/my/agreement", {
         body: JSON.stringify({
@@ -482,7 +488,7 @@ export default function JoinForm({
           ageConfirmed: compactCheckout || form.get("age-confirmed") === "on",
           agreementVersionId: onboarding.agreement.id,
           attemptId: attemptId(),
-          signerName: String(form.get("signer-name") ?? ""),
+          signerName,
         }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -998,9 +1004,10 @@ export default function JoinForm({
             <details className="border-b border-[var(--member-rule)] py-3 text-sm"><summary className="cursor-pointer py-2 font-medium">Read the Membership Agreement{onboarding.agreement.version ? ` · v${onboarding.agreement.version}` : ""}</summary><div className="mt-3 max-h-80 overflow-y-auto bg-[var(--member-soft)] p-4" role="region" aria-label="Published membership agreement" tabIndex={0}>{onboarding.agreement.body ? <AgreementText body={onboarding.agreement.body} /> : <p>The membership agreement is currently unavailable.</p>}</div></details>
           {!clientSecret ? <>
             {stage === "agreement" ? <form key={`${quote.id}:${onboarding.agreement.id}`} onSubmit={acceptAgreement} className="mt-5 grid gap-4">
-              <label className="grid gap-2 text-sm"><span>Full name</span><input className={fieldClass} autoComplete="name" name="signer-name" defaultValue={onboarding.profile.legalName ?? ""} required disabled={!enabled || submitting} /></label>
+              {savedSignerName ? <p className="text-sm"><span className="text-[var(--member-muted)]">Agreement for </span><strong className="font-semibold">{savedSignerName}</strong></p>
+                : <label className="grid gap-2 text-sm"><span>Full name</span><input className={fieldClass} autoComplete="name" name="signer-name" maxLength={180} defaultValue={onboarding.profile.legalName ?? ""} required disabled={!enabled || submitting} /></label>}
               <label className="grid grid-cols-[1rem_1fr] items-start gap-3 text-sm leading-relaxed"><input className="mt-1 size-4 accent-[#ffca2c]" type="checkbox" name="agreement-accepted" required disabled={!enabled || submitting} /><span>I am at least {minimumAge} and accept the Membership Agreement. I’ll review the final total and confirm payment in Stripe.</span></label>
-              <button type="submit" className="min-h-14 w-full bg-[#ffca2c] px-5 py-4 text-base font-semibold text-[#171714] disabled:opacity-50" disabled={!enabled || !checkoutEnabled || !publishableKey || !onboarding.agreement.id || !onboarding.agreement.body || Boolean(lockedPlan) || submitting}>{submitting ? "Opening secure payment…" : "Agree & continue"}</button>
+              <button type="submit" className="min-h-14 w-full bg-[#ffca2c] px-5 py-4 text-base font-semibold text-[#171714] disabled:opacity-50" disabled={!enabled || !checkoutEnabled || !publishableKey || !onboarding.agreement.id || !onboarding.agreement.body || Boolean(lockedPlan) || submitting}>{submitting ? "Opening secure payment…" : "Continue to secure payment"}</button>
             </form> : <div className="mt-5"><p className="text-sm leading-relaxed text-[var(--member-muted)]" role="status">{preview ? "Preview only. Secure Stripe payment appears here after agreement acceptance." : submitting ? "Loading secure payment…" : error ? "Your agreement is saved. Reload secure payment to continue." : "Preparing your secure payment form…"}</p>{error ? <button type="button" onClick={() => openCheckout(false)} disabled={!enabled || !checkoutEnabled || !publishableKey || Boolean(lockedPlan) || submitting} className="mt-4 min-h-14 w-full bg-[#ffca2c] px-5 py-4 text-base font-semibold text-[#171714] disabled:opacity-50">{submitting ? "Opening secure payment…" : "Reload secure payment"}</button> : null}</div>}
             <p className="mt-3 text-center text-xs leading-relaxed text-[var(--member-muted)]">{testCheckout ? "Test only. No real payment is made." : "No charge until you confirm payment in Stripe."} <Link className="underline underline-offset-4" href="/privacy">Privacy policy</Link></p>
           </> : null}

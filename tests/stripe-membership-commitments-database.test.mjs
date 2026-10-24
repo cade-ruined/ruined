@@ -197,7 +197,7 @@ test("a prestart quote cannot be first confirmed at its billing start", async t 
   await assert.rejects(tx(sql => repo.reserveMembershipCancellation(sql, { requestId: randomUUID(), memberId: c.memberId, quote, now: new Date(c.startsAt) })), /expired_or_changed/);
 });
 
-async function prepaidFixture(t, { missedCutoff = false } = {}) {
+async function prepaidFixture(t, { missedCutoff = false, linkPayment = false } = {}) {
   const base = await fixture(t), { db, tx, attempt } = base;
   const billingSchedule = schedules.foundationsBillingScheduleForMonth("2026-11", "monthly");
   const c = policy.buildMembershipCommitment({ ...base.c, startsAt: billingSchedule.serviceStartsAt, billingSchedule });
@@ -206,7 +206,7 @@ async function prepaidFixture(t, { missedCutoff = false } = {}) {
   await tx(sql => repo.createMembershipCommitment(sql, c, attempt));
   const now = missedCutoff ? new Date(Date.parse(c.startsAt)+86400000) : new Date("2026-10-05T20:00:00.000Z"), provider = { subscriptionId: c.subscriptionId, customerId: c.customerId, livemode: false,
     status: "trialing", serviceStartsAt: c.startsAt, prepaidThrough: billingSchedule.prepaidThrough, canceledAt: null, observedAt: now.toISOString(),
-    invoiceId: "in_prepaid", paymentIntentId: "pi_prepaid", chargeId: "ch_prepaid", amount: 52993, currency: "usd", pendingInvoiceItems: false,
+    invoiceId: "in_prepaid", paymentIntentId: "pi_prepaid", chargeId: linkPayment ? "py_3ExampleLinkPayment12345678" : "ch_prepaid", amount: 52993, currency: "usd", pendingInvoiceItems: false,
     ...(missedCutoff ? { invoicePaidAt: new Date(Date.parse(billingSchedule.cutoffAt)+1000).toISOString() } : {}) };
   if (missedCutoff) {
     await db.exec("create table membership_commercial_reservations(id uuid,status text,billing_schedule jsonb); create table stripe_invoices(id text,stripe_subscription_id text,paid_at timestamptz); create table stripe_membership_prepaid_proofs(contract_id uuid,reservation_id uuid,stripe_invoice_id text,stripe_subscription_id text,review_reason text,activated_at timestamptz)");
@@ -220,7 +220,7 @@ async function prepaidFixture(t, { missedCutoff = false } = {}) {
     subscriptionStatus: "canceled", canceledAt: now.toISOString(), cancelAt: null, firstChargeAt: c.startsAt,
     prepaidInvoiceId: provider.invoiceId, openOrdinaryInvoiceIds: [], pendingProrationOrInvoiceItems: false,
     ...(missedCutoff ? { invalidEnrollmentReason: "cohort_cutoff_missed" } : {}) };
-  const refund = { id: "re_prepaid", status: "pending", cancellationId: requestId, invoiceId: provider.invoiceId,
+  const refund = { id: linkPayment ? "pyr_verified_link" : "re_prepaid", status: "pending", cancellationId: requestId, invoiceId: provider.invoiceId,
     paymentIntentId: provider.paymentIntentId, chargeId: provider.chargeId, amount: provider.amount, currency: "usd", livemode: false, observedAt: now.toISOString() };
   return { ...base, c, now, quote, requestId, stopped, refund };
 }
@@ -285,4 +285,19 @@ test("prepaid schedule must match both stored checkout consent snapshots", async
   await db.query("update stripe_checkout_attempts set recurring_payment_terms=jsonb_set(recurring_payment_terms,'{billingSchedule}',$1::jsonb)", [JSON.stringify(billingSchedule)]);
   assert.deepEqual(await tx(sql => repo.createMembershipCommitment(sql, prepaid, attempt)), prepaid);
   assert.notEqual(policy.commitmentSnapshotFingerprint(prepaid), policy.commitmentSnapshotFingerprint({ ...prepaid, billingSchedule: undefined }));
+});
+
+
+test("Link prepaid cancellation accepts only the bound pyr_ refund and preserves full-refund gates", async t => {
+  const { tx, c, now, requestId, stopped, refund } = await prepaidFixture(t, { linkPayment: true });
+  await tx(sql => repo.confirmMembershipBillingStopped(sql, requestId, stopped, now));
+  await tx(sql => repo.fenceMembershipPrepaidRefund(sql, requestId, now));
+  for (const change of [{ id: "pyr_" }, { id: "pyr__" }, { id: "py_wrong" }, { amount: refund.amount - 1 }, { chargeId: "py_other" }, { livemode: true }]) {
+    await assert.rejects(tx(sql => repo.recordMembershipPrepaidRefundEvidence(sql, requestId, { ...refund, ...change }, now)), /requires_review/);
+  }
+  assert.equal(await tx(sql => repo.recordMembershipPrepaidRefundEvidence(sql, requestId, refund, now)), true);
+  await assert.rejects(tx(sql => repo.completeMembershipCancellation(sql, { cancellationId: requestId, replacementInvoiceId: null, now })), /prepaid_refund_not_confirmed/);
+  assert.equal(await tx(sql => repo.recordMembershipPrepaidRefundEvidence(sql, requestId, { ...refund, status: "succeeded" }, now)), true);
+  assert.equal(await tx(sql => repo.completeMembershipCancellation(sql, { cancellationId: requestId, replacementInvoiceId: null, now })), true);
+  assert.equal((await tx(sql => repo.getMembershipCommitment(sql, c))).status, "ended");
 });
