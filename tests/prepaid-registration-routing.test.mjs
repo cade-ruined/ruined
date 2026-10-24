@@ -359,3 +359,26 @@ test("a billing read failure cannot hide the sign-in recovery on checkout return
   assert.ok(nodes(fixture.render()).some(node => node.props.href === "/my/access"));
   assert.doesNotMatch(visible(fixture.render()), /Check billing again/);
 });
+
+
+test("an existing billing commitment does not hide a failed registration confirmation or offer another checkout", async t => {
+  for (const [confirmationState, statusCode, message, continues] of [
+    ["needs_support", 200, /couldn’t finish confirming your membership/, true],
+    ["processing", 401, /Your session has ended/, false],
+    ["processing", 403, /We need to check your account/, false],
+    ["processing", 503, /trouble checking the confirmation/, true],
+  ]) {
+    const fixture = await activationView({ completingRegistration: true, returnedFromCheckout: true, paymentConfirmed: false, billing: commitment, confirmationState, statusCode });
+    t.after(fixture.state.dispose);
+    const tree = fixture.render();
+    assert.match(visible(tree), message);
+    assert.doesNotMatch(visible(tree), /Opening your registration confirmation/);
+    assert.equal(fixture.timers.size > 0, continues);
+    assert.deepEqual(fixture.navigations, []);
+    assert.equal(nodes(tree).some(node => node.type === JoinForm), false);
+    assert.ok(nodes(tree).some(node => node.type === Cancellation), "The persisted billing record remains available");
+    if (statusCode === 401) assert.ok(nodes(tree).some(node => node.props.href === "/my/access"));
+    if (statusCode === 503) assert.ok(nodes(tree).some(node => node.type === "button" && visible(node) === "Check confirmation again"));
+    assert.ok(fixture.reads.every(url => ["/api/stripe/cancellation", "/api/my/registration/status"].includes(url)), "Recovery never starts another payment");
+  }
+});

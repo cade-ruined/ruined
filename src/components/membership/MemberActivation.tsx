@@ -112,6 +112,18 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
     return () => { controller.abort(); clearTimeout(timer); };
   }, [completingRegistration, preview, reviewAgain, returnedFromCheckout, status, refresh]);
 
+  const confirmationNotice = <>
+      <h2 className="text-2xl font-semibold">{confirmationProblem === "needs_support" ? "We couldn’t finish confirming your membership." : confirmationProblem === "signed_out" ? "Sign in to see your confirmation." : confirmationProblem === "access_denied" ? "We need to check your account." : "Confirming your membership."}</h2>
+      <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{confirmationProblem === "needs_support"
+        ? "Please contact Ruined so we can finish this for you. Do not submit another payment. This page will update when confirmation is complete."
+        : confirmationProblem === "signed_out" ? "Your session has ended. Sign back in with the same email to check the payment you already started."
+          : confirmationProblem === "access_denied" ? "Contact Ruined for help checking your membership. Do not submit another payment."
+            : confirmationProblem === "unavailable" ? "We’re having trouble checking the confirmation right now. We’ll retry automatically. You do not need to pay again."
+              : "This page updates automatically when your payment is confirmed. You do not need to pay again."}</p>
+      {confirmationProblem === "signed_out" ? <Link className={linkClass + " mt-4"} href="/my/access">Sign in</Link>
+        : confirmationSlow || confirmationProblem === "unavailable" ? <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation again</button> : null}
+  </>;
+
   return <div className="mt-7">
     {preview ? <p className="mb-6 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">Preview only. No agreement is accepted and no billing is authorized.</p> : null}
     {loading ? <p className="py-6 text-sm" role="status">Checking your membership billing…</p> : loadError && (!returnedFromCheckout || !completingRegistration) ? <section className="border-t border-[var(--member-rule)] py-6" role="alert">
@@ -139,17 +151,10 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
         : status === "review_required" ? <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Contact Ruined to resolve your billing before confirming another membership.</p>
           : status === "pending_payment" ? <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{commitment.billingSchedule ? "We are confirming payment and the start of service. Your receipt will update when both are confirmed. Contact Ruined if you need help." : "A paid first invoice has not yet been confirmed. Contact Ruined if your payment needs attention."}</p><button className={linkClass + " mt-3"} type="button" onClick={refreshStatus}>Check payment status</button></>
           : <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Manage renewal or review cancellation below. Profile access remains separate from billing.</p>{!preview ? <MembershipCancellation initialCommitment={commitment} onCanceled={refreshStatus} /> : null}</>}
-      {completingRegistration && commitment.billingSchedule && ["scheduled", "active"].includes(status ?? "") ? <p className="mt-6 text-sm" role="status">Opening your registration confirmation…</p> : null}
+      {completingRegistration && confirmationProblem ? <div className="mt-6 border-t border-[var(--member-rule)] pt-6" aria-live="polite">{confirmationNotice}</div>
+        : completingRegistration && commitment.billingSchedule && ["scheduled", "active"].includes(status ?? "") ? <p className="mt-6 text-sm" role="status">Opening your registration confirmation…</p> : null}
     </section> : returnedFromCheckout && !preview && !reviewingCanceledOffer ? <section className="border-t border-[var(--member-rule)] py-6" aria-live="polite">
-      <h2 className="text-2xl font-semibold">{confirmationProblem === "needs_support" ? "We couldn’t finish confirming your membership." : confirmationProblem === "signed_out" ? "Sign in to see your confirmation." : confirmationProblem === "access_denied" ? "We need to check your account." : "Confirming your membership."}</h2>
-      <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{confirmationProblem === "needs_support"
-        ? "Please contact Ruined so we can finish this for you. Do not submit another payment. This page will update when confirmation is complete."
-        : confirmationProblem === "signed_out" ? "Your session has ended. Sign back in with the same email to check the payment you already started."
-          : confirmationProblem === "access_denied" ? "Contact Ruined for help checking your membership. Do not submit another payment."
-            : confirmationProblem === "unavailable" ? "We’re having trouble checking the confirmation right now. We’ll retry automatically. You do not need to pay again."
-              : "This page updates automatically when your payment is confirmed. You do not need to pay again."}</p>
-      {confirmationProblem === "signed_out" ? <Link className={linkClass + " mt-4"} href="/my/access">Sign in</Link>
-        : confirmationSlow || confirmationProblem === "unavailable" ? <button className={linkClass + " mt-4"} type="button" onClick={refreshStatus}>Check confirmation again</button> : null}
+      {confirmationNotice}
     </section> : <>
       {agreementOnlyReturnHref ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">Accept the membership agreement, then return to approve your shared membership. Your partner will handle the payment.</p> : !completingRegistration && !complimentary ? <p className="max-w-xl text-sm leading-relaxed text-[var(--member-muted)]">{billingSchedule ? "Review your membership and pay your first period below." : future ? `Your first charge is ${future}. Nothing is charged today.` : "Review your membership and payment terms below."} Your saved card alone does not authorize billing.</p> : null}
       {disabledReason && !preview ? <p className="mt-5 border-l-2 border-[var(--member-red)] pl-3 text-sm" role="status">{disabledReason}</p> : null}
