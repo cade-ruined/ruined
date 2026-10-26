@@ -11,16 +11,24 @@ import * as pricing from "../src/lib/membership/pricing.ts";
 import * as entryStage from "../src/lib/membership/entry-stage.ts";
 import * as communicationPreferences from "../src/lib/membership/member-communication-preferences-model.ts";
 
-function hooks() {
+function hooks(runEffects = false) {
   let cursor = 0;
   const slots = [];
   return {
     react: { ...React,
       useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], next => { slots[i] = typeof next === "function" ? next(slots[i]) : next; }]; },
       useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
-      useId() { return "member-tag-test"; }, useEffect() {},
+      useId() { return "member-tag-test"; }, useEffect(effect, dependencies) {
+        const i = cursor++;
+        if (!runEffects) return;
+        const prior = slots[i];
+        if (!prior || dependencies.some((value, index) => value !== prior.dependencies[index])) {
+          prior?.cleanup?.(); slots[i] = { dependencies, cleanup: effect() };
+        }
+      },
     },
     render(component, props) { cursor = 0; return component(props); },
+    unmount() { for (const slot of slots) slot?.cleanup?.(); },
   };
 }
 function elements(node) { return React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : []; }
@@ -38,10 +46,13 @@ async function load(path, dependencies, globals = {}) {
 }
 const profile = { revision: "a".repeat(64), directory: { displayName: "Public Name", preferredName: "Legacy preferred", memberTag: null, avatarUrl: null }, preferences: {}, privateProfile: {}, access: {} };
 async function fixture(kind, tag = null, profileOverrides = {}) {
-  const state = hooks(), calls = [], responses = [];
+  const state = hooks(kind === "profile"), calls = [], responses = [], refreshes = [], events = [];
+  const router = { refresh() { refreshes.push(true); } };
+  const window = new EventTarget(); window.addEventListener("ruined:member-progress", event => events.push(event.type));
   const onboarding = { profile: { memberTag: tag, preferredName: "Legacy preferred", legalName: "Private Legal Name", mobile: "+18015550100", fulfillmentAddress: { countryCode: "US" }, apparelSizing: {} }, agreement: { acceptanceId: null }, requiredFieldsComplete: false, membershipFunding: "self", email: "private@example.test" };
   const initialProfile = { ...profile, ...profileOverrides, directory: { ...profile.directory, ...profileOverrides.directory, memberTag: tag }, privateProfile: { ...profile.privateProfile, ...profileOverrides.privateProfile } };
   const component = await load(`src/components/membership/${kind === "join" ? "JoinForm" : "MemberProfileEditor"}.tsx`, {
+    "next/navigation": { useRouter: () => router },
     react: state.react, "next/link": Stub, "@stripe/stripe-js": { loadStripe: () => assert.fail("No payment during profile editing") },
     "@/components/membership/MembershipEntryProgress": { useMembershipEntryProgressStage() {} },
     "@/components/membership/RegistrationCouplePreference": { useRegistrationCouple: () => ({ loading: false, loadError: null }), RegistrationCoupleFields: Stub },
@@ -55,13 +66,14 @@ async function fixture(kind, tag = null, profileOverrides = {}) {
     "@/components/support/supportStyles": {}, "@/lib/membership/entry-stage": entryStage, "@/lib/membership/pricing": pricing, "@/lib/membership/phone": phone,
     "@/lib/membership/member-communication-preferences-model": communicationPreferences,
   }, {
+    window,
     FormData: class { constructor(values) { this.values = values; } get(name) { return this.values[name] ?? null; } },
     fetch: async (url, request) => { const body = JSON.parse(request.body); calls.push({ url, method: request.method, body }); return responses.shift() ?? { ok: true, status: 200, json: async () => ({ onboarding, profile: { ...initialProfile, directory: { ...initialProfile.directory, memberTag: body.memberTag || null } } }) }; },
   });
   const props = kind === "join" ? { initialOnboarding: onboarding, minimumAge: 18, enabled: true, photoStorageReady: true } : { initialProfile, photoStorageReady: true, writable: true };
   const render = () => state.render(component, props);
   async function submit(tagValue, values = {}) { await elements(render()).find(node => node.type === "form").props.onSubmit({ preventDefault() {}, currentTarget: { "member-tag": tagValue, "legal-name": "Private Legal Name", "full-name": "Public Name", "city": "Salt Lake City", "state": "Utah", "timezone": "America/Denver", "mobile-country": "US", "mobile-national": "8015550100", ...values } }); }
-  return { render, submit, calls, responses };
+  return { render, submit, calls, responses, refreshes, events, props, unmount: state.unmount };
 }
 
 test("joining requires a permanent tag and explains the public full name", async () => {
@@ -152,7 +164,8 @@ test("taken tags can be corrected and retried while true profile version conflic
 
 test("home shows the saved display name and only adds a distinct secondary @tag", async () => {
   const state = hooks();
-  const Home = await load("src/components/platform/MemberHome.tsx", { react: state.react, "next/link": Stub, "next/image": Stub, "@/components/membership/InstallRuined": Stub, "@/components/membership/MemberJournal": Stub, "@/components/membership/MemberWelcome": Stub, "@/components/membership/MemberBadges": Stub, "@/components/membership/MemberPortraitState": { useMemberPortrait: avatarUrl => ({ avatarUrl }) }, "@/components/membership/MemberProfileShare": Stub, "@/lib/membership/member-number": memberNumber, "@/lib/membership/access-policy": { memberCan: () => false }, "./MemberProfile.module.css": new Proxy({}, { get: (_, key) => key }) });
+  const router = { refresh() {} };
+  const Home = await load("src/components/platform/MemberHome.tsx", { react: state.react, "next/navigation": { useRouter: () => router }, "next/link": Stub, "next/image": Stub, "@/components/membership/InstallRuined": Stub, "@/components/membership/MemberJournal": Stub, "@/components/membership/MemberWelcome": Stub, "@/components/membership/MemberBadges": Stub, "@/components/membership/MemberPortraitState": { useMemberPortrait: avatarUrl => ({ avatarUrl }) }, "@/components/membership/MemberProfileShare": Stub, "@/lib/membership/member-number": memberNumber, "@/lib/membership/access-policy": { memberCan: () => false }, "./MemberProfile.module.css": new Proxy({}, { get: (_, key) => key }) });
   const render = (displayName, memberTag) => state.render(Home, { member: { displayName, profile: { memberTag, displayName }, circleMembers: [], identity: { standingState: "active" }, access: { mode: "full", capabilities: [] }, upcomingExperiences: [], nextAction: { kind: "explore" } } });
   const named = render("Public Name", "member_tag");
   const heading = elements(named).find(node => node.type === "h1");
@@ -259,4 +272,53 @@ test("invalid nonblank phone details block profile submission and remain correct
   await view.submit("saved_tag", { "mobile-country": "US", "mobile-national": "4155552671" });
   assert.equal(view.calls.length, 1);
   assert.equal(view.calls[0].body.privateProfile.mobile, "+14155552671");
+});
+
+test("a persisted profile save refreshes badge progress and cached pages without remounting form fields", async () => {
+  const view = await fixture("profile", "saved_tag", { directory: { bio: "Saved bio" } });
+  const before = elements(view.render()).find(node => node.props.name === "bio");
+  await view.submit("saved_tag", { bio: "Saved bio" });
+  assert.deepEqual(view.events, ["ruined:member-progress"]);
+  assert.equal(view.refreshes.length, 1);
+  assert.match(text(view.render()), /Profile saved/);
+  const after = elements(view.render()).find(node => node.props.name === "bio");
+  assert.equal(after.key, before.key, "refresh must not add a remount key to the text field");
+  assert.equal(after.props.defaultValue, "Saved bio");
+  assert.equal(field(view.render()).props.value, "saved_tag");
+  view.unmount();
+});
+
+test("failed and preview profile saves never announce progress or invalidate the page", async () => {
+  for (const status of [400, 409, 500]) {
+    const view = await fixture("profile", "saved_tag");
+    view.responses.push({ ok: false, status, json: async () => ({ error: "Could not save this profile." }) });
+    await view.submit("saved_tag");
+    assert.deepEqual(view.events, []); assert.deepEqual(view.refreshes, []);
+    assert.match(text(view.render()), /Could not save this profile/);
+    view.unmount();
+  }
+  const preview = await fixture("profile", "saved_tag");
+  preview.props.preview = true;
+  await preview.submit("saved_tag");
+  assert.deepEqual(preview.calls, []); assert.deepEqual(preview.events, []); assert.deepEqual(preview.refreshes, []);
+  preview.unmount();
+});
+
+test("late profile success after unmount or an A-to-B-to-A owner change cannot publish progress", async () => {
+  for (const change of ["unmount", "owner"]) {
+    const view = await fixture("profile", "saved_tag", { memberId: "member-a" });
+    let resolve;
+    view.responses.push(new Promise(done => { resolve = done; }));
+    const saving = view.submit("saved_tag");
+    if (change === "unmount") view.unmount();
+    else {
+      view.props.initialProfile = { ...view.props.initialProfile, memberId: "member-b" }; view.render();
+      view.props.initialProfile = { ...view.props.initialProfile, memberId: "member-a" }; view.render();
+    }
+    resolve({ ok: true, status: 200, json: async () => ({ profile: view.props.initialProfile }) });
+    await saving;
+    assert.deepEqual(view.events, []); assert.deepEqual(view.refreshes, []);
+    assert.doesNotMatch(text(view.render()), /Profile saved/);
+    view.unmount();
+  }
 });

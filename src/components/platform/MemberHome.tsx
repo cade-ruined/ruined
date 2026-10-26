@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import InstallRuined from "@/components/membership/InstallRuined";
 import MemberBadges from "@/components/membership/MemberBadges";
@@ -18,7 +19,22 @@ const tabs=["timeline","journal"] as const;
 type JournalMode="all"|"timeline";
 type Tab=typeof tabs[number];
 export default function MemberHome({member,preview=false,welcome=null}:{member:MemberHomeSnapshot;preview?:boolean;welcome?:MemberWelcomeSnapshot|null}) {
+  const router=useRouter();
   const {avatarUrl}=useMemberPortrait(member.avatarUrl);
+  useEffect(()=>{
+    if(preview)return;
+    // Refresh cached profile props without remounting the Journal or its draft.
+    function refresh(){if(!document.hidden)router.refresh();}
+    refresh();
+    window.addEventListener("focus",refresh);
+    window.addEventListener("ruined:member-progress",refresh);
+    document.addEventListener("visibilitychange",refresh);
+    return()=>{
+      window.removeEventListener("focus",refresh);
+      window.removeEventListener("ruined:member-progress",refresh);
+      document.removeEventListener("visibilitychange",refresh);
+    };
+  },[member.identity.authUserId,preview,router]);
   const [privateComposeRequest,setPrivateComposeRequest]=useState(0);
   const [tab,setTab]=useState<Tab>("timeline");const [journalMode,setJournalMode]=useState<JournalMode>("timeline");const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
   useEffect(()=>{

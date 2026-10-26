@@ -17,6 +17,7 @@ const sampleBadges = Array.from({ length: 6 }, (_, index) => ({
 }));
 const badgeButtons = tree => nodes(tree).filter(node => node.type === "button" && node.props["aria-haspopup"] === "dialog");
 const activeBadge = ui => badgeButtons(ui.draw()).find(node => node.props["data-active"]);
+const focusTarget = ui => badgeButtons(ui.draw()).find(node => node.props.tabIndex === 0);
 function key(ui, index, key) {
   let prevented = false;
   badgeButtons(ui.draw())[index].props.onKeyDown({ key, preventDefault() { prevented = true; } });
@@ -28,42 +29,61 @@ function scroll(ui, position) {
   ui.draw();
 }
 
-test("the dock shows only stamps and one active focus target; hover and focus enlarge without opening details", () => {
+test("the dock only enlarges a hovered stamp and returns every stamp to normal on pointer exit", () => {
   const ui = fixture({ badges: sampleBadges });
   let buttons = badgeButtons(ui.draw());
   assert.deepEqual(buttons.map(node => text(node)), ["01", "02", "03", "04", "05", "06"]);
   assert.deepEqual(buttons.map(node => node.props.tabIndex), [0, -1, -1, -1, -1, -1]);
-  assert.equal(buttons[0].props["data-active"], true);
-  assert.equal(buttons[1].props["data-neighbor"], true);
-  assert.equal(buttons[2].props["data-neighbor"], undefined);
+  assert.equal(activeBadge(ui), undefined, "An idle dock does not leave the first stamp enlarged");
+  assert.equal(buttons.some(node => node.props["data-neighbor"]), false);
   buttons[2].props.onPointerEnter({ pointerType: "touch" });
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 1 badge. View details", "A finger entering an icon while swiping must not select it");
+  assert.equal(activeBadge(ui), undefined, "A touch gesture must not leave a hover enlargement behind");
   buttons[2].props.onPointerEnter({ pointerType: "mouse" });
   buttons = badgeButtons(ui.draw());
+  assert.equal(activeBadge(ui).props["aria-label"], "Sample 3 badge. View details");
   assert.deepEqual(buttons.map(node => node.props.tabIndex), [-1, -1, 0, -1, -1, -1]);
   assert.equal(buttons[1].props["data-neighbor"], true);
   assert.equal(buttons[3].props["data-neighbor"], true);
+  buttons[2].props.onFocus();
+  buttons[2].props.onPointerLeave();
+  buttons = badgeButtons(ui.draw());
+  assert.equal(activeBadge(ui), undefined, "Retained button focus must not hold the hover enlargement");
+  assert.equal(buttons.some(node => node.props["data-neighbor"]), false, "Adjacent stamps also return to normal");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 3 badge. View details", "Pointer exit preserves the keyboard entry point");
   buttons[4].props.onFocus();
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 5 badge. View details");
+  assert.equal(activeBadge(ui), undefined, "Keyboard focus uses the visible focus outline without a sticky hover state");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 5 badge. View details");
   assert.equal(ui.dialog.opens, 0);
   ui.unmount();
+});
+
+test("leaving or cancelling the whole dock clears hover even if an individual exit is missed", () => {
+  for (const event of ["onPointerLeave", "onPointerCancel"]) {
+    const ui = fixture({ badges: sampleBadges });
+    badgeButtons(ui.draw())[1].props.onPointerEnter({ pointerType: "pen" });
+    assert.ok(activeBadge(ui));
+    nodes(ui.draw()).find(node => node.type === "ul").props[event]();
+    assert.equal(activeBadge(ui), undefined);
+    assert.equal(badgeButtons(ui.draw()).some(node => node.props["data-neighbor"]), false);
+    ui.unmount();
+  }
 });
 
 test("keyboard arrows, Home and End move the roving focus and reveal icons without opening details", () => {
   const ui = fixture({ badges: sampleBadges }), row = ui.layout();
   assert.equal(key(ui, 0, "ArrowRight"), true);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 2 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 2 badge. View details");
   assert.equal(ui.document.activeElement, ui.buttons.get("Sample 2 badge. View details"));
   assert.deepEqual(ui.document.activeElement.focusOptions, { preventScroll: true });
   assert.equal(key(ui, 1, "End"), true);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 6 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 6 badge. View details");
   assert.ok(row.scrollLeft > 0, "An offscreen keyboard target is revealed in the dock");
   scroll(ui, 60);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 6 badge. View details", "The scroll caused by keyboard movement must not replace keyboard selection");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 6 badge. View details", "The scroll caused by keyboard movement must not replace keyboard selection");
   assert.equal(key(ui, 5, "Home"), true);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 1 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 1 badge. View details");
   assert.equal(key(ui, 0, "ArrowLeft"), true);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 1 badge. View details", "Arrow keys stop at the dock boundary");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 1 badge. View details", "Arrow keys stop at the dock boundary");
   assert.equal(key(ui, 0, "Tab"), false, "Tab retains normal page navigation");
   assert.equal(key(ui, 0, "Enter"), false, "Native button Enter activates the detail dialog");
   assert.equal(ui.dialog.opens, 0);
@@ -73,15 +93,15 @@ test("keyboard arrows, Home and End move the roving focus and reveal icons witho
 test("native scrolling selects the nearest center badge and reaches both end badges", () => {
   const ui = fixture({ badges: sampleBadges }), row = ui.layout();
   scroll(ui, 40);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 3 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 3 badge. View details");
   scroll(ui, row.scrollWidth - row.clientWidth);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 6 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 6 badge. View details");
   scroll(ui, 0);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 1 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 1 badge. View details");
   key(ui, 0, "ArrowRight");
   nodes(ui.draw()).find(node => node.type === "ul").props.onPointerDown();
   scroll(ui, 90);
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 4 badge. View details", "A new touch gesture restores selection from scrolling");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 4 badge. View details", "A new touch gesture restores selection from scrolling");
   assert.equal(ui.dialog.opens, 0);
   ui.unmount();
 });
@@ -112,13 +132,17 @@ test("wheel gestures move only an overflowing dock and release page scrolling at
 
 test("clicking any dock stamp opens that badge's name, earning reason and date, with focus returned to that stamp", () => {
   const ui = fixture({ badges: sampleBadges });
+  badgeButtons(ui.draw())[3].props.onPointerEnter({ pointerType: "mouse" });
+  assert.ok(activeBadge(ui));
   const tree = ui.click("Sample 4 badge. View details"), dialog = nodes(tree).find(node => node.type === "dialog");
+  assert.equal(activeBadge(ui), undefined, "Opening details clears the underlying hover state");
   assert.equal(text(nodes(tree).find(node => node.props.id === dialog.props["aria-labelledby"])), "Sample 4");
   assert.equal(text(nodes(tree).find(node => node.props.id === dialog.props["aria-describedby"])), sampleBadges[3].description);
   assert.equal(text(nodes(tree).find(node => node.type === "time")), "Sep 4, 2026");
   ui.click("Close badge details"); ui.flushFrames();
   assert.equal(ui.document.activeElement, ui.buttons.get("Sample 4 badge. View details"));
-  assert.equal(activeBadge(ui).props["aria-label"], "Sample 4 badge. View details");
+  assert.equal(focusTarget(ui).props["aria-label"], "Sample 4 badge. View details");
+  assert.equal(activeBadge(ui), undefined, "Restoring focus after the dialog closes must not enlarge the badge");
   ui.unmount();
 });
 
@@ -127,7 +151,7 @@ test("removing the active stamp leaves exactly one keyboard entry point among th
   badgeButtons(ui.draw())[3].props.onFocus();
   const buttons = badgeButtons(ui.draw({ badges: sampleBadges.slice(0, 2) }));
   assert.deepEqual(buttons.map(node => node.props.tabIndex), [0, -1]);
-  assert.equal(buttons[0].props["data-active"], true);
+  assert.equal(activeBadge(ui), undefined);
   ui.unmount();
 });
 

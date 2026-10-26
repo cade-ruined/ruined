@@ -32,6 +32,7 @@ new Function("require", "module", "exports", compiled)((name) => {
   if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: JournalStub };
   if (name === "@/components/membership/MemberWelcome") return { __esModule: true, default: WelcomeStub };
   if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
+  if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
   if (name === "next/image") return { __esModule: true, default: ({ src, alt }) => React.createElement("img", { src, alt }) };
   if (name === "@/components/membership/CircleMemberPortrait") return { __esModule: true, default: ({ person }) => React.createElement("span", null, person.displayName) };
@@ -178,6 +179,9 @@ test("profile badge uses the permanent number and leaves unassigned members unnu
 function interactiveProfile(hash = "#journal", props = {}) {
   const slots = [], listeners = new Map(), historyState = { nextRouter: "retained" };
   const Journal = JournalStub;
+  let refreshes=0;
+  const router={refresh(){refreshes++;}};
+  const document={hidden:false,listeners:new Map(),addEventListener(name,fn){this.listeners.set(name,fn);},removeEventListener(name,fn){if(this.listeners.get(name)===fn)this.listeners.delete(name);}};
   let cursor = 0, queued = [], changed = false, tree, focused = null;
   const window = {
     location: { hash },
@@ -202,8 +206,9 @@ function interactiveProfile(hash = "#journal", props = {}) {
     },
   };
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", "window", compiled)(name => {
+  new Function("require", "module", "exports", "window", "document", compiled)(name => {
     if (name === "react") return hooks;
+    if (name === "next/navigation") return {useRouter:()=>router};
     if (name === "react/jsx-runtime") return require(name);
     if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: () => null };
     if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: () => null };
@@ -215,7 +220,7 @@ function interactiveProfile(hash = "#journal", props = {}) {
     if (name === "next/link" || name === "next/image") return { __esModule: true, default: name };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     throw Error(`Unexpected profile dependency ${name}`);
-  }, loaded, loaded.exports, window);
+  }, loaded, loaded.exports, window, document);
   const childNodes = node => { const children = []; React.Children.forEach(node.props.children, child => children.push(child)); return children; };
   // Keep the raw component element for ownership checks and inspect its rendered layout.
   const nodes = node => React.isValidElement(node)
@@ -243,13 +248,17 @@ function interactiveProfile(hash = "#journal", props = {}) {
   }
   const tabs = () => nodes(render()).filter(node => node.props.role === "tab");
   return { window, render, tabs, nodes,
+    refreshes:()=>refreshes,
+    update(next){Object.assign(props,next);return render();},
+    dispatch(event){listeners.get(event)?.();return render();},
+    setHidden(hidden){document.hidden=hidden;document.listeners.get("visibilitychange")?.();return render();},
     welcome() { return nodes(render()).find(node => node.type === WelcomeStub); },
     journal() { const journals = nodes(render()).filter(node => node.type === Journal); assert.equal(journals.length, 1); return journals[0]; },
     panel() { return nodes(render()).find(node => node.props.id === "profile-test-entries-panel"); },
     journalPath() { return journalPath(render()); },
     navigate(next, event = "hashchange") { window.location.hash = next; listeners.get(event)?.(); render(); },
     focus: () => focused,
-    unmount() { slots.forEach(slot => slot?.cleanup?.()); assert.equal(listeners.size, 0); },
+    unmount() { slots.forEach(slot => slot?.cleanup?.()); assert.equal(listeners.size, 0); assert.equal(document.listeners.size,0); },
   };
 }
 
@@ -367,4 +376,28 @@ test("profile orders identity, bio, actions, then earned badges and the collecti
   assert.deepEqual(badges.childNodes.filter(node=>node.tagName).map(node=>node.tagName),["div","a"]);
   assert.deepEqual(elements(badges).filter(node=>node.tagName==="a").map(node=>[attr(node,"href"),text(node)]),[["/my/badges","Your badges ↗"]]);
   assert.equal(JSON.stringify(member),before,"presentation must preserve private profile and earned badge data");
+});
+
+
+test("profile refreshes stale saved details on arrival, progress and tab return without resetting Journal state",()=>{
+  const member=memberFixture(),ui=interactiveProfile("#timeline",{member});
+  const initial=ui.journal(),path=ui.journalPath();
+  assert.equal(ui.refreshes(),1);
+  ui.welcome().props.onWritePrivate();
+  assert.equal(ui.journal().props.privateComposeRequest,1);
+  ui.dispatch("ruined:member-progress");assert.equal(ui.refreshes(),2);
+  const saved={...member,avatarUrl:"/portrait.webp",profile:{...member.profile,bio:"My introduction.",memberTag:"alex"}};
+  ui.update({member:saved});assert.equal(ui.welcome().props.profileReady,true);
+  assert.equal(ui.refreshes(),2,"fresh server props do not cause another refresh loop");
+  assert.equal(ui.journal().type,initial.type);assert.equal(ui.journal().key,initial.key);assert.deepEqual(ui.journalPath(),path);
+  assert.equal(ui.journal().props.privateComposeRequest,1);assert.equal(ui.journal().props.initialMode,"all");
+  ui.setHidden(true);ui.dispatch("focus");assert.equal(ui.refreshes(),2);
+  ui.setHidden(false);assert.equal(ui.refreshes(),3);
+  ui.dispatch("focus");assert.equal(ui.refreshes(),4);
+  ui.unmount();ui.dispatch("focus");assert.equal(ui.refreshes(),4);
+});
+
+test("profile previews do not request live account refreshes",()=>{
+  const ui=interactiveProfile("",{preview:true});ui.render();ui.dispatch("ruined:member-progress");ui.dispatch("focus");ui.setHidden(false);
+  assert.equal(ui.refreshes(),0);ui.unmount();
 });

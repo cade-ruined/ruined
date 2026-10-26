@@ -7,10 +7,10 @@ import type { BadgeDisplay } from "./MemberBadgeCard";
 import styles from "./MemberBadgeCelebration.module.css";
 
 const quietRoutes = ["/my/access", "/my/confirmed", "/my/join", "/my/payment-method", "/my/checkout", "/my/badges"];
-type Queue = { ownerId: string; pathname: string | null; badges: readonly BadgeDisplay[]; revealKeys: string[]; index: number; returnToNotice: boolean };
+type Queue = { ownerId: string; pathname: string | null; badges: readonly BadgeDisplay[]; revealKeys: string[]; index: number };
 type Lifecycle = {
   ownerId: string; controller: AbortController; version: number;
-  knownKeys: Set<string> | null; pendingRefresh: boolean; refresh: (progress: boolean) => Promise<void>;
+  pendingRefresh: boolean; refresh: () => Promise<void>;
 };
 function validBadges(value: unknown): BadgeDisplay[] {
   if (!Array.isArray(value)) return [];
@@ -34,20 +34,18 @@ export default function MemberBadgeCelebration({ ownerId, previewBadges }: {
   const [error, setError] = useState<string | null>(null);
   const lifecycle = useRef<Lifecycle | null>(null);
   const writing = useRef(false);
-  const noticeTrigger = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const current: Lifecycle = { ownerId, controller: new AbortController(), version: 0,
-      knownKeys: null, pendingRefresh: false, refresh: async () => {} };
+      pendingRefresh: false, refresh: async () => {} };
     lifecycle.current = current; writing.current = false;
     setBusy(false); setError(null);
-    const home = pathname === "/my";
     const preview = previewBadges === undefined ? null : validBadges(previewBadges);
     setQueue(preview === null ? null : { ownerId, pathname, badges: preview,
-      revealKeys: home ? [] : preview.map(badge => badge.key), index: 0, returnToNotice: false });
+      revealKeys: preview.map(badge => badge.key), index: 0 });
     const isCurrent = () => !current.controller.signal.aborted && lifecycle.current === current;
     function suspend() { if (isCurrent()) { setQueue(null); current.controller.abort(); } }
-    current.refresh = async (progress) => {
+    current.refresh = async () => {
       if (!isCurrent() || previewBadges !== undefined) return;
       if (writing.current) { current.pendingRefresh = true; return; }
       current.pendingRefresh = false;
@@ -61,29 +59,28 @@ export default function MemberBadgeCelebration({ ownerId, previewBadges }: {
         if (!isCurrent() || version !== current.version) return;
         if (result.ownerId !== ownerId) { suspend(); return; }
         const badges = validBadges(result.badges);
-        // First arrival establishes the baseline. A later progress refresh may
-        // celebrate new awards, but cannot reopen older unacknowledged awards.
-        const newlyEarned = progress && current.knownKeys !== null
-          ? badges.filter(badge => !current.knownKeys!.has(badge.key)).map(badge => badge.key) : [];
-        current.knownKeys ??= new Set();
-        badges.forEach(badge => current.knownKeys!.add(badge.key));
+        // The API returns only unseen awards. Reveal them automatically, including
+        // awards earned before this page loaded, without a separate notice click.
         setQueue(previous => {
           const pendingKeys = new Set(badges.map(badge => badge.key));
           const remaining = previous?.ownerId === ownerId && previous.pathname === pathname
             ? previous.revealKeys.slice(previous.index).filter(key => pendingKeys.has(key)) : [];
-          const revealKeys = home ? [...new Set([...remaining, ...newlyEarned])] : [...pendingKeys];
-          return { ownerId, pathname, badges, revealKeys, index: 0,
-            returnToNotice: remaining.length > 0 && previous?.returnToNotice === true };
+          const revealKeys = [...new Set([...remaining, ...pendingKeys])];
+          return { ownerId, pathname, badges, revealKeys, index: 0 };
         });
       } catch { /* Leave unread awards on the server for the next visit. */ }
     };
-    function progressChanged() { void current.refresh(true); }
+    function progressChanged() { if (!document.hidden) void current.refresh(); }
     if (previewBadges === undefined) {
-      void current.refresh(false);
+      void current.refresh();
       window.addEventListener("ruined:member-progress", progressChanged);
+      window.addEventListener("focus", progressChanged);
+      document.addEventListener("visibilitychange", progressChanged);
     }
     return () => {
       current.controller.abort(); window.removeEventListener("ruined:member-progress", progressChanged);
+      window.removeEventListener("focus", progressChanged);
+      document.removeEventListener("visibilitychange", progressChanged);
       if (lifecycle.current === current) lifecycle.current = null;
     };
   }, [ownerId, previewBadges, pathname]);
@@ -118,29 +115,15 @@ export default function MemberBadgeCelebration({ ownerId, previewBadges }: {
     } finally {
       if (!current.controller.signal.aborted && lifecycle.current === current) {
         writing.current = false; setBusy(false);
-        if (current.pendingRefresh) void current.refresh(true);
+        if (current.pendingRefresh) void current.refresh();
       }
     }
   }
 
   if (!currentQueue || currentQueue.badges.length === 0) return null;
   const enabled = !quietRoutes.some(route => pathname === route || pathname?.startsWith(`${route}/`));
-  const notice = pathname === "/my";
-  function openPending() {
-    if (!currentQueue || writing.current) return;
-    setError(null);
-    setQueue({ ...currentQueue, revealKeys: currentQueue.badges.map(item => item.key), index: 0, returnToNotice: true });
-  }
   return <>
-    {notice ? <aside className={styles.notice} aria-label="New badges">
-      <p role="status"><strong>{currentQueue.badges.length === 1 ? "New badge earned" : `${currentQueue.badges.length} new badges earned`}</strong>
-        <span>{currentQueue.badges.length === 1 ? currentQueue.badges[0].label : "Your collection has grown."}</span></p>
-      <button ref={noticeTrigger} type="button" className={styles.noticeAction} aria-haspopup="dialog" aria-controls={`${id}-dialog`}
-        aria-label={currentQueue.badges.length === 1 ? "View badge" : "View badges"}
-        onClick={openPending}>{currentQueue.badges.length === 1 ? "View badge" : "View badges"} <span aria-hidden="true">↗</span></button>
-    </aside> : null}
     <MemberBadgeDialog badge={badge} id={id} celebration preview={previewBadges !== undefined} enabled={enabled && Boolean(badge)} busy={busy}
-    returnFocus={notice && currentQueue.returnToNotice ? noticeTrigger : undefined}
     className={styles.celebration} onDismiss={() => { void acknowledge(); }}>
     <div className={styles.actions}>
       {currentQueue.revealKeys.length > 1 ? <p className={styles.counter} aria-live="polite">Badge {currentQueue.index + 1} of {currentQueue.revealKeys.length}</p> : null}

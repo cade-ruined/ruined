@@ -94,6 +94,7 @@ async function profileFixture() {
   const profile = { revision: "a".repeat(64), access: {}, directory: { displayName: "N".repeat(120), preferredName: "Preferred", bio: "B".repeat(1200), buildingNow: "C".repeat(500), websiteUrl: "https://example.test", location: "Alpine", timezone: "America/Denver", avatarUrl: null }, preferences: { directoryStatus: "hidden", avatarVisible: false, locationVisible: false, bioVisible: false, buildingVisible: false, emailScope: "none", phoneScope: "none" }, privateProfile: { accessibilityNotes: "" } };
   const initialCard = { ...snapshot, settings: { ...settings, publicEnabled: true } };
   const editor = await load("src/components/membership/MemberProfileEditor.tsx", {
+    "next/navigation": { useRouter: () => ({ refresh() {} }) },
     react: state.react, "next/link": Link, "@/components/membership/MemberSettingsHeader": () => null,
     "@/components/membership/MemberPhotoUpload": Photo,
     "@/lib/membership/profile-fields": profileFields,

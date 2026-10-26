@@ -39,6 +39,7 @@ test("avatar mapping preserves real portraits but rejects ambiguous and malforme
 });
 
 const { default: PhotoUpload } = await load("src/components/membership/MemberPhotoUpload.tsx", {
+  "next/navigation": { useRouter: () => ({ refresh() {} }) },
   "@/lib/membership/member-photo-crop": crop,
   "@/components/membership/MemberPortraitState": { useMemberPortrait: (avatarUrl: string | null) => ({ avatarUrl, setAvatarUrl() {} }) },
   "next/image": ({ src, alt, unoptimized }: { src: string; alt: string; unoptimized: boolean }) => React.createElement("img", { src, alt, "data-unoptimized": String(unoptimized) }),
