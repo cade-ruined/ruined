@@ -81,7 +81,9 @@ const text = node => React.isValidElement(node) ? React.Children.toArray(node.pr
 const button = (tree, label) => nodes(tree).find(node => node.type === "button" && text(node) === label);
 const image = tree => nodes(tree).find(node => node.props.alt === "Unsaved profile photo crop" || node.props.alt === "Your profile photo");
 async function fixture(options = {}) {
-  const slots = [], updates = [], effects = [], calls = [], changed = [], published = [], busy = [], drafts = [], revoked = [], decodes = [], exports = [];
+  const slots = [], updates = [], effects = [], calls = [], changed = [], published = [], busy = [], drafts = [], revoked = [], decodes = [], exports = [], progress = [], refreshes = [];
+  const window = new EventTarget(); window.addEventListener("ruined:member-progress", event => progress.push(event.type));
+  const router = { refresh() { refreshes.push(true); } };
   let cursor = 0, urlNumber = 0, ownerId = "owner-a", saved = options.avatarUrl ?? oldUrl, override;
   const props = { avatarUrl: saved, enabled: true, available: true, onChange(value) { changed.push(value); saved = value; }, onBusyChange: value => busy.push(value), onDraftChange: value => drafts.push(value) };
   const hooks = { ...React, useId: () => "photo",
@@ -90,14 +92,15 @@ async function fixture(options = {}) {
     useEffect(effect, deps) { const i = cursor++, prior = slots[i]; if (!prior || deps.some((v, n) => v !== prior.deps[n])) { const current = { deps }; slots[i] = current; effects.push(() => { prior?.cleanup?.(); current.cleanup = effect(); }); } },
   };
   const Component = (await load("src/components/membership/MemberPhotoUpload.tsx", {
+    "next/navigation": { useRouter: () => router },
     react: hooks, "next/image": () => null,
     "@/lib/membership/member-photo-crop": { ...crop, decodeMemberPhoto(url, signal) { const task = deferred(); decodes.push({ ...task, url, signal }); return task.promise; }, async exportMemberPhotoCrop(source, position) { exports.push({ source, position }); return options.export ? options.export() : new File(["cropped"], "profile.jpg", { type: "image/jpeg" }); } },
     "@/components/membership/MemberPortraitState": { useMemberPortrait() { const captured = ownerId; return { avatarUrl: override === undefined ? saved : override, ownerId, setAvatarUrl(value) { published.push({ ownerId: captured, value }); override = value; } }; } },
-  }, { window: new EventTarget(), URL: { createObjectURL: () => `blob:photo-${++urlNumber}`, revokeObjectURL: url => revoked.push(url) }, fetch: async (url, init) => { calls.push({ url, ...init }); return options.fetch ? options.fetch(url, init) : { ok: true, json: async () => ({ avatarUrl: init.method === "DELETE" ? null : newUrl }) }; } })).default;
+  }, { window, URL: { createObjectURL: () => `blob:photo-${++urlNumber}`, revokeObjectURL: url => revoked.push(url) }, fetch: async (url, init) => { calls.push({ url, ...init }); return options.fetch ? options.fetch(url, init) : { ok: true, json: async () => ({ avatarUrl: init.method === "DELETE" ? null : newUrl }) }; } })).default;
   const render = () => { updates.splice(0).forEach(update => update()); cursor = 0; const tree = Component(props); effects.splice(0).forEach(effect => effect()); return tree; };
   const select = (file = photo) => nodes(render()).find(node => node.type === "input" && node.props.type === "file").props.onChange({ currentTarget: { files: [file], value: "selected" } });
   const choose = async () => { const pending = select(); decodes.at(-1).resolve(decoded); await pending; render(); };
-  return { render, select, choose, calls, changed, published, busy, drafts, revoked, decodes, exports, props, setOwner(value) { ownerId = value; render(); render(); }, unmount() { for (const slot of slots) slot?.cleanup?.(); } };
+  return { render, select, choose, calls, changed, published, busy, drafts, revoked, decodes, exports, props, progress, refreshes, setOwner(value) { ownerId = value; render(); render(); }, unmount() { for (const slot of slots) slot?.cleanup?.(); } };
 }
 
 test("selection previews immediately but never publishes or uploads until Use photo succeeds", async () => {
@@ -110,9 +113,11 @@ test("selection previews immediately but never publishes or uploads until Use ph
   const saving = button(ui.render(), "Use photo").props.onClick(); await tick();
   assert.equal(ui.exports[0].position.zoom, 2); assert.equal(ui.calls.length, 1); assert.equal(ui.calls[0].body.get("photo").type, "image/jpeg");
   assert.deepEqual(ui.calls[0].headers, { "X-Ruined-Session-Owner": "owner-a" }); assert.deepEqual(ui.changed, []); assert.deepEqual(ui.published, []);
+  assert.deepEqual(ui.progress, []); assert.deepEqual(ui.refreshes, []);
   assert.equal(button(ui.render(), "Saving…").props.disabled, true);
   response.resolve({ ok: true, json: async () => ({ avatarUrl: newUrl }) }); await saving;
   assert.deepEqual(ui.changed, [newUrl]); assert.deepEqual(ui.published, [{ ownerId: "owner-a", value: newUrl }]); assert.deepEqual(ui.busy, [true, false]);
+  assert.deepEqual(ui.progress, ["ruined:member-progress"]); assert.equal(ui.refreshes.length, 1);
   assert.deepEqual(ui.drafts, [true, false]); assert.equal(image(ui.render()).props.src, newUrl); assert.deepEqual(ui.revoked, ["blob:photo-1"]); ui.unmount();
 });
 
@@ -163,6 +168,7 @@ test("failed save retains editable crop and old saved state; cancel works when s
   const ui = await fixture({ fetch: async () => ({ ok: false, json: async () => ({ error: "Try again later." }) }) }); await ui.choose();
   await button(ui.render(), "Use photo").props.onClick();
   assert.match(text(ui.render()), /Try again later/); assert.equal(image(ui.render()).props.src, "blob:photo-1"); assert.deepEqual(ui.changed, []); assert.deepEqual(ui.published, []); assert.deepEqual(ui.busy, [true, false]);
+  assert.deepEqual(ui.progress, []); assert.deepEqual(ui.refreshes, []);
   ui.props.enabled = false; ui.props.available = false;
   assert.equal(button(ui.render(), "Use photo").props.disabled, true); assert.equal(button(ui.render(), "Cancel").props.disabled, false);
   button(ui.render(), "Cancel").props.onClick(); assert.equal(image(ui.render()).props.src, oldUrl); assert.equal(ui.drafts.at(-1), false); ui.unmount();
@@ -184,6 +190,7 @@ test("duplicate confirmation is suppressed and unmount aborts pending upload wit
   assert.equal(ui.calls.length, 1); ui.unmount(); assert.equal(ui.calls[0].signal.aborted, true);
   response.resolve({ ok: true, json: async () => ({ avatarUrl: newUrl }) }); await pending;
   assert.deepEqual(ui.changed, []); assert.deepEqual(ui.published, []); assert.equal(ui.drafts.at(-1), false); assert.equal(ui.busy.at(-1), false);
+  assert.deepEqual(ui.progress, []); assert.deepEqual(ui.refreshes, []);
 });
 
 test("owner changes discard old drafts and A to B to A cannot publish a stale export", async () => {
@@ -193,6 +200,7 @@ test("owner changes discard old drafts and A to B to A cannot publish a stale ex
   assert.equal(button(ui.render(), "Use photo"), undefined); assert.equal(ui.drafts.at(-1), false);
   exportResult.resolve(new File(["crop"], "profile.jpg", { type: "image/jpeg" })); await saving;
   assert.equal(ui.calls.length, 0); assert.deepEqual(ui.changed, []); assert.deepEqual(ui.published, []); ui.unmount();
+  assert.deepEqual(ui.progress, []); assert.deepEqual(ui.refreshes, []);
 });
 
 test("an old account response cannot publish or unlock a newer account's pending save", async () => {
@@ -204,8 +212,10 @@ test("an old account response cannot publish or unlock a newer account's pending
   assert.equal(ui.calls[0].signal.aborted, true);
   responses[0].resolve({ ok: true, json: async () => ({ avatarUrl: oldUrl }) }); await first;
   assert.deepEqual(ui.changed, []); assert.equal(button(ui.render(), "Saving…").props.disabled, true); assert.equal(ui.busy.at(-1), true);
+  assert.deepEqual(ui.progress, []); assert.deepEqual(ui.refreshes, []);
   responses[1].resolve({ ok: true, json: async () => ({ avatarUrl: newUrl }) }); await second;
   assert.deepEqual(ui.changed, [newUrl]); assert.deepEqual(ui.published, [{ ownerId: "owner-b", value: newUrl }]); ui.unmount();
+  assert.deepEqual(ui.progress, ["ruined:member-progress"]); assert.equal(ui.refreshes.length, 1);
 });
 
 test("confirmed removal publishes null; failed removal leaves the saved portrait untouched", async () => {
@@ -214,5 +224,6 @@ test("confirmed removal publishes null; failed removal leaves the saved portrait
     await button(ui.render(), "Remove photo").props.onClick();
     assert.equal(ui.calls[0].method, "DELETE"); assert.equal(ui.calls[0].body, undefined);
     assert.deepEqual(ui.changed, ok ? [null] : []); assert.deepEqual(ui.published, ok ? [{ ownerId: "owner-a", value: null }] : []); ui.unmount();
+    assert.deepEqual(ui.progress, ok ? ["ruined:member-progress"] : []); assert.equal(ui.refreshes.length, Number(ok));
   }
 });

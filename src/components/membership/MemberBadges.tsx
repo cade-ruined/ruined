@@ -10,7 +10,9 @@ import styles from "./MemberBadges.module.css";
 export default function MemberBadges({ badges, preview = false }: { badges: readonly BadgeDisplay[]; preview?: boolean }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const activeIndex = Math.max(0, badges.findIndex(item => item.key === focusedKey));
+  const hoveredIndex = badges.findIndex(item => item.key === hoveredKey);
   const rowRef = useRef<HTMLUListElement>(null);
   const selectOnScrollRef = useRef(true);
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -79,15 +81,16 @@ export default function MemberBadges({ badges, preview = false }: { badges: read
 
   return <div className={styles.badges}>
     <p id={`${id}-instructions`} className={styles.srOnly}>Use the arrow keys to explore badges. Press Enter to see how and when a badge was earned.</p>
-    <ul ref={rowRef} className={styles.row} aria-label={preview ? "Sample badges" : "Earned badges"} onPointerDown={() => { selectOnScrollRef.current = true; }} onScroll={selectFromScroll}>
+    <ul ref={rowRef} className={styles.row} aria-label={preview ? "Sample badges" : "Earned badges"} onPointerDown={() => { selectOnScrollRef.current = true; }} onPointerLeave={() => setHoveredKey(null)} onPointerCancel={() => setHoveredKey(null)} onScroll={selectFromScroll}>
       {badges.map((item, index) => <li key={item.key}>
         <button ref={element => { buttonRefs.current[index] = element; }} type="button" className={styles.badge}
-          data-active={index === activeIndex || undefined} data-neighbor={Math.abs(index - activeIndex) === 1 || undefined}
+          data-active={index === hoveredIndex || undefined} data-neighbor={hoveredIndex >= 0 && Math.abs(index - hoveredIndex) === 1 || undefined}
           tabIndex={index === activeIndex ? 0 : -1} aria-label={`${item.label} badge. View details`}
           aria-describedby={`${id}-instructions`} aria-haspopup="dialog" aria-controls={`${id}-dialog`}
-          onPointerEnter={event => { if (event.pointerType !== "touch") setFocusedKey(item.key); }}
+          onPointerEnter={event => { if (event.pointerType !== "touch") { setHoveredKey(item.key); setFocusedKey(item.key); } }}
+          onPointerLeave={() => setHoveredKey(null)}
           onFocus={() => setFocusedKey(item.key)} onKeyDown={event => moveFocus(event, index)}
-          onClick={event => { triggerRef.current = event.currentTarget; setFocusedKey(item.key); setSelected(item.key); }}>
+          onClick={event => { triggerRef.current = event.currentTarget; setFocusedKey(item.key); setHoveredKey(null); setSelected(item.key); }}>
           <span className={styles.stamp} data-artwork={Boolean(badgeArtwork(item)) || undefined} aria-hidden="true">{badgeArtwork(item) ? <Image src={badgeArtwork(item).src} alt="" width={72} height={72} sizes="56px" draggable={false}/> : badgeStamp(item)}</span>
         </button>
       </li>)}

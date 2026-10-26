@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { type ChangeEvent, type PointerEvent, useEffect, useId, useRef, useState } from "react";
 
 import { DEFAULT_MEMBER_PHOTO_CROP, MEMBER_PHOTO_SOURCE_ACCEPT, decodeMemberPhoto, exportMemberPhotoCrop, memberPhotoCropRect, panMemberPhotoCrop, validateMemberPhotoSelection, type MemberPhotoCrop } from "@/lib/membership/member-photo-crop";
@@ -17,6 +18,7 @@ export default function MemberPhotoUpload({ avatarUrl: initialAvatarUrl, enabled
   onBusyChange?: (busy: boolean) => void;
   onDraftChange?: (draft: boolean) => void;
 }) {
+  const router = useRouter();
   const { avatarUrl, setAvatarUrl, ownerId } = useMemberPortrait(initialAvatarUrl);
   const ownerScope = useRef({ ownerId, token: Symbol("photo-owner") });
   if (ownerScope.current.ownerId !== ownerId) ownerScope.current = { ownerId, token: Symbol("photo-owner") };
@@ -129,7 +131,7 @@ export default function MemberPhotoUpload({ avatarUrl: initialAvatarUrl, enabled
         ...(photo ? { body: form } : {}),
       });
       const result = await response.json() as { avatarUrl?: string | null; error?: string };
-      if (!mounted.current || current !== generation.current || ownerScope.current.token !== scope) return;
+      if (controller.signal.aborted || !mounted.current || current !== generation.current || ownerScope.current.token !== scope) return;
       if (!response.ok || (remove ? result.avatarUrl !== null : typeof result.avatarUrl !== "string" || !result.avatarUrl.startsWith("/api/member-photos/"))) {
         throw new Error(result.error || "Your photo could not be saved. Try again.");
       }
@@ -137,6 +139,8 @@ export default function MemberPhotoUpload({ avatarUrl: initialAvatarUrl, enabled
       callbacks.current.onChange(result.avatarUrl ?? null);
       releaseDraft(); setDraft(null); callbacks.current.onDraftChange?.(false);
       setMessage(remove ? "Photo removed." : "Photo saved.");
+      window.dispatchEvent(new Event("ruined:member-progress"));
+      router.refresh();
     } catch (cause) {
       if (!mounted.current || current !== generation.current || ownerScope.current.token !== scope) return;
       setError(controller.signal.aborted ? remove ? "Removing your photo took too long. Try again." : "Saving took too long. Your crop is still here; try again." : cause instanceof Error ? cause.message : "Your photo could not be saved. Try again.");

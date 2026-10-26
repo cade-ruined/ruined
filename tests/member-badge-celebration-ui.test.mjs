@@ -15,53 +15,62 @@ function fixture({badges=[award],fetch,props={},...options}={}){
 const modal=ui=>nodes(ui.draw()).find(node=>node.type==='dialog');
 const posts=ui=>ui.requests.filter(request=>request.method==='POST');
 
-test('profile arrival announces pending badges without moving focus or covering the profile',async()=>{
+test('profile arrival automatically reveals unseen badges without an extra notice click',async()=>{
   const ui=fixture({pathname:'/my'});ui.draw();const tree=await ui.settle();
-  assert.equal(ui.dialog.opens,0);assert.equal(ui.document.activeElement,ui.original);
-  assert.equal(ui.document.body.style.overflow,'scroll');
-  assert.ok(nodes(tree).some(node=>node.props.role==='status'&&text(node).includes('New badge earned')));
-  assert.match(text(tree),/I Was Here/);assert.equal(posts(ui).length,0);
-  ui.click('View badge');assert.equal(ui.dialog.open,true);assert.match(text(modal(ui)),/You earned a badge/);
+  assert.equal(ui.dialog.opens,1);assert.match(text(modal(ui)),/You earned a badge/);
+  assert.match(text(tree),/I Was Here/);assert.doesNotMatch(text(tree),/View badge|New badge earned/);
   assert.ok(nodes(modal(ui)).some(node=>node.props.download));
-  assert.equal(posts(ui).length,0,'explicitly viewing still does not acknowledge the badge');
+  assert.equal(posts(ui).length,0,'opening still does not acknowledge the badge');
   ui.click('Done');await ui.settle();assert.equal(ui.draw(),null);assert.equal(posts(ui).length,1);
+  assert.equal(ui.document.activeElement,ui.original);
   ui.unmount();assert.equal(ui.windowListeners.get('ruined:member-progress').size,0);
+  assert.equal(ui.windowListeners.get('focus').size,0);
 });
 
-test('progress refetch celebrates only newly earned awards while older pending awards stay in the notice',async()=>{
+test('progress refresh automatically reveals new awards without replaying acknowledged awards',async()=>{
   let available=[award];
   const ui=fixture({pathname:'/my',fetch:async(_url,init)=>{
     if(init.method==='POST'){const key=JSON.parse(init.body).badgeKey;available=available.filter(badge=>badge.key!==key);return response({ok:true});}
     return response({ownerId,badges:available});
   }});
-  ui.draw();await ui.settle();assert.equal(ui.dialog.opens,0);
-  ui.dispatchWindow('ruined:member-progress');await ui.settle();assert.equal(ui.requests.length,2);
-  assert.equal(ui.dialog.opens,0,'refetching an old pending award is not a new achievement');
-  available=[award,second];ui.dispatchWindow('ruined:member-progress');await ui.settle();
-  assert.equal(ui.dialog.open,true);assert.match(text(modal(ui)),/Another badge/);assert.doesNotMatch(text(modal(ui)),/I Was Here/);
-  ui.click('Done');await ui.settle();assert.equal(ui.dialog.open,false);assert.match(text(ui.draw()),/I Was Here/);
-  assert.equal(ui.document.activeElement,ui.original,'new achievements return focus to the member’s work rather than the pending-badge notice');
-  assert.deepEqual(posts(ui).map(request=>JSON.parse(request.body).badgeKey),[second.key]);
+  ui.draw();await ui.settle();assert.equal(ui.dialog.opens,1);
+  ui.dispatchWindow('ruined:member-progress');await ui.settle();assert.equal(ui.dialog.opens,1,'an open award is not reopened on refresh');
+  ui.click('Done');await ui.settle();assert.equal(ui.dialog.open,false);
   ui.dispatchWindow('ruined:member-progress');await ui.settle();assert.equal(ui.dialog.open,false);
-  ui.click('View badge');assert.equal(ui.dialog.open,true);assert.match(text(modal(ui)),/I Was Here/);
+  available=[second];ui.dispatchWindow('ruined:member-progress');await ui.settle();
+  assert.equal(ui.dialog.open,true);assert.match(text(modal(ui)),/Another badge/);
+  ui.click('Done');await ui.settle();assert.equal(ui.draw(),null);
+  assert.deepEqual(posts(ui).map(request=>JSON.parse(request.body).badgeKey),[award.key,second.key]);
   ui.unmount();
 });
 
-test('profile notice allows explicit review of all pending badges without automatic first-arrival reveals',async()=>{
-  const ui=fixture({pathname:'/my',badges:[award,second]});ui.draw();await ui.settle();
-  assert.equal(ui.dialog.opens,0);assert.match(text(ui.draw()),/2 new badges earned/);
-  ui.click('View badges');assert.match(text(modal(ui)),/Badge 1 of 2/);
-  ui.click('Continue');await ui.settle();assert.match(text(modal(ui)),/Badge 2 of 2/);
-  ui.click('Done');await ui.settle();assert.equal(ui.draw(),null);ui.unmount();
+test('profile automatically queues multiple unseen badges and preview follows the same flow',async()=>{
+  for(const props of [{},{previewBadges:[award,second]}]){
+    const ui=fixture({pathname:'/my',badges:[award,second],props});ui.draw();await ui.settle();
+    assert.equal(ui.dialog.opens,1);assert.match(text(modal(ui)),/Badge 1 of 2/);
+    ui.click('Continue');await ui.settle();assert.match(text(modal(ui)),/Badge 2 of 2/);
+    ui.click('Done');await ui.settle();assert.equal(ui.draw(),null);ui.unmount();
+  }
 });
 
-test('a progress refresh failure retains the notice and cannot reopen old pending awards',async()=>{
+test('a failed progress refresh retains the current celebration without restarting it',async()=>{
   let fail=false;
   const ui=fixture({pathname:'/my',fetch:async()=>fail?response({error:'unavailable'},503):response({ownerId,badges:[award]})});
   ui.draw();await ui.settle();fail=true;ui.dispatchWindow('ruined:member-progress');await ui.settle();
-  assert.equal(ui.dialog.opens,0);assert.match(text(ui.draw()),/New badge earned/);
-  fail=false;ui.dispatchWindow('ruined:member-progress');await ui.settle();assert.equal(ui.dialog.opens,0);
+  assert.equal(ui.dialog.opens,1);assert.equal(ui.dialog.open,true);assert.match(text(modal(ui)),/I Was Here/);
+  fail=false;ui.dispatchWindow('ruined:member-progress');await ui.settle();assert.equal(ui.dialog.opens,1);
   assert.equal(posts(ui).length,0);ui.unmount();
+});
+
+test('returning to a visible profile discovers an award earned in another tab',async()=>{
+  let available=[];
+  const ui=fixture({pathname:'/my',fetch:async()=>response({ownerId,badges:available})});
+  ui.draw();await ui.settle();assert.equal(ui.dialog.open,false);
+  ui.setHidden(true);available=[award];ui.focusWindow();assert.equal(ui.requests.length,1,'hidden pages do not refresh');
+  ui.setHidden(false);await ui.settle();assert.equal(ui.dialog.open,true);
+  assert.match(text(modal(ui)),/I Was Here/);assert.equal(posts(ui).length,0);
+  ui.focusWindow();await ui.settle();assert.equal(ui.dialog.opens,1);
+  ui.unmount();assert.equal(ui.windowListeners.get('focus').size,0,'listeners are removed on unmount');assert.equal(ui.document.listeners.get('visibilitychange').size,0);
 });
 
 test('progress refresh cannot resurrect an acknowledged award and runs after an in-flight acknowledgement',async()=>{
@@ -71,7 +80,7 @@ test('progress refresh cannot resurrect an acknowledged award and runs after an 
     if(++gets===2)return stale.promise;
     return response({ownerId,badges:acknowledged?[second]:[award]});
   }});
-  ui.draw();await ui.settle();ui.click('View badge');ui.dispatchWindow('ruined:member-progress');
+  ui.draw();await ui.settle();ui.dispatchWindow('ruined:member-progress');
   ui.click('Done');ui.dispatchWindow('ruined:member-progress');assert.equal(gets,2,'refresh waits while acknowledgement is writing');
   acknowledgment.resolve();await ui.settle();assert.equal(gets,3);
   assert.match(text(modal(ui)),/Another badge/);assert.doesNotMatch(text(modal(ui)),/I Was Here/);
@@ -84,14 +93,14 @@ test('profile progress reads suspend on authentication or owner changes and stal
     let revoked=false;
     const ui=fixture({pathname:'/my',fetch:async()=>revoked?response({code:'account_changed'},status):response({ownerId,badges:[award]})});
     ui.draw();await ui.settle();revoked=true;ui.dispatchWindow('ruined:member-progress');await ui.settle();
-    assert.equal(ui.draw(),null);assert.equal(ui.requests.at(-1).signal.aborted,true);assert.equal(ui.dialog.opens,0);ui.unmount();
+    assert.equal(ui.draw(),null);assert.equal(ui.requests.at(-1).signal.aborted,true);assert.equal(ui.dialog.open,false);ui.unmount();
   }
   const pending=deferred();let count=0;
   const ui=fixture({pathname:'/my',fetch:async()=>++count===1?response({ownerId,badges:[award]}):pending.promise});
   ui.draw();await ui.settle();ui.dispatchWindow('ruined:member-progress');const signal=ui.requests.at(-1).signal;
   ui.draw({ownerId:anotherOwner});assert.equal(signal.aborted,true);
   pending.resolve(response({ownerId,badges:[award,second]}));await ui.settle();
-  assert.equal(ui.draw(),null);assert.equal(ui.dialog.opens,0);ui.unmount();
+  assert.equal(ui.draw(),null);assert.equal(ui.dialog.open,false);ui.unmount();
 });
 
  test('first member visit fetches once, announces the award and keeps its native original-art download',async()=>{
@@ -145,11 +154,10 @@ for(const action of ['escape','backdrop','close'])test(`${action} explicitly ack
   await ui.settle();assert.equal(posts(ui).length,1);assert.equal(ui.draw(),null);ui.unmount();
 });
 
-test('billing and authentication routes defer the reveal; profile arrival stays nonblocking',async()=>{
+test('billing and authentication routes defer the reveal until profile arrival',async()=>{
   for(const pathname of ['/my/access','/my/confirmed','/my/join','/my/payment-method','/my/checkout','/my/checkout/return','/my/badges']){
     const ui=fixture({pathname});ui.draw();await ui.settle();assert.equal(ui.dialog.opens,0,pathname);assert.equal(posts(ui).length,0);
-    ui.setPath('/my');await ui.settle();assert.equal(ui.dialog.open,false,pathname);assert.match(text(ui.draw()),/New badge earned/);assert.equal(ui.requests.length,2);
-    ui.click('View badge');assert.equal(ui.dialog.open,true);ui.unmount();
+    ui.setPath('/my');await ui.settle();assert.equal(ui.dialog.open,true,pathname);assert.match(text(modal(ui)),/You earned a badge/);assert.equal(ui.requests.length,2);ui.unmount();
   }
 });
 

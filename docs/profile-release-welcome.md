@@ -9,7 +9,8 @@ Profile release opens `/my` directly. The existing profile-release and membershi
 - Dismissal and Calendar visits are stored per member on the server. The guide can be reopened from the profile, and refreshes on return. Members can use all of their existing features without finishing it.
 - “Write privately” opens the Journal composer directly. Unfinished and recovered drafts are protected. The “Add to Timeline” checkbox controls public sharing.
 - A short, replayable “A quick look around” disclosure explains the profile, Journal, Timeline, Calendar, Circle and badges.
-- Existing pending badges do not cover the first profile visit with a dialog. An explicit notice opens the reveal. New awards after an action can still celebrate normally.
+- Unseen earned badges open the celebration automatically, including on arrival at the profile and after a successful profile/photo save. They wait behind another open dialog and stay unread until explicitly dismissed. Returning to the tab refreshes awards and profile progress without remounting an unfinished Journal draft.
+- Badge artwork enlarges only while the pointer is over it; leaving the badge or opening its details restores normal size. Keyboard focus remains visible.
 - Real Foundations attendance can now earn In the Room. Practice calls and merely receiving an invitation do not qualify. See `member-badge-operations.md` for evidence requirements.
 
 ## Release requirements

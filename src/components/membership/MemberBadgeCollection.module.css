@@ -34,8 +34,9 @@
 .grid li:nth-child(3n) .artwork img { transform:rotate(-1deg); }
 .tile[data-earned="false"] .artwork img { filter:grayscale(1) drop-shadow(1px 2px 2px #332b2424); opacity:.34; }
 .tile[data-state="earning"] .artwork img { opacity:.6; }
-.tile:hover .artwork img,.tile:focus-visible .artwork img { transform:translateY(-5px) rotate(0); }
-.tile[data-earned="false"]:hover .artwork img,.tile[data-earned="false"]:focus-visible .artwork img { opacity:.57; }
+.tile:focus-visible .artwork img { transform:translateY(-5px) rotate(0); }
+.tile[data-earned="false"]:focus-visible .artwork img { opacity:.57; }
+@media(hover:hover) { .tile:hover .artwork img { transform:translateY(-5px) rotate(0); } .tile[data-earned="false"]:hover .artwork img { opacity:.57; } }
 .tile:focus-visible { outline:2px solid var(--member-accent,var(--member-red)); outline-offset:-3px; }
 .badgeName { display:block; margin:0; font-family:var(--font-display),serif; font-weight:400; font-size:24px; line-height:1.12; letter-spacing:-.025em; overflow-wrap:anywhere; }
 .rule { display:block; flex:1; margin-top:9px; font-size:11px; line-height:1.6; color:var(--member-muted); }

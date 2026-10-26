@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type ClipboardEvent, type FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type ClipboardEvent, type FormEvent, useEffect, useRef, useState } from "react";
 
 import MemberSettingsHeader from "@/components/membership/MemberSettingsHeader";
 import MemberPhotoUpload from "@/components/membership/MemberPhotoUpload";
@@ -48,6 +49,11 @@ export default function MemberProfileEditor({
   preview?: boolean;
   timezoneOptions?: string[];
 }) {
+  const router = useRouter();
+  const mounted = useRef(true);
+  const ownerScope = useRef({ memberId: initialProfile.memberId });
+  if (ownerScope.current.memberId !== initialProfile.memberId) ownerScope.current = { memberId: initialProfile.memberId };
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [profile, setProfile] = useState(initialProfile);
   const memberTagRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -87,7 +93,9 @@ export default function MemberProfileEditor({
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!writable || pending || photoPending || photoDraft || conflict) return;
+    if (preview || !writable || pending || photoPending || photoDraft || conflict) return;
+    const scope = ownerScope.current;
+    const isCurrent = () => mounted.current && ownerScope.current === scope;
     setPending(true);
     setError(null);
     setSaved(false);
@@ -145,6 +153,7 @@ export default function MemberProfileEditor({
         error?: string;
         profile?: MemberProfileSnapshot;
       };
+      if (!isCurrent()) return;
       if (!response.ok || !payload.profile) {
         if (payload.code === "member_tag_unavailable") {
           setMemberTagError(payload.error || "That member tag is already taken. Choose another.");
@@ -160,14 +169,17 @@ export default function MemberProfileEditor({
       setPhoneCountry(savedCountry);
       setPhoneNumber(phoneInputFromProfile(payload.profile.privateProfile.mobile, savedCountry));
       setSaved(true);
+      window.dispatchEvent(new Event("ruined:member-progress"));
+      router.refresh();
     } catch (requestError) {
+      if (!isCurrent()) return;
       setError(
         requestError instanceof Error
           ? requestError.message
           : "Your profile could not be saved.",
       );
     } finally {
-      setPending(false);
+      if (isCurrent()) setPending(false);
     }
   }
 

@@ -133,6 +133,7 @@ test("home consumes the portrait override without mutating its cached member or 
   fixture.render("owner-a");
   const Image = () => null, Link = () => null;
   const home = load("src/components/platform/MemberHome.tsx", {
+    "next/navigation": { useRouter: () => ({refresh(){}}) },
     react: { ...React, useState: value => [value, () => {}], useRef: value => ({ current: value }), useId: () => "test", useEffect: () => {} },
     "next/image": Image,
     "next/link": Link,
