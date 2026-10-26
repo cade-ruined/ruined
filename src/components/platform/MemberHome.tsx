@@ -6,6 +6,8 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import InstallRuined from "@/components/membership/InstallRuined";
 import MemberBadges from "@/components/membership/MemberBadges";
 import MemberJournal from "@/components/membership/MemberJournal";
+import MemberWelcome from "@/components/membership/MemberWelcome";
+import type { MemberWelcomeSnapshot } from "@/lib/membership/welcome-model";
 import { useMemberPortrait } from "@/components/membership/MemberPortraitState";
 import { memberCan } from "@/lib/membership/access-policy";
 import { memberTier } from "@/lib/membership/member-number";
@@ -15,8 +17,9 @@ import styles from "./MemberProfile.module.css";
 const tabs=["timeline","journal"] as const;
 type JournalMode="all"|"timeline";
 type Tab=typeof tabs[number];
-export default function MemberHome({member,preview=false}:{member:MemberHomeSnapshot;preview?:boolean}) {
+export default function MemberHome({member,preview=false,welcome=null}:{member:MemberHomeSnapshot;preview?:boolean;welcome?:MemberWelcomeSnapshot|null}) {
   const {avatarUrl}=useMemberPortrait(member.avatarUrl);
+  const [privateComposeRequest,setPrivateComposeRequest]=useState(0);
   const [tab,setTab]=useState<Tab>("timeline");const [journalMode,setJournalMode]=useState<JournalMode>("timeline");const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
   useEffect(()=>{
     function synchronize(){
@@ -60,9 +63,11 @@ export default function MemberHome({member,preview=false}:{member:MemberHomeSnap
       <div className={styles.earnedBadges}>{member.badges?.length ? <MemberBadges badges={member.badges} preview={preview}/> : null}<Link className={styles.badgeCollectionLink} href="/my/badges">Your badges <span aria-hidden="true">↗</span></Link></div>
     </header>
 
+    {member.access.mode === "full" || member.access.mode === "onboarding" ? <MemberWelcome key={member.identity.authUserId} ownerId={member.identity.authUserId} initialWelcome={welcome} preview={preview} profileReady={Boolean(avatarUrl && member.profile.bio?.trim() && member.profile.memberTag?.trim())} hasUpcomingCall={member.upcomingExperiences.some(event=>Boolean(event.meetingUrl) && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now())} onWritePrivate={()=>{select("journal");setPrivateComposeRequest(value=>value+1);}}/> : null}
+
     <InstallRuined variant="profile"/>
 
-    <MemberJournal preview={preview} sharingEnabled writable={memberCan(member.access,"profile.write")} initialMode={journalMode} onModeChange={mode=>select(mode==="timeline"?"timeline":"journal")} renderLayout={(content,addEntryAction)=><>
+    <MemberJournal preview={preview} previewEmpty={preview && welcome?.hasJournalEntry === false} sharingEnabled writable={memberCan(member.access,"profile.write")} initialMode={journalMode} privateComposeRequest={privateComposeRequest} onModeChange={mode=>select(mode==="timeline"?"timeline":"journal")} renderLayout={(content,addEntryAction)=><>
       <div className={styles.profileControls}>
         <div className={styles.tabs} role="tablist" aria-label="Your profile">{tabs.map((value,index)=><button type="button" role="tab" aria-selected={tab===value} aria-controls={`${id}-entries-panel`} id={`${id}-${value}-tab`} tabIndex={tab===value?0:-1} onClick={()=>select(value)} onKeyDown={event=>keyNavigate(event,index)} ref={element=>{tabRefs.current[index]=element;}} key={value}>{value[0].toUpperCase()+value.slice(1)}{value==="journal"?<svg aria-label="Private" width="11" height="13" viewBox="0 0 12 14" fill="none" stroke="currentColor"><rect x="1" y="6" width="10" height="7" rx="1"/><path d="M3 6V4a3 3 0 0 1 6 0v2"/></svg>:null}</button>)}</div>
         <div className={styles.entryAction}>{addEntryAction}</div>

@@ -54,7 +54,7 @@ function homeFixture(overrides = {}) {
 }
 
 function pageFixture(data, { state = "authenticated", products = [], viewer = state === "authenticated" ? { authUserId: "member-auth-id" } : null } = {}) {
-  const calls = { products: 0, resolutions: [], timelines: 0, reads: [] };
+  const calls = { products: 0, resolutions: [], timelines: 0, reads: [], welcome: [] };
   const { default: Page } = loadModule("app/my/page.tsx", {
     "next/navigation": { redirect: (href) => { throw new Error(`redirect:${href}`); } },
     "@/components/platform/MemberHome": component("member-home"),
@@ -62,7 +62,10 @@ function pageFixture(data, { state = "authenticated", products = [], viewer = st
     "@/lib/database/server": {
       withFreshApplicationDatabaseRead: async (stage, read) => { calls.reads.push(stage); return read(); },
     },
-    "@/lib/membership/badge-collection-repository": { shouldIntroduceMemberBadges: async () => false },
+    "@/lib/membership/welcome-repository": { getMemberWelcome: async ownerId => {
+      calls.welcome.push(ownerId);
+      return { ownerId, dismissedAt: null, calendarViewedAt: null, hasJournalEntry: false };
+    } },
     "@/lib/membership/artifact-products": {
       resolveMemberHomeArtifactProducts: (snapshot, catalog) => {
         calls.resolutions.push(catalog);
@@ -100,7 +103,11 @@ test("profile loads its own snapshot without eagerly fetching a separate Timelin
   const result = await f.Page();
   assert.equal(result.type, "member-home");
   assert.equal(result.props.timeline, undefined);
-  assert.deepEqual(f.calls.reads, ["member-home", "member-badge-introduction"]);
+  assert.deepEqual(f.calls.reads, ["member-home", "member-welcome"]);
+  assert.deepEqual(f.calls.welcome, ["member-auth-id"]);
+  assert.deepEqual(result.props.welcome, {
+    ownerId: "member-auth-id", dismissedAt: null, calendarViewedAt: null, hasJournalEntry: false,
+  });
   assert.equal(f.calls.timelines, 0);
 });
 
@@ -114,6 +121,7 @@ test("authenticated profile failures render native reload without asking the mem
   assert.doesNotMatch(markup, /passwordless|sign.in|private-member-id/);
   assert.equal(f.calls.products, 0);
   assert.equal(f.calls.timelines, 0);
+  assert.deepEqual(f.calls.welcome, []);
 });
 
 test("members without Shopify-linked artifacts render without requesting the storefront", async () => {
@@ -166,12 +174,14 @@ test("signed-out, denied, and unavailable member states never request Shopify", 
   const signedOut = pageFixture(null, { state: "signed_out" });
   await assert.rejects(signedOut.Page(), /redirect:\/my\/access/);
   assert.equal(signedOut.calls.products, 0);
+  assert.deepEqual(signedOut.calls.welcome, []);
   for (const state of ["denied", "unavailable"]) {
     const f = pageFixture(null, { state });
     const result = await f.Page();
     assert.equal(result.type, "platform-unavailable");
     assert.equal(f.calls.products, 0);
     assert.equal(f.calls.resolutions.length, 0);
+    assert.deepEqual(f.calls.welcome, []);
   }
 });
 

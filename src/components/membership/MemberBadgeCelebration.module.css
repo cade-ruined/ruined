@@ -6,4 +6,11 @@
 .celebration .continue:hover { background:#fff4db; }
 .celebration .continue:disabled { cursor:wait; opacity:.65; }
 .celebration .continue:focus-visible { outline:2px solid #f0e8d4; outline-offset:4px; }
-@media(forced-colors:active) { .actions { color:CanvasText; } .celebration .continue { background:ButtonFace; color:ButtonText; border-color:ButtonText; } }
+.notice { position:fixed; z-index:60; right:24px; bottom:24px; display:flex; align-items:center; justify-content:space-between; gap:16px; width:min(420px,calc(100vw - 32px)); padding:14px 18px; border:1px solid #ede3ce54; background:#20201ef2; color:#ede3ce; backdrop-filter:blur(12px); box-shadow:0 6px 24px #0003; color-scheme:dark; }
+.notice p { display:grid; gap:3px; margin:0; font:400 12px/1.4 var(--font-body),sans-serif; }
+.notice strong { font-size:13px; font-weight:600; }
+.notice p span { color:#c8c0b0; }
+.noticeAction { flex-shrink:0; min-height:44px; padding:8px 0; border:0; border-bottom:1px solid currentColor; background:transparent; color:inherit; font:600 12px/1.4 var(--font-body),sans-serif; cursor:pointer; }
+.noticeAction:focus-visible { outline:2px solid #ede3ce; outline-offset:4px; }
+@media(max-width:1023px) { .notice { right:16px; bottom:calc(92px + env(safe-area-inset-bottom,0px)); } }
+@media(forced-colors:active) { .actions,.notice p span { color:CanvasText; } .notice { color:CanvasText; background:Canvas; border-color:CanvasText; } .noticeAction:focus-visible { outline-color:Highlight; } .celebration .continue { background:ButtonFace; color:ButtonText; border-color:ButtonText; } }
