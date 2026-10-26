@@ -36,13 +36,23 @@ export function welcomeUIFixture(initial, { fetch = async () => { throw new Erro
     removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
   };
   const loaded = { exports: {} };
-  new Function('require', 'module', 'exports', 'window', 'fetch', code)(name => {
+  function loadDependency(name) {
     if (name === 'react') return hooks;
     if (name === 'react/jsx-runtime') return require(name);
     if (name === 'next/link') return { __esModule: true, default: 'a' };
+    if (name === 'next/image') return { __esModule: true, default: 'img' };
+    if (name === './MemberBadgeCard') {
+      const badgeModule = { exports: {} };
+      const badgeCode = ts.transpileModule(readFileSync(new URL('../../src/components/membership/MemberBadgeCard.tsx', import.meta.url), 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+      }).outputText;
+      new Function('require', 'module', 'exports', badgeCode)(loadDependency, badgeModule, badgeModule.exports);
+      return badgeModule.exports;
+    }
     if (name.endsWith('.module.css')) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     throw Error(`Unexpected welcome dependency: ${name}`);
-  }, loaded, loaded.exports, window, async (url, init = {}) => { requests.push({ url, ...init }); return fetch(url, init); });
+  }
+  new Function('require', 'module', 'exports', 'window', 'fetch', code)(loadDependency, loaded, loaded.exports, window, async (url, init = {}) => { requests.push({ url, ...init }); return fetch(url, init); });
   function draw(next = {}) {
     Object.assign(props, next); let tree, budget = 10;
     do {
