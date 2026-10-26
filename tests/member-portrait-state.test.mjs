@@ -138,13 +138,14 @@ test("home consumes the portrait override without mutating its cached member or 
     "next/link": Link,
     "@/components/membership/InstallRuined": () => null,
     "@/components/membership/MemberJournal": () => null,
+    "@/components/membership/MemberWelcome": () => null,
     "@/components/membership/MemberBadges": () => null,
     "@/components/membership/MemberPortraitState": { useMemberPortrait: fixture.read },
     "@/lib/membership/access-policy": { memberCan: () => false },
     "@/lib/membership/member-number": { memberTier: () => null },
     "./MemberProfile.module.css": {},
   }).default;
-  const member = { avatarUrl: null, displayName: "Member", profile: {}, identity: { standingState: "active" }, nextAction: { kind: "explore" } };
+  const member = { avatarUrl: null, displayName: "Member", profile: {}, identity: { standingState: "active" }, access: { mode: "full", capabilities: [] }, upcomingExperiences: [], nextAction: { kind: "explore" } };
   const before = JSON.stringify(member);
   const nodes = node => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
   function photo() {

@@ -87,6 +87,8 @@ export function badgeUIFixture(initial={},options={}){
   const click=label=>{button(label).props.onClick({currentTarget:buttons.get(label)});return draw();};
   const notify=()=>{[...observers].forEach(observer=>observer.callback([]));return draw();};
   return {draw,button,click,buttons,elements,dialog,document,original,requests,observers,navigation,
+    dispatchWindow(type){window.listeners.get(type)?.forEach(fn=>fn());return draw();},
+    windowListeners:window.listeners,
     focusWindow(){window.listeners.get('focus')?.forEach(fn=>fn());return draw();},
     async settle(){for(let i=0;i<4;i++){await new Promise(resolve=>setImmediate(resolve));draw();}return draw();},
     setPath(value){pathname=value;return draw();},

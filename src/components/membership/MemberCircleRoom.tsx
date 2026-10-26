@@ -23,11 +23,19 @@ export default function MemberCircleRoom({ circle }: { circle: MemberCircleSnaps
             The room is being formed.
           </h1>
           <p className="mt-7 max-w-xl font-[var(--font-body)] text-base leading-relaxed text-[var(--member-muted)]">
-            You can continue Foundations now. Ruined will place you into a Circle before Foundations can be completed.
+            Ruined will introduce your Circle here when your placement is ready. You’ll find the people in your group, Circle calls, and shared resources in this space.
           </p>
-          <Link className={`mt-8 w-fit ${actions.action} ${actions.primary}`} href="/my/foundations">
-            Continue Foundations →
-          </Link>
+          <p className="mt-4 max-w-xl font-[var(--font-body)] text-base leading-relaxed text-[var(--member-muted)]">
+            Until then, continue Foundations and find upcoming calls in your Calendar.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link className={`${actions.action} ${actions.primary}`} href="/my/foundations">
+              Continue Foundations →
+            </Link>
+            <Link className={`${actions.action} ${actions.secondary}`} href="/my/experiences">
+              Open Calendar →
+            </Link>
+          </div>
         </section>
       ) : (
         <>

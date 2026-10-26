@@ -6,7 +6,7 @@ export const MEMBERSHIP_BADGES = {
   "your-story": { label: "Your Story", description: "Complete your Foundations timeline." },
   "on-the-record": { label: "On the Record", description: "Publish your first public Timeline entry." },
   groundwork: { label: "Groundwork", description: "Complete Foundations." },
-  "in-the-room": { label: "In the Room", description: "Attend your first confirmed membership call." },
+  "in-the-room": { label: "In the Room", description: "Attend your first confirmed Foundations or Membership call." },
   "full-circle": { label: "Full Circle", description: "Attend WHY and implementation with the same Circle in one month." },
   "the-whole-month": { label: "The Whole Month", description: "Attend SEE, FACE, CUT, and GROW in the same topic month." },
   "open-door": { label: "Open Door", description: "Invite someone who joins Ruined." },

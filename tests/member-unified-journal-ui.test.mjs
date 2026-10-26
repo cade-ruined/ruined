@@ -22,13 +22,13 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : typeof node === "string" || typeof node === "number" ? String(node) : "";
 const nodes = node => !React.isValidElement(node) ? [] : [node, ...(node.type.name === "Dialog" && !node.props.open ? [] : React.Children.toArray(node.props.children).flatMap(nodes))];
 
-function fixture({ initialEntries = [entry()], writable = true, preview = false, initialMode = "all", view = "journal", sharingEnabled = false, publicUrl = "/journal/public-member-token", renderLayout, pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false } = {}) {
-  const slots = [], calls = [], guards = [], rendered = [], timers = new Map(), frames = new Map(), revoked = [], createdUrls = [];
+function fixture({ initialEntries = [entry()], writable = true, preview = false, previewEmpty = false, initialMode = "all", view = "journal", sharingEnabled = false, publicUrl = "/journal/public-member-token", renderLayout, pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false } = {}) {
+  const slots = [], calls = [], guards = [], rendered = [], events = [], eventDetails = [], timers = new Map(), frames = new Map(), revoked = [], createdUrls = [];
   const entries = new Map(initialEntries.map(value => [value.id, structuredClone(value)]));
   const media = new Map(initialEntries.flatMap(value => value.media.map(item => [item.id, item])));
   const Export = () => null;
   let cursor = 0, queued = [], changed = false, tree, uuid = 100, timerId = 0, urlId = 0, cleared = 0, focused = 0, confirmResult = true;
-  const props = { writable, preview, initialMode, view, sharingEnabled, renderLayout, onModeChange(mode) { props.initialMode = mode; } };
+  const props = { writable, preview, previewEmpty, initialMode, view, sharingEnabled, renderLayout, onModeChange(mode) { props.initialMode = mode; } };
   const same = (left, right) => left?.length === right?.length && left.every((value, i) => Object.is(value, right[i]));
   const hooks = { ...React,
     useId: () => "journal-test",
@@ -81,7 +81,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     static createObjectURL(file) { const url = `blob:journal-${++urlId}`; createdUrls.push({ file, url }); return url; }
     static revokeObjectURL(url) { revoked.push(url); }
   }
-  const window = { requestAnimationFrame(callback) { const key = ++timerId; frames.set(key, callback); return key; }, cancelAnimationFrame(key) { frames.delete(key); }, setTimeout(callback) { const key = ++timerId; timers.set(key, callback); return key; }, clearTimeout(key) { timers.delete(key); }, confirm: () => confirmResult };
+  const window = { dispatchEvent(event) { events.push(event.type); eventDetails.push(event.detail); return true; }, requestAnimationFrame(callback) { const key = ++timerId; frames.set(key, callback); return key; }, cancelAnimationFrame(key) { frames.delete(key); }, setTimeout(callback) { const key = ++timerId; timers.set(key, callback); return key; }, clearTimeout(key) { timers.delete(key); }, confirm: () => confirmResult };
   const loaded = { exports: {} };
   new Function("require", "module", "exports", "window", "fetch", "URL", "crypto", compiled)(name => {
     if (name === "react") return hooks;
@@ -112,7 +112,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     assert.ok(container, `Missing field ${label}`);
     return nodes(container).find(node => ["input", "textarea", "select"].includes(node.type));
   };
-  return { calls, entries, guards, rendered, createdUrls, revoked, render, flush, find, button, field, Export,
+  return { calls, entries, guards, rendered, events, eventDetails, createdUrls, revoked, render, flush, find, button, field, Export,
     async click(label) { const control = button(label); assert.ok(control, `Missing button ${label}`); assert.equal(Boolean(control.props.disabled), false, `${label} should be enabled`); control.props.onClick(); return flush(); },
     change(label, value) { const control = field(label); control.props.onChange({ target: { value, checked: value } }); return render(); },
     submit(another = false) { return find(node => node.type === "form").props.onSubmit({ preventDefault() {}, nativeEvent: { submitter: { getAttribute: name => name === "data-add-another" && another ? "true" : null } } }); },
@@ -386,13 +386,13 @@ test("New + selects private Journal or public Timeline explicitly before composi
   assert.equal(ui.find(node => node.type === "form"), undefined);
   assert.ok(ui.button("Journal (Private)")); assert.ok(ui.button("Timeline (Public)"));
   await ui.click("Journal (Private)");
-  assert.equal(ui.field("Journal").props.checked, true);
+  assert.equal(ui.field("Add to Timeline").props.checked, false);
   ui.change("Your words", "An undated thought"); await ui.submit(); await ui.flush();
   const privateSave = ui.mutate()[0];
   assert.equal(privateSave.body.visibility, "private"); assert.equal(privateSave.body.eventYear, null); assert.equal(privateSave.body.includeOnTimeline, false);
   assert.match(text(ui.render()), /Saved privately in your Journal/);
   await ui.click("New +"); await ui.click("Timeline (Public)");
-  assert.equal(ui.field("Timeline").props.checked, true); assert.equal(ui.field("Title").props.required, false);
+  assert.equal(ui.field("Add to Timeline").props.checked, true); assert.equal(ui.field("Title").props.required, false);
   ui.change("Your words", "A public post without a title or date"); await ui.submit(); await ui.flush();
   const publicSave = ui.mutate()[1];
   assert.equal(publicSave.body.visibility, "public"); assert.equal(publicSave.body.includeOnTimeline, true);
@@ -404,12 +404,12 @@ test("New + selects private Journal or public Timeline explicitly before composi
 
 test("an entry can move between Journal and Timeline without duplicating it", async () => {
   const ui = fixture({ sharingEnabled: true, initialEntries: [entry({ title: "A private thought", includeOnTimeline: false, visibility: "private" })] }); await ui.flush();
-  await ui.click("Open entry: A private thought"); await ui.click("Edit entry"); ui.change("Timeline", true);
+  await ui.click("Open entry: A private thought"); await ui.click("Edit entry"); ui.change("Add to Timeline", true);
   assert.equal(ui.guards.at(-1).dirty, true); assert.ok(ui.button("Post to Timeline"));
   await ui.submit(); await ui.flush();
   assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[0].body.visibility, "public"); assert.equal(ui.mutate()[0].body.includeOnTimeline, true);
   assert.equal(ui.mutate()[0].method, "PATCH"); assert.equal(ui.mutate()[0].body.expectedVersion, "1");
-  await ui.click("Open entry: A private thought"); await ui.click("Edit entry"); ui.change("Journal", true); await ui.submit(); await ui.flush();
+  await ui.click("Open entry: A private thought"); await ui.click("Edit entry"); ui.change("Add to Timeline", false); await ui.submit(); await ui.flush();
   assert.equal(ui.entries.size, 1); assert.equal(ui.mutate()[1].body.visibility, "private"); assert.equal(ui.mutate()[1].body.includeOnTimeline, false);
   assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 1);
   ui.render({ initialMode: "timeline" }); await ui.flush();
@@ -428,7 +428,7 @@ test("a recovered explicitly shared draft retains its choice and stable retry id
   const recovered = { kind: "text", title: "A public draft", body: "Draft words", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: true, visibility: "public",
     files: [], keptMedia: [], editingId: null, editingVersion: null, attempted: false, draftId: id(88), uploadIds: [], wasPending: false };
   const ui = fixture({ sharingEnabled: true, initialEntries: [], recoveryDraft: recovered }); await ui.flush(); await ui.click("Restore draft");
-  assert.equal(ui.field("Timeline").props.checked, true); assert.equal(ui.guards.at(-1).dirty, true);
+  assert.equal(ui.field("Add to Timeline").props.checked, true); assert.equal(ui.guards.at(-1).dirty, true);
   await ui.submit(); await ui.flush();
   assert.equal(ui.mutate()[0].body.id, id(88)); assert.equal(ui.mutate()[0].body.visibility, "public");
   assert.equal(ui.entries.size, 1); assert.equal(ui.cleared(), 1); ui.unmount();
@@ -436,11 +436,11 @@ test("a recovered explicitly shared draft retains its choice and stable retry id
 
 test("legacy private milestones remain private while New + can create Journal from Timeline", async () => {
   const ui = fixture({ sharingEnabled: true, initialMode: "timeline" }); await ui.flush(); await ui.click("New +");
-  await ui.click("Journal (Private)"); assert.equal(ui.field("Journal").props.checked, true);
+  await ui.click("Journal (Private)"); assert.equal(ui.field("Add to Timeline").props.checked, false);
   ui.change("Your words", "Still private from Timeline"); await ui.submit(); await ui.flush();
   assert.equal(ui.mutate()[0].body.visibility, "private");
   await ui.click("Open entry: One remembered beginning"); await ui.click("Edit entry");
-  assert.equal(ui.field("Journal").props.checked, true);
+  assert.equal(ui.field("Add to Timeline").props.checked, false);
   ui.change("Title", "Kept private"); await ui.submit(); await ui.flush();
   assert.equal(ui.mutate()[1].body.visibility, "private");
   assert.equal(ui.entries.get(id(1)).includeOnTimeline, true, "preserve the legacy Foundations milestone without publishing it");
@@ -451,7 +451,7 @@ test("uncertain legacy public drafts become private only after checking whether 
   const recovered = { kind: "text", title: "Legacy draft", body: "Old public choice without timeline consent", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: false, visibility: "public",
     files: [], keptMedia: [], editingId: null, editingVersion: null, attempted: true, draftId: id(88), uploadIds: [], wasPending: true };
   const ui = fixture({ sharingEnabled: true, initialEntries: [], recoveryDraft: recovered }); await ui.flush(); await ui.click("Restore draft");
-  assert.equal(ui.field("Journal").props.checked, true);
+  assert.equal(ui.field("Add to Timeline").props.checked, false);
   await ui.submit(); assert.equal(ui.mutate().length, 0, "uncertain saves must be checked first");
   await ui.click("Check saved entry"); await ui.flush();
   assert.ok(ui.button("Save to Journal")); await ui.submit(); await ui.flush();
@@ -467,16 +467,101 @@ test("New + resumes an unfinished entry without replacing its destination or con
   assert.equal(ui.find(node => node.type === "h2" && text(node) === "Your journal"), undefined);
   await ui.click("New +"); await ui.click("Timeline (Public)"); ui.change("Your words", "Keep my unfinished words");
   await ui.click("Keep draft & close"); await ui.click("Continue entry");
-  assert.equal(ui.field("Your words").props.value, "Keep my unfinished words"); assert.equal(ui.field("Timeline").props.checked, true);
+  assert.equal(ui.field("Your words").props.value, "Keep my unfinished words"); assert.equal(ui.field("Add to Timeline").props.checked, true);
   assert.equal(ui.button("Journal (Private)"), undefined); ui.unmount();
 });
 
 test("legacy public flags without Timeline consent remain readable and editable in private Journal", async () => {
   const ui = fixture({ sharingEnabled: true, initialEntries: [entry({ visibility: "public", includeOnTimeline: false, title: "Legacy private words" })] }); await ui.flush();
   await ui.click("Open entry: Legacy private words"); await ui.click("Edit entry");
-  assert.equal(ui.field("Journal").props.checked, true);
+  assert.equal(ui.field("Add to Timeline").props.checked, false);
   ui.change("Your words", "Still only mine"); await ui.submit(); await ui.flush();
   assert.equal(ui.mutate()[0].body.visibility, "private"); assert.equal(ui.mutate()[0].body.includeOnTimeline, false);
   assert.equal(ui.entries.size, 1); ui.render({ initialMode: "timeline" }); await ui.flush();
   assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 0); ui.unmount();
+});
+
+test("the first-entry shortcut opens a private composer once and preserves an unfinished public draft", async () => {
+  const ui = fixture({ sharingEnabled: true, initialEntries: [], initialMode: "timeline" }); await ui.flush();
+  ui.render({ privateComposeRequest: 1 }); await ui.flush();
+  assert.equal(ui.button("Journal (Private)"), undefined, "the checklist skips the destination chooser");
+  assert.equal(ui.field("Add to Timeline").props.checked, false);
+  assert.match(text(ui.render()), /Only you can see this\. Check Add to Timeline/);
+  assert.equal(ui.field("Your words").props["aria-describedby"], "journal-test-entry-privacy");
+  ui.change("Your words", "Keep these words"); ui.change("Add to Timeline", true);
+  await ui.click("Keep draft & close"); await ui.flush();
+  assert.equal(ui.find(node => node.type === "form"), undefined, "the same request must not reopen a closed composer");
+  ui.render({ privateComposeRequest: 2 }); await ui.flush();
+  assert.equal(ui.field("Your words").props.value, "Keep these words");
+  assert.equal(ui.field("Add to Timeline").props.checked, true, "a new request cannot replace an unfinished draft's destination");
+  assert.match(text(ui.render()), /Your unfinished entry is still here/);
+  assert.match(text(ui.render()), /This entry will appear on your public profile when you save/);
+  const visitor = ui.find(node => node.type === "a" && text(node).startsWith("View your public profile"));
+  assert.equal(visitor.props.target, "_blank", "visitor preview must not navigate away from an unsaved draft");
+  assert.match(text(visitor), /unsaved changes are not shown/);
+  await ui.submit(); await ui.flush();
+  assert.deepEqual(ui.events, ["ruined:member-progress"]);
+  await ui.click("Open entry: Keep these words"); await ui.click("Edit entry"); ui.change("Add to Timeline", false);
+  assert.match(text(ui.render()), /This entry will be private when you save/);
+  await ui.submit(); await ui.flush();
+  assert.equal(ui.mutate()[1].body.visibility, "private");
+  assert.equal(ui.mutate()[1].body.includeOnTimeline, false);
+  await ui.click("Open entry: Keep these words"); await ui.click("Delete entry"); await ui.flush();
+  assert.deepEqual(ui.events, Array(3).fill("ruined:member-progress")); ui.unmount();
+});
+
+test("the first-entry shortcut respects recovered drafts and read-only access", async () => {
+  const recovered = { kind: "text", title: "Recovered draft", body: "Do not replace me", eventYear: "", eventMonth: "", eventDay: "", includeOnTimeline: false, visibility: "private",
+    files: [], keptMedia: [], editingId: null, editingVersion: null, attempted: false, draftId: id(88), uploadIds: [], wasPending: false };
+  const ui = fixture({ sharingEnabled: true, initialEntries: [], recoveryDraft: recovered }); await ui.flush();
+  ui.render({ privateComposeRequest: 1 }); await ui.flush();
+  assert.equal(ui.find(node => node.type === "form"), undefined);
+  assert.match(text(ui.render()), /Restore or discard your saved draft/);
+  await ui.click("Restore draft"); assert.equal(ui.field("Your words").props.value, "Do not replace me");
+  assert.equal(ui.mutate().length, 0); assert.deepEqual(ui.events, []); ui.unmount();
+  const readonly = fixture({ sharingEnabled: true, writable: false, initialEntries: [] }); await readonly.flush();
+  readonly.render({ privateComposeRequest: 1 }); await readonly.flush();
+  assert.equal(readonly.find(node => node.type === "form"), undefined);
+  assert.equal(readonly.mutate().length, 0); readonly.unmount();
+});
+
+test("failed Journal writes do not report completed member progress", async () => {
+  const ui = fixture({ sharingEnabled: true, initialEntries: [], intercept: call => call.method === "POST" ? response({ error: "Temporarily unavailable." }, 503) : undefined });
+  await ui.flush(); ui.render({ privateComposeRequest: 1 }); await ui.flush();
+  ui.change("Your words", "Keep my failed draft"); await ui.submit(); await ui.flush();
+  assert.deepEqual(ui.events, []); assert.equal(ui.field("Your words").props.value, "Keep my failed draft");
+  assert.equal(ui.field("Add to Timeline").props.checked, false); ui.unmount();
+});
+
+test("preview progress reports the remaining private entries after saves and deletes", async () => {
+  const ui = fixture({ sharingEnabled: true, preview: true }); await ui.flush();
+  await ui.click("Open entry: Making room."); await ui.click("Delete entry"); await ui.flush();
+  assert.deepEqual(ui.eventDetails.at(-1), { preview: true, hasJournalEntry: true }, "the other private milestone remains");
+  await ui.click("Open entry: Moved somewhere new"); await ui.click("Delete entry"); await ui.flush();
+  assert.deepEqual(ui.eventDetails.at(-1), { preview: true, hasJournalEntry: false }, "the public example cannot satisfy the Journal step");
+  ui.render({ privateComposeRequest: 1 }); await ui.flush();
+  ui.change("Your words", "My preview journal"); await ui.submit(); await ui.flush();
+  assert.deepEqual(ui.eventDetails.at(-1), { preview: true, hasJournalEntry: true });
+  await ui.click("Open entry: My preview journal"); await ui.click("Edit entry"); ui.change("Add to Timeline", true); await ui.submit(); await ui.flush();
+  assert.deepEqual(ui.eventDetails.at(-1), { preview: true, hasJournalEntry: false }, "moving the last private entry to Timeline clears the Journal step");
+  assert.equal(ui.calls.length, 0, "preview mutations stay local"); ui.unmount();
+});
+
+test("first-use preview starts empty only when requested and never hides real Journal entries", async () => {
+  const samples = fixture({ preview: true, sharingEnabled: true }); await samples.flush();
+  assert.equal(nodes(samples.render()).filter(node => node.type === "article").length, 2);
+  samples.render({ initialMode: "timeline" }); await samples.flush();
+  assert.equal(nodes(samples.render()).filter(node => node.type === "article").length, 1); samples.unmount();
+  const fresh = fixture({ preview: true, previewEmpty: true, sharingEnabled: true }); await fresh.flush();
+  assert.equal(nodes(fresh.render()).filter(node => node.type === "article").length, 0);
+  fresh.render({ initialMode: "timeline" }); await fresh.flush();
+  assert.equal(nodes(fresh.render()).filter(node => node.type === "article").length, 0);
+  fresh.render({ privateComposeRequest: 1 }); await fresh.flush();
+  fresh.change("Your words", "My first private words"); await fresh.submit(); await fresh.flush();
+  assert.deepEqual(fresh.eventDetails.at(-1), { preview: true, hasJournalEntry: true });
+  assert.equal(nodes(fresh.render()).filter(node => node.type === "article").length, 1);
+  assert.equal(fresh.calls.length, 0); fresh.unmount();
+  const live = fixture({ previewEmpty: true, sharingEnabled: true }); await live.flush();
+  assert.equal(nodes(live.render()).filter(node => node.type === "article").length, 1, "previewEmpty cannot suppress a real record");
+  assert.ok(live.calls.some(call => call.method === "GET")); live.unmount();
 });

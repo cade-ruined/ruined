@@ -93,6 +93,7 @@ test("held Calendar is read-only while activated member reservation controls rem
     const Page = load("app/my/experiences/page.tsx", {
       "next/navigation": { redirect },
       "@/components/membership/MemberExperiences": Calendar,
+      "@/components/membership/MemberWelcomeCalendarVisit": Stub,
       "@/components/platform/PlatformUnavailable": Stub,
       "@/lib/membership/page-context": { getMembershipPageContext: async (_preview, _load, area) => {
         assert.equal(area, "experiences");

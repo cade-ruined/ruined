@@ -21,12 +21,16 @@ function JournalStub({ writable, sharingEnabled = false, view = "journal", rende
   const action = writable && view === "journal" ? React.createElement("button", { type: "button", "data-add-entry": "true" }, "+ Add entry") : null;
   return renderLayout ? renderLayout(content, action) : content;
 }
+function WelcomeStub({ initialWelcome }) {
+  return React.createElement("section", { "data-member-welcome": "true", "data-welcome-snapshot": initialWelcome ? "ready" : "missing" });
+}
 const mod = { exports: {} };
 new Function("require", "module", "exports", compiled)((name) => {
   if (name === "react/jsx-runtime" || name === "react") return require(name);
   if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: ({badges}) => React.createElement("div", {"data-earned-badges": true}, badges.map(badge => React.createElement("span", {key:badge.key}, badge.label))) };
   if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: ({variant}) => React.createElement("section", {"data-profile-install": variant}, "Install Ruined") };
   if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: JournalStub };
+  if (name === "@/components/membership/MemberWelcome") return { __esModule: true, default: WelcomeStub };
   if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
   if (name === "next/image") return { __esModule: true, default: ({ src, alt }) => React.createElement("img", { src, alt }) };
@@ -52,7 +56,7 @@ function memberFixture() {
     announcement: { id: "announcement-1", title: "A note for your Circle", body: "Private announcement body", href: "/my/updates", publishedAt: "2026-01-12T12:00:00.000Z" },
     artifact, artifacts: [artifact], avatarUrl: null, blockName: "Our Block", circleMembers: [{ id: "person-2", displayName: "Circle person", avatarUrl: null }], circleName: "Our Circle", displayName: "Alex",
     foundations: { state: "completed", progressPercent: 100, requirements: { activeCircle: { completed: true, name: "Our Circle" }, futureLetter: { completed: true, completedAt: "2026-01-09T12:00:00.000Z" }, timeline: { completed: true, completedAt: "2026-01-08T12:00:00.000Z", entryCount: 4 }, moments: { completed: 5, total: 5 } } },
-    memberNumber: null, identity: { memberId: "11111111-1111-4111-8111-111111111111", standingState: "active", email: "alex@example.com" }, memberSince: "2026-01-01T12:00:00.000Z",
+    memberNumber: null, identity: { authUserId: "22222222-2222-4222-8222-222222222222", memberId: "11111111-1111-4111-8111-111111111111", standingState: "active", email: "alex@example.com" }, memberSince: "2026-01-01T12:00:00.000Z",
     nextAction: { kind: "circle", title: "Meet your Circle", body: "", href: "/my/circle" }, nextExperience: futureMeeting, nextMeeting: futureMeeting,
     profile: { preferredName: "Alex", fullName: "Alex Member", displayName: "Alex", bio: null, buildingNow: null, directoryStatus: "hidden", location: null, timezone: "America/Denver" },
     record: {
@@ -124,6 +128,20 @@ test("limited profile states keep Journal read-only and the existing profile con
  }
 });
 
+test("welcome stays on the actual profile and is limited to released full or onboarding access", () => {
+  const welcome = { ownerId: "22222222-2222-4222-8222-222222222222", dismissedAt: null, calendarViewedAt: null, hasJournalEntry: false };
+  for (const mode of ["full", "onboarding", "entry", "limited", "suspended"]) {
+    const member = memberFixture(); member.access.mode = mode;
+    const tree = render(member, { welcome }), nodes = elements(tree), checklist = region(tree, "data-member-welcome");
+    if (mode === "full" || mode === "onboarding") {
+      assert.equal(attr(checklist, "data-welcome-snapshot"), "ready");
+      assert.ok(nodes.indexOf(checklist) > nodes.indexOf(nodes.find(node => node.tagName === "header")), "identity comes before onboarding");
+      assert.ok(nodes.indexOf(checklist) < nodes.indexOf(region(tree, "data-profile-install")));
+    } else assert.equal(checklist, undefined, "restricted access cannot expose the onboarding checklist");
+    assert.ok(nodes.some(node => node.tagName === "h1"), "the member still lands on their own profile");
+  }
+});
+
 test("the owner header consistently prefers full name while retaining legacy fallbacks", () => {
   const member = memberFixture();
   member.displayName = member.profile.displayName = "@alex";
@@ -157,7 +175,7 @@ test("profile badge uses the permanent number and leaves unassigned members unnu
 });
 
 
-function interactiveProfile(hash = "#journal") {
+function interactiveProfile(hash = "#journal", props = {}) {
   const slots = [], listeners = new Map(), historyState = { nextRouter: "retained" };
   const Journal = JournalStub;
   let cursor = 0, queued = [], changed = false, tree, focused = null;
@@ -190,6 +208,7 @@ function interactiveProfile(hash = "#journal") {
     if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: () => null };
     if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: () => null };
     if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: Journal };
+    if (name === "@/components/membership/MemberWelcome") return { __esModule: true, default: WelcomeStub };
     if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
     if (name === "@/lib/membership/access-policy") return { memberCan: (access, capability) => access.capabilities.includes(capability) };
     if (name === "@/lib/membership/member-number") return memberNumber;
@@ -216,7 +235,7 @@ function interactiveProfile(hash = "#journal") {
     do {
       assert.ok(attempts++ < 8, "profile effects should settle");
       cursor = 0; queued = []; changed = false;
-      tree = loaded.exports.default({ member: memberFixture() });
+      tree = loaded.exports.default({ member: memberFixture(), ...props });
       queued.forEach(effect => effect());
     } while (changed);
     nodes(tree).filter(node => node.props.role === "tab").forEach((node, index) => node.props.ref?.({ focus() { focused = index; } }));
@@ -224,6 +243,7 @@ function interactiveProfile(hash = "#journal") {
   }
   const tabs = () => nodes(render()).filter(node => node.props.role === "tab");
   return { window, render, tabs, nodes,
+    welcome() { return nodes(render()).find(node => node.type === WelcomeStub); },
     journal() { const journals = nodes(render()).filter(node => node.type === Journal); assert.equal(journals.length, 1); return journals[0]; },
     panel() { return nodes(render()).find(node => node.props.id === "profile-test-entries-panel"); },
     journalPath() { return journalPath(render()); },
@@ -248,6 +268,29 @@ test("Timeline is the default while Journal links select its private section", (
   ui.navigate("#timeline", "popstate"); assert.equal(ui.journal().props.initialMode, "timeline");
   ui.navigate("", "popstate"); assert.equal(ui.journal().props.initialMode, "timeline");
   ui.unmount();
+});
+
+test("welcome opens the private Journal directly without remounting its draft owner", () => {
+  const member = memberFixture();
+  member.avatarUrl = "/test-portrait.webp"; member.profile.bio = "A real introduction."; member.profile.memberTag = "alex";
+  const welcome = { ownerId: member.identity.authUserId, dismissedAt: null, calendarViewedAt: null, hasJournalEntry: false };
+  const ui = interactiveProfile("#timeline", { member, welcome, preview: true });
+  const path = ui.journalPath(), checklist = ui.welcome();
+  assert.equal(checklist.props.ownerId, member.identity.authUserId);
+  assert.equal(checklist.props.initialWelcome, welcome);
+  assert.equal(checklist.props.profileReady, true);
+  assert.equal(checklist.props.preview, true);
+  assert.equal(ui.journal().props.privateComposeRequest, 0, "simply opening the profile does not open a composer");
+  checklist.props.onWritePrivate();
+  assert.equal(ui.journal().props.initialMode, "all");
+  assert.equal(ui.journal().props.privateComposeRequest, 1);
+  assert.equal(ui.window.location.hash, "#journal");
+  assert.deepEqual(ui.journalPath(), path, "checklist navigation preserves the component that owns an unfinished draft");
+  ui.welcome().props.onWritePrivate(); assert.equal(ui.journal().props.privateComposeRequest, 2);
+  ui.unmount();
+  member.profile.bio = "   ";
+  const incomplete = interactiveProfile("", { member });
+  assert.equal(incomplete.welcome().props.profileReady, false, "blank profile fields do not count as complete"); incomplete.unmount();
 });
 
 test("switching sections and legacy hashes never remounts the draft owner", () => {

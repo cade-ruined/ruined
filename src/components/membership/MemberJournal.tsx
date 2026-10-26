@@ -81,14 +81,14 @@ function Dialog({ open, onClose, title, children }: { open: boolean; onClose: ()
   return <dialog ref={ref} className={styles.dialog} aria-labelledby={titleId} onCancel={onClose} onClose={onClose} onClick={event => { if (event.target === event.currentTarget) onClose(); }}><div className={styles.dialogBody}><header className={styles.dialogHeader}><h2 id={titleId}>{title}</h2><button type="button" onClick={onClose} aria-label="Close">×</button></header>{children}</div></dialog>;
 }
 
-export default function MemberJournal({ preview, writable, view = "journal", initialMode = "all", onModeChange, renderLayout, sharingEnabled = false }: { preview: boolean; writable: boolean; sharingEnabled?: boolean; view?: "journal" | "saved"; initialMode?: ReadingMode; onModeChange?: (mode: ReadingMode) => void; renderLayout?: (content: ReactNode, addEntryAction: ReactNode) => ReactNode }) {
+export default function MemberJournal({ preview, writable, view = "journal", initialMode = "all", onModeChange, renderLayout, sharingEnabled = false, privateComposeRequest = 0, previewEmpty = false }: { preview: boolean; writable: boolean; sharingEnabled?: boolean; view?: "journal" | "saved"; initialMode?: ReadingMode; onModeChange?: (mode: ReadingMode) => void; renderLayout?: (content: ReactNode, addEntryAction: ReactNode) => ReactNode; privateComposeRequest?: number; previewEmpty?: boolean }) {
   const sharing = sharingEnabled;
   const journalApi = "/api/my/journal";
   const timelineApi = "/api/my/timeline";
   const [mode, setMode] = useState<ReadingMode>(initialMode);
   const timelineView = view === "journal" && (onModeChange ? initialMode : mode) === "timeline";
-  const [entries, setEntries] = useState<JournalEntry[]>(preview ? previewEntries : []);
-  const [previewData, setPreviewData] = useState(previewEntries);
+  const [entries, setEntries] = useState<JournalEntry[]>(preview && !previewEmpty ? previewEntries : []);
+  const [previewData, setPreviewData] = useState<JournalEntry[]>(preview && previewEmpty ? [] : previewEntries);
   const [loading, setLoading] = useState(!preview), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
   const [mediaReady, setMediaReady] = useState(preview), [hasMore, setHasMore] = useState(false), [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -104,6 +104,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   const [completedAt, setCompletedAt] = useState<string | null>(null), [canComplete, setCanComplete] = useState(false), [completing, setCompleting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const busy = useRef(false), listVersion = useRef(0), savedUrls = useRef<string[]>([]), exportRequest = useRef(0), active = useRef(true), id = useId();
+  const handledPrivateComposeRequest = useRef(0);
   const dirty = signature(draft) !== baseline;
   const { ownerId, recoveryDraft, dismissRecovery, clearDraft } = useJournalDraftGuard({ enabled: writable && !preview, dirty: dirty || draft.attempted, pending: pending && Boolean(draft.draftId), draft });
   const requestJson = useCallback(<T,>(url: string, init?: RequestInit): Promise<T> => {
@@ -157,6 +158,22 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     return () => abort.abort();
   }, [timelineView, sharing, preview, writable, reload, requestJson, timelineApi]);
   useEffect(() => { exportRequest.current += 1; setExportOpen(false); setExportEntries([]); setExportError(""); setExportLoading(false); }, [reload]);
+  useEffect(() => {
+    if (privateComposeRequest <= handledPrivateComposeRequest.current || !writable || pending) return;
+    handledPrivateComposeRequest.current = privateComposeRequest;
+    setNewEntryOpen(false);
+    if (recoveryDraft) {
+      setNotice("Restore or discard your saved draft before starting a new Journal entry.");
+      return;
+    }
+    if (dirty || draft.attempted) {
+      setNotice("Your unfinished entry is still here. Finish or discard it before starting a new private Journal entry.");
+    } else {
+      const next = { ...blankDraft(), draftId: crypto.randomUUID() };
+      setDraft(next); setBaseline(signature(next)); setDateOpen(false); setDraftError(""); setNeedsReview(false); setLatestSaved(null);
+    }
+    setComposer(true);
+  }, [privateComposeRequest, writable, pending, recoveryDraft, dirty, draft.attempted]);
   const patchDraft = (patch: Partial<JournalDraft>) => { setDraft(current => ({ ...current, ...patch })); setDraftError(""); };
   function changeMode(value: ReadingMode) { setMode(value); setSearch(""); setQuery(""); setYear(""); onModeChange?.(value); }
   function installDraft(value: JournalDraft) { setDraft(value); setBaseline(signature(value)); setDateOpen(Boolean(value.eventYear) || (!sharing && value.includeOnTimeline)); setDraftError(""); setNeedsReview(false); setLatestSaved(null); }
@@ -207,6 +224,11 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     setSelected(current => current?.id === entry.id ? entry : current);
     setReload(value => value + 1);
   }
+  function reportProgress(nextPreviewEntries: JournalEntry[]) {
+    window.dispatchEvent(preview
+      ? new CustomEvent("ruined:member-progress", { detail: { preview: true, hasJournalEntry: nextPreviewEntries.some(entry => !isPublicTimeline(entry)) } })
+      : new Event("ruined:member-progress"));
+  }
   async function publish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (busy.current || !writable || needsReview) return;
     const problem = validateDraft(draft); if (problem) { setDraftError(problem); return; }
@@ -239,6 +261,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       }
       clearDraft(); if (!active.current) return;
       rememberEntry(entry);
+      reportProgress([entry, ...previewData.filter(item => item.id !== entry.id)]);
       if (sharing) {
         const isPublic = isPublicTimeline(entry);
         setNotice(isPublic ? "Added to your public Timeline." : "Saved privately in your Journal.");
@@ -278,6 +301,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       else setPreviewData(current => current.filter(item => item.id !== entry.id));
       if (draft.editingId === entry.id) { clearDraft(); installDraft(blankDraft()); }
       setSelected(null); setReload(value => value + 1); setNotice("Entry deleted.");
+      reportProgress(previewData.filter(item => item.id !== entry.id));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "This entry could not be deleted."); }
     finally { setPending(false); }
   }
@@ -374,11 +398,18 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     </Dialog>
     <Dialog open={composer} onClose={() => setComposer(false)} title={sharing ? (draft.editingId ? "Edit your " : "New ") + (isPublicTimeline(draft) ? "Timeline post." : "Journal entry.") : draft.editingId ? "Edit your entry." : "Leave something here."}>
       <form onSubmit={publish} aria-busy={pending}>
-        <p className={styles.subtitle}>{sharing ? (isPublicTimeline(draft) ? "Public · This post will appear on your profile." : "Private · Only you can see this Journal entry.") : "Your journal is private. Only you can see this entry."}</p>
-        {sharing ? <fieldset className={styles.destinationPicker} disabled={frozen}><legend>Post to</legend><label><input type="radio" name={`${id}-destination`} checked={!isPublicTimeline(draft)} onChange={() => patchDraft({ visibility: "private", includeOnTimeline: false })}/><span>Journal <small>Private</small></span></label><label><input type="radio" name={`${id}-destination`} checked={isPublicTimeline(draft)} onChange={() => patchDraft({ visibility: "public", includeOnTimeline: true })}/><span>Timeline <small>Public</small></span></label></fieldset> : null}
+        <p className={styles.subtitle}>{sharing ? (isPublicTimeline(draft) ? "Public Timeline" : "Private Journal") : "Your journal is private. Only you can see this entry."}</p>
         <fieldset className={styles.kindPicker} disabled={frozen}><legend className={styles.srOnly}>Entry type</legend>{(["text", "images", "video"] as const).map(kind => <label key={kind}><input type="radio" name={`${id}-kind`} checked={draft.kind === kind} onChange={() => changeKind(kind)} disabled={kind !== "text" && !mediaReady && kind !== draft.kind}/><span>{kind === "text" ? "Words" : kind === "images" ? "Photos" : "Video"}</span></label>)}</fieldset>
         <label className={styles.field}>Title {(!draft.includeOnTimeline || sharing) ? <span>(optional)</span> : null}<input ref={titleRef} value={draft.title} maxLength={200} disabled={frozen} required={!sharing && draft.includeOnTimeline} onChange={event => patchDraft({ title: event.target.value })} placeholder="Give this moment a name"/></label>
-        <label className={styles.field}>{draft.kind === "text" ? "Your words" : "Caption"} <span>(optional)</span><textarea rows={6} value={draft.body} maxLength={JOURNAL_BODY_LENGTH} disabled={frozen} onChange={event => patchDraft({ body: event.target.value })} placeholder="What do you want to remember?"/></label>
+        <label className={styles.field}>{draft.kind === "text" ? "Your words" : "Caption"} <span>(optional)</span><textarea rows={6} value={draft.body} maxLength={JOURNAL_BODY_LENGTH} disabled={frozen} aria-describedby={sharing ? `${id}-entry-privacy` : undefined} onChange={event => patchDraft({ body: event.target.value })} placeholder="What do you want to remember?"/></label>
+        {sharing ? <div className={styles.privacyChoice}>
+          <p id={`${id}-entry-privacy`} className={styles.privacyHint} aria-live="polite">{isPublicTimeline(draft)
+            ? "This entry will appear on your public profile when you save it. Uncheck Add to Timeline to keep it private."
+            : draft.editingId ? "This entry will be private when you save. Check Add to Timeline to share it publicly."
+            : "Only you can see this. Check Add to Timeline to share it publicly when you save."}</p>
+          <label className={styles.timelineConsent}><input type="checkbox" checked={isPublicTimeline(draft)} disabled={frozen} aria-describedby={`${id}-entry-privacy`} onChange={event => patchDraft({ visibility: event.target.checked ? "public" : "private", includeOnTimeline: event.target.checked })}/><span>Add to Timeline <small>Public profile</small></span></label>
+          {!preview && publicUrl ? <Link className={styles.visitorPreview} href={publicUrl} target="_blank" rel="noreferrer">View your public profile ↗<span className={styles.srOnly}> (opens in a new tab; unsaved changes are not shown)</span></Link> : null}
+        </div> : null}
         {draft.kind !== "text" ? <><div className={styles.previews}>{draft.keptMedia.map((media, index) => <figure key={media.id}>{draft.kind === "images" ? <Image src={media.url} alt={`Attached image ${index + 1}`} width={180} height={140} unoptimized/> : <video src={media.url} controls playsInline preload="metadata"/>}<button type="button" disabled={frozen} onClick={() => patchDraft({ keptMedia: draft.keptMedia.filter(item => item.id !== media.id) })}>Remove attachment</button></figure>)}{draft.files.map((file, index) => <figure key={`${file.name}-${index}`}>{fileUrls[index] ? draft.kind === "images" ? <Image src={fileUrls[index]} alt={`Selected image ${index + 1}`} width={180} height={140} unoptimized/> : <video src={fileUrls[index]} controls playsInline preload="metadata"/> : null}<figcaption>{file.name}</figcaption><button type="button" disabled={frozen} onClick={() => patchDraft({ files: draft.files.filter((_, position) => position !== index) })}>Remove attachment</button></figure>)}</div><label className={styles.fileInput}>{draft.kind === "images" ? "Choose images" : "Choose a video"}<input type="file" accept={JOURNAL_MEDIA_ACCEPT[draft.kind]} multiple={draft.kind === "images"} disabled={frozen || !mediaReady} onChange={event => { addFiles(event.target.files); event.target.value = ""; }}/><span>{draft.kind === "images" ? "Up to 8 images · JPG, PNG, WebP · 8 MB each" : "MP4 or WebM · Up to 50 MB"}</span></label></> : null}
         {!sharing ? <label className={styles.storyMilestone}><input type="checkbox" checked={draft.includeOnTimeline} disabled={frozen} onChange={event => { patchDraft({ includeOnTimeline: event.target.checked }); if (event.target.checked) setDateOpen(true); }}/><span>Include on my timeline<small>A milestone you want to place in your story.</small></span></label> : null}
         {!dateOpen && (sharing || !draft.includeOnTimeline) ? <button type="button" className={styles.quiet} disabled={frozen} onClick={() => setDateOpen(true)}>Add when it happened <span>(optional)</span></button> : <fieldset className={styles.storyDateFields} disabled={frozen}><legend>When did it happen? {(!draft.includeOnTimeline || sharing) ? <span>(optional)</span> : null}</legend><p>Only add what you remember. A year is enough.</p><div><label>Year<input type="text" inputMode="numeric" maxLength={4} placeholder="2014" value={draft.eventYear} required={!sharing && draft.includeOnTimeline} onChange={event => patchDraft({ eventYear: event.target.value })}/></label><label>Month <small>Optional</small><select value={draft.eventMonth} onChange={event => patchDraft({ eventMonth: event.target.value, eventDay: event.target.value ? draft.eventDay : "" })}><option value="">Year only</option>{TIMELINE_MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label><label>Day <small>Optional</small><input type="text" inputMode="numeric" maxLength={2} placeholder="—" value={draft.eventDay} onChange={event => patchDraft({ eventDay: event.target.value })}/></label></div><button type="button" className={styles.quiet} onClick={() => { const now = new Date(); patchDraft({ eventYear: String(now.getFullYear()), eventMonth: String(now.getMonth() + 1), eventDay: "" }); }}>Use this month ↗</button></fieldset>}

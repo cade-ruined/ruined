@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import postgres from "postgres";
 
 type ApplicationDatabase = ReturnType<typeof postgres>;
-type MemberReadStage = "member-home" | "member-timeline" | "member-invitations" | "member-badge-introduction" | "member-badge-collection";
+type MemberReadStage = "member-home" | "member-timeline" | "member-invitations" | "member-badge-introduction" | "member-badge-collection" | "member-welcome";
 const readDatabase = new AsyncLocalStorage<ApplicationDatabase>();
 const READ_TIMEOUT_MS = 8_000;
 const CLEANUP_TIMEOUT_MS = 1_000;
