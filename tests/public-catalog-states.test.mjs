@@ -48,6 +48,9 @@ const uiDependencies = {
 };
 const { default: StoreGallery } = await compile("src/components/store/StoreGallery.tsx", {
   ...uiDependencies,
+  "./StoreVideoHeader": { default: () => null },
+  "./StoreFilterDrawer": { default: ({ children }) => children },
+  "./StoreGallery.module.css": { default: {} },
   "@/data/products": { PRODUCT_TONES: { warm: "#e5e0d5" } },
 });
 const { default: ProductPurchase } = await compile("src/components/store/ProductPurchase.tsx", {

@@ -1,0 +1,132 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid rgb(0 0 0 / 15%);
+}
+
+.categories {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 1.5rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.categories::-webkit-scrollbar {
+  display: none;
+}
+
+.category {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: rgb(0 0 0 / 55%);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.category[aria-pressed="true"] {
+  color: var(--color-faded);
+  border-bottom-color: currentColor;
+}
+
+.category:hover {
+  color: var(--color-faded);
+}
+
+.category:focus-visible {
+  outline: 2px solid var(--color-poster);
+  outline-offset: -3px;
+}
+
+.drawerField {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  color: rgb(0 0 0 / 60%);
+  font-size: 0.75rem;
+}
+
+.drawerSelect {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.5rem 0;
+  border: 0;
+  border-bottom: 1px solid rgb(0 0 0 / 30%);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-faded);
+  font-size: 1rem;
+}
+
+.drawerSelect:focus-visible {
+  outline: 2px solid var(--color-poster);
+  outline-offset: 4px;
+}
+
+.action,
+.cardAction {
+  min-height: 44px;
+  border: 1px solid var(--color-faded);
+  border-radius: 0;
+  background: var(--color-signal);
+  color: var(--color-faded);
+  box-shadow: 4px 4px 0 var(--color-faded);
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onDark {
+  box-shadow: 4px 4px 0 var(--color-bone);
+}
+
+.action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 6px;
+}
+
+.onDark:focus-visible {
+  outline-color: var(--color-bone);
+}
+
+@media (hover: hover) {
+  .action:hover,
+  a:hover .cardAction {
+    transform: translate(1px, 1px);
+    box-shadow: 3px 3px 0 var(--color-faded);
+  }
+
+  .onDark:hover {
+    box-shadow: 3px 3px 0 var(--color-bone);
+  }
+}
+
+.action:active,
+a:active .cardAction {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--color-faded);
+}
+
+.onDark:active {
+  box-shadow: 1px 1px 0 var(--color-bone);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .cardAction {
+    transition: none;
+  }
+}

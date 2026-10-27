@@ -13,6 +13,11 @@ import { getCatalogEntries } from "@/lib/store/product-colors";
 import { getProductFitImages } from "@/lib/store/product-fit-images";
 import { getProductFitHref } from "@/lib/store/product-links";
 import { CATALOG_CATEGORIES, CATALOG_FITS, catalogFiltersHref, filterCatalogProducts, getCollectionFilters, getCatalogFitSelection, normalizeCatalogFilters, type CatalogFit } from "@/lib/store/catalog-filters";
+import StoreVideoHeader from "./StoreVideoHeader";
+import StoreFilterDrawer from "./StoreFilterDrawer";
+import styles from "./StoreGallery.module.css";
+
+const CATEGORY_LABELS = { all: "All", "tees-tanks": "Tees", hoodies: "Hoodies", "collared-shirts": "Collared" };
 
 export default function StoreGallery({
   products,
@@ -65,7 +70,7 @@ export default function StoreGallery({
             href="/#top"
             className="font-mono text-[0.64rem] uppercase tracking-[0.22em] text-white/45 transition-colors hover:text-white"
           >
-            ← Return to the walk
+            ← Back to the walk
           </Link>
           <div className="mt-16 max-w-3xl sm:mt-24" data-catalog-status={catalogStatus}>
             <p className="font-mono text-[0.64rem] uppercase tracking-[0.26em] text-[var(--color-poster)]">
@@ -82,7 +87,7 @@ export default function StoreGallery({
                 // A document reload deliberately bypasses a cached client route
                 // after a failed read; a same-route Link may do nothing.
                 // eslint-disable-next-line @next/next/no-html-link-for-pages
-                <a href="/store" className="ui-heading inline-flex min-h-11 items-center rounded-sm bg-[var(--color-signal)] px-5 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+                <a href="/store" className={`${styles.action} ${styles.onDark} ui-heading px-5 text-sm`}>
                   Try again
                 </a>
               )}
@@ -98,79 +103,50 @@ export default function StoreGallery({
 
   return (
     <main className="min-h-screen bg-black text-[var(--color-bone)]">
-      <header className="border-b border-white/15 px-4 pb-8 pt-12 sm:px-8 sm:pb-10 sm:pt-14 lg:px-10">
-        <div className="mx-auto grid max-w-[96rem] gap-8 md:grid-cols-12 md:items-end">
-          <div className="md:col-span-7 lg:col-span-8">
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[0.64rem] uppercase tracking-[0.22em] text-white/45">
-              <Link href="/#top" className="transition-colors hover:text-white">
-                ← Return to the walk
-              </Link>
-              <span aria-hidden="true" className="h-px w-6 bg-white/25" />
-              <span>Current pieces</span>
-            </div>
-            <h1
-              id="catalogue-heading"
-              className="display mt-7 text-[clamp(3.5rem,8vw,7.5rem)] leading-[0.8]"
-            >
-              The <span className="italic text-[var(--color-poster)]">catalog.</span>
-            </h1>
-          </div>
-
-          <div className="md:col-span-5 lg:col-span-4">
-            <div className="flex items-end justify-between gap-6 border-b border-white/15 pb-4 font-mono text-[0.62rem] uppercase tracking-[0.18em] text-white/45">
-              <span>{String(products.length).padStart(2, "0")} styles</span>
-              <span>Available online</span>
-            </div>
-            <p className="mt-4 max-w-md text-sm leading-relaxed text-white/60">
-              Everyday pieces, made with intention. Find your fit, or explore
-              the collection behind it.
-            </p>
-          </div>
-        </div>
-      </header>
+      <StoreVideoHeader />
+      <h1 id="catalogue-heading" className="sr-only">Shop Ruined apparel</h1>
 
       <section
         aria-labelledby="catalogue-heading"
         className="bg-[var(--color-bone)] px-3 py-3 text-[var(--color-faded)] sm:px-6 sm:py-6"
       >
         <div className="mx-auto max-w-[96rem]">
-          <div className="border border-black/15 px-3 py-4 sm:px-5 sm:py-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div role="group" aria-label="Product category" className="flex flex-wrap gap-x-1 gap-y-1">
-                {CATALOG_CATEGORIES.map(({ id, label }) => (
-                  <button key={id} type="button" aria-pressed={filters.category === id}
-                    onClick={() => chooseFilters({ category: id })}
-                    className={`min-h-11 px-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black sm:px-4 ${filters.category === id ? "bg-black text-[var(--color-bone)]" : "text-black/60 hover:bg-black/5 hover:text-black"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-3 xl:min-w-[26rem]">
-                <label className="grid min-w-0 gap-2 text-xs text-black/60">
-                  Collection
-                  <select aria-label="Collection" value={filters.collection}
-                    onChange={(event) => chooseFilters({ collection: event.currentTarget.value })}
-                    className="min-h-11 min-w-0 rounded-none border border-black/25 bg-transparent px-3 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">
-                    <option value="">All collections</option>
-                    {collections.map(({ handle, title }) => <option key={handle} value={handle}>{title}</option>)}
-                  </select>
-                </label>
-                <label className="grid min-w-0 gap-2 text-xs text-black/60">
-                  Fit
-                  <select aria-label="Fit" value={filters.fit}
-                    onChange={(event) => chooseFilters({ fit: event.currentTarget.value })}
-                    className="min-h-11 min-w-0 rounded-none border border-black/25 bg-transparent px-3 text-sm text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">
-                    {CATALOG_FITS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-                  </select>
-                </label>
-              </div>
+          <div className={styles.toolbar}>
+            <div role="group" aria-label="Product category" className={styles.categories}>
+              {CATALOG_CATEGORIES.map(({ id }) => (
+                <button key={id} type="button" aria-pressed={filters.category === id}
+                  onClick={() => chooseFilters({ category: id })}
+                  className={styles.category}>
+                  {CATEGORY_LABELS[id]}
+                </button>
+              ))}
             </div>
-            <div className="mt-3 flex min-h-8 items-center justify-between gap-4 text-xs text-black/55">
-              <p role="status">{visibleProducts.length} {visibleProducts.length === 1 ? "style" : "styles"}{filtered ? ` of ${products.length}` : ""}</p>
-              {filtered && <button type="button" onClick={() => chooseFilters({ category: "all", collection: "", fit: "all" })}
-                className="min-h-11 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">Clear filters</button>}
-            </div>
+            <StoreFilterDrawer
+              activeCount={Number(Boolean(filters.collection)) + Number(filters.fit !== "all")}
+              hasFilters={filtered}
+              resultCount={resultCount}
+              onClear={() => chooseFilters({ category: "all", collection: "", fit: "all" })}
+            >
+              <label className={styles.drawerField}>
+                Collection
+                <select aria-label="Collection" value={filters.collection}
+                  onChange={(event) => chooseFilters({ collection: event.currentTarget.value })}
+                  className={styles.drawerSelect}>
+                  <option value="">All collections</option>
+                  {collections.map(({ handle, title }) => <option key={handle} value={handle}>{title}</option>)}
+                </select>
+              </label>
+              <label className={styles.drawerField}>
+                Fit
+                <select aria-label="Fit" value={filters.fit}
+                  onChange={(event) => chooseFilters({ fit: event.currentTarget.value })}
+                  className={styles.drawerSelect}>
+                  {CATALOG_FITS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+                </select>
+              </label>
+            </StoreFilterDrawer>
           </div>
+          <p role="status" className="sr-only">{visibleProducts.length} {visibleProducts.length === 1 ? "style" : "styles"}{filtered ? ` of ${products.length}` : ""}</p>
           {visibleProducts.length ? (
             <div className="grid grid-cols-2 border-l border-black/15 lg:grid-cols-4">
               {visibleProducts.map((product, index) => (
@@ -182,7 +158,7 @@ export default function StoreGallery({
               <h2 className="ui-heading text-xl">No pieces in this combination.</h2>
               <p className="mt-3 text-sm text-black/60">Try another category, collection, or fit.</p>
               <button type="button" onClick={() => chooseFilters({ category: "all", collection: "", fit: "all" })}
-                className="mt-5 min-h-11 border border-black px-5 text-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black">View all pieces</button>
+                className={`${styles.action} mt-5 px-5 text-sm`}>View all pieces</button>
             </div>
           )}
 
@@ -203,7 +179,7 @@ export default function StoreGallery({
             </p>
           </div>
           <div className="md:col-span-4 md:col-start-9 md:self-end">
-            <Link href="/shipping-returns" className="ui-heading inline-flex border border-white/40 px-5 py-3 text-[0.58rem] uppercase tracking-[0.24em] transition-colors hover:bg-white hover:text-black">
+            <Link href="/shipping-returns" className={`${styles.action} ${styles.onDark} ui-heading px-5 py-3 text-[0.58rem] uppercase tracking-[0.24em]`}>
               Shipping + returns →
             </Link>
           </div>
@@ -281,7 +257,7 @@ function ProductCard({
           <span>{String(index + 1).padStart(2, "0")}</span>
           <span>{featured ? "Featured" : product.code}</span>
         </div>
-        <span className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center border border-white/40 bg-black/30 text-white transition-colors group-hover:bg-[var(--color-poster)] sm:bottom-3 sm:right-3">→</span>
+        <span aria-hidden="true" className={`${styles.cardAction} absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center sm:bottom-4 sm:right-4`}>→</span>
       </div>
       <div className="px-1 pb-3 pt-3 sm:pt-4">
         <div className="flex items-start justify-between gap-2">
