@@ -40,8 +40,9 @@ export default function SiteHeader() {
     pathname.startsWith("/my") || pathname.startsWith("/ops") || pathname.startsWith("/auth");
   const isHome = pathname === "/";
   const isBag = pathname === SITE_ROUTES.bag.href;
+  const isStore = pathname === SITE_ROUTES.store.href || pathname.startsWith(`${SITE_ROUTES.store.href}/`);
   const usesDarkSurface =
-    pathname.startsWith(SITE_ROUTES.store.href) ||
+    isStore ||
     isBag ||
     pathname.startsWith(`${SITE_ROUTES.work.href}/`);
   const showMyRuined = isMyRuinedVisible();
@@ -355,7 +356,7 @@ export default function SiteHeader() {
         <div
           aria-hidden
           className={`${
-            sectionLocator ? "h-[7.25rem] sm:h-[8rem]" : "h-16"
+            isStore ? "h-[calc(var(--ruined-header-height)+1px)]" : sectionLocator ? "h-[7.25rem] sm:h-[8rem]" : "h-16"
           } ${usesDarkSurface ? "bg-black" : "bg-[var(--color-bone)]"}`}
         />
       )}
