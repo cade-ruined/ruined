@@ -302,8 +302,8 @@ test("one catalog card offers four colors with matching URLs, photos, price and 
         return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
       } },
       "react/jsx-runtime": jsxRuntime,
-      "next/navigation": { useSearchParams: () => new URLSearchParams() },
-      "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
+      "next/navigation": { usePathname: () => "/store", useSearchParams: () => new URLSearchParams() },
+      "next/link": { default: ({ children, ...props }) => { delete props.scroll; return React.createElement("a", props, children); } },
       "next/image": { default: ({ src, alt, className, ...props }) => React.createElement("img", { src, alt, className, "aria-hidden": props["aria-hidden"] }) },
       "@/data/products": { PRODUCT_TONES: { warm: "#e5e0d5" } },
       "@/lib/store/catalog": load("src/lib/store/catalog.ts"),

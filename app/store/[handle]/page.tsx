@@ -93,7 +93,7 @@ export default async function ProductPage({
   };
 
   return (
-    <main className="min-h-screen bg-black px-5 pb-24 pt-10 text-[var(--color-bone)] sm:px-10 sm:pt-12">
+    <main className="min-h-screen bg-[var(--color-bone)] px-5 pb-24 pt-6 text-[var(--color-faded)] sm:px-10 sm:pt-8">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -101,9 +101,9 @@ export default async function ProductPage({
         }}
       />
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 font-mono text-xs uppercase tracking-[0.12em] text-white/65">
-          <Link href="/store" className="inline-flex min-h-11 items-center transition-colors hover:text-white">
-            ← Store index
+        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-1 font-mono text-xs uppercase tracking-[0.12em] text-black/65">
+          <Link href="/store" className="inline-flex min-h-11 items-center transition-colors hover:text-black">
+            ← Back to the store
           </Link>
           <span>{product.code}</span>
         </div>

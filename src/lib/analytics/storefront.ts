@@ -8,7 +8,7 @@ import { configureShopifyAnalytics, shopifyAnalyticsTrackingHeaders, trackShopif
   trackShopifyPageView, trackShopifyProductView, type ShopifyAnalyticsConfig, type ShopifyAnalyticsItem } from "./shopify";
 
 type Properties = Record<string, string | number | boolean | undefined>;
-const eventNames = new Set(["store_product_selected", "store_product_opened", "store_size_guide_opened",
+const eventNames = new Set(["store_product_selected", "store_product_opened", "store_product_expanded", "store_size_guide_opened",
   "store_variant_selected", "store_add_to_bag", "store_bag_viewed", "store_bag_quantity_changed",
   "store_bag_item_removed", "store_checkout_clicked", "store_checkout_redirected", "store_checkout_failed", "store_cart_sync_failed", "store_scroll_depth",
   "store_catalog_viewed", "store_filter_changed", "store_color_selected", "store_catalog_product_selected", "store_browse_stage"]);
@@ -92,9 +92,9 @@ function trackBrowseProgress(name: string, properties: Properties, safe: Record<
   } else if ((name === "store_product_opened" || name === "store_add_to_bag") && typeof product === "string") {
     const context = productContexts.get(product);
     // A quick-buy addition is a different discovery path and cannot borrow a
-    // previous product-page context, including for the same variant.
+    // previous product-page or modal context, including for the same variant.
     if (name === "store_add_to_bag" && typeof properties.variant_id === "string") bagContexts.delete(properties.variant_id);
-    if (properties.source !== "product_page" || !context) return;
+    if (!["product_page", "product_modal"].includes(String(properties.source)) || !context) return;
     browseStage(context.selection, name === "store_product_opened" ? "product_opened" : "add_to_bag");
     if (name === "store_add_to_bag" && typeof properties.variant_id === "string" && isShopifyVariantId(properties.variant_id)) {
       bagContexts.set(properties.variant_id, { ...context, product, at: Date.now() });
@@ -179,6 +179,11 @@ function safeProperties(name: string, properties: Properties): Record<string, st
     return typeof properties.product_handle === "string" && publicHandle.test(properties.product_handle) && validSelection(properties.selection)
       ? { product: properties.product_handle, selection: properties.selection } : null;
   }
+  if (name === "store_product_expanded") {
+    return typeof properties.product_handle === "string" && publicHandle.test(properties.product_handle)
+      && properties.source === "product_modal"
+      ? { product: properties.product_handle, source: properties.source } : null;
+  }
   if (name === "store_color_selected") {
     return typeof properties.product_handle === "string" && publicHandle.test(properties.product_handle)
       && typeof properties.option_value === "string" && /^[\w ()/.'’,-]{1,64}$/.test(properties.option_value)
@@ -195,7 +200,7 @@ function safeProperties(name: string, properties: Properties): Record<string, st
   const handle = properties.product_handle;
   if (typeof handle === "string" && /^[a-z0-9][a-z0-9-]{0,254}$/.test(handle)) result.product = handle;
   const source = properties.source;
-  if (typeof source === "string" && ["store", "product_page", "quick_buy", "bag"].includes(source)) result.source = source;
+  if (typeof source === "string" && ["store", "product_page", "product_modal", "quick_buy", "bag"].includes(source)) result.source = source;
   if (name === "store_variant_selected") {
     delete result.source;
     const option = properties.option_name, value = properties.option_value;

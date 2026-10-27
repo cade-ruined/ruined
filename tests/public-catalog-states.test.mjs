@@ -37,11 +37,11 @@ const uiDependencies = {
   react: React,
   "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
   "@/lib/marketing/meta": { trackMetaAddToCart: () => {} },
-  "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
+  "next/link": { default: ({ children, ...props }) => { delete props.scroll; return React.createElement("a", props, children); } },
   "next/image": { default: ({ src, alt }) => React.createElement("img", { src, alt }) },
   "@/lib/store/catalog": catalog,
   "@/lib/store/catalog-filters": catalogFilters,
-  "next/navigation": { useSearchParams: () => new URLSearchParams() },
+  "next/navigation": { usePathname: () => "/store", useSearchParams: () => new URLSearchParams() },
   "@/lib/store/product-colors": productColors,
   "@/lib/store/product-fit-images": productFits,
   "@/lib/store/product-links": productLinks,
@@ -59,6 +59,7 @@ const { default: ProductPurchase } = await compile("src/components/store/Product
   "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Free standard shipping over $150." },
   "./BagLink": { default: () => null },
   "./ProductSizeGuideDialog": { default: () => null },
+  "./ProductSurface.module.css": { default: {} },
   "./bag-store": { useBag: () => ({ add: () => assert.fail("Rendering cannot add a bag item") }), isShopifyVariantId: (id) => id.startsWith("gid://shopify/ProductVariant/") },
 });
 const { JourneyStoreIndex, JourneyLobbyIndex } = await compile("src/components/sequence/JourneyIndexes.tsx", {

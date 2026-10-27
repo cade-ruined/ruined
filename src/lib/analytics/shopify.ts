@@ -25,7 +25,7 @@ export type ShopifyAnalyticsItem = {
   currency: string;
   product_name?: string;
   variant_name?: string;
-  source?: "product_page" | "quick_buy";
+  source?: "product_page" | "product_modal" | "quick_buy";
 };
 
 let configuration: ShopifyAnalyticsConfig | null = null;

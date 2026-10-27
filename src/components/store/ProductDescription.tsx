@@ -14,12 +14,12 @@ const ELEMENT_CLASSES: Partial<Record<ProductDescriptionTag, string>> = {
   ul: "mt-5 list-disc space-y-2 pl-5",
   ol: "mt-5 list-decimal space-y-2 pl-5",
   li: "pl-1",
-  strong: "font-semibold text-white",
+  strong: "font-semibold text-[var(--color-faded)]",
   em: "italic",
-  h2: "display mt-9 text-3xl leading-none text-white first:mt-0",
-  h3: "mt-7 font-mono text-xs uppercase tracking-[0.18em] text-white first:mt-0",
-  blockquote: "mt-6 border-l border-[var(--color-poster)] pl-4 text-white/80",
-  a: "underline decoration-white/30 underline-offset-4 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
+  h2: "display mt-9 text-3xl leading-none text-[var(--color-faded)] first:mt-0",
+  h3: "mt-7 font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-faded)] first:mt-0",
+  blockquote: "mt-6 border-l border-[var(--color-poster)] pl-4 text-black/80",
+  a: "underline decoration-black/30 underline-offset-4 transition-colors hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)]",
 };
 
 function renderNode(node: SafeProductDescriptionNode, key: string): ReactNode {
@@ -67,7 +67,7 @@ export default function ProductDescription({
   if (!content.length) return null;
 
   return (
-    <div className="mt-10 max-w-prose border-t border-white/15 pt-7 text-base leading-relaxed text-white/70">
+    <div className="mt-10 max-w-prose border-t border-black/15 pt-7 text-base leading-relaxed text-black/70">
       {content.length === 1 ? content[0] : <Fragment>{content}</Fragment>}
     </div>
   );

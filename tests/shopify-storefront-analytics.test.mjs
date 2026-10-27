@@ -65,6 +65,30 @@ test("Shopify measures a consented page once and adds product detail without dup
   assert.deepEqual(events.map(({ event }) => event.eventName), ["PAGE_VIEW_2", "PRODUCT_VIEW", "PAGE_VIEW_2", "PAGE_VIEW_2", "PRODUCT_VIEW"]);
 });
 
+test("canonical product modals count a view once, preserve confirmed cart adds, and sanitize URLs", () => {
+  const { bridge, events } = fixture();
+  const modalItem = { ...item, source: "product_modal" };
+  bridge.trackShopifyProductView(modalItem);
+  bridge.trackShopifyProductView({ ...modalItem, variant_id: "789" });
+  // Expanding the same canonical product changes presentation, not the viewed product.
+  bridge.trackShopifyProductView({ ...item, source: "product_page" });
+  bridge.trackShopifyAddToCart("gid://shopify/Cart/cart-test?key=PRIVATE_CAPABILITY", modalItem);
+  assert.deepEqual(events.map(({ event }) => event.eventName), ["PAGE_VIEW_2", "PRODUCT_VIEW", "ADD_TO_CART"]);
+  for (const { event } of events) {
+    assert.equal(event.payload.url, "https://theruinedproject.com/store/ruined-hoodie");
+    assert.equal(event.payload.canonicalUrl, event.payload.url);
+    assert.equal(event.payload.search, "");
+  }
+  assert.equal(events[2].event.payload.cartId, "gid://shopify/Cart/cart-test");
+  assert.equal(events[2].event.payload.products[0].quantity, 2);
+  assert.doesNotMatch(JSON.stringify(events), /PRIVATE_CAPABILITY|private|secret/);
+  for (const path of ["/store", "/", "/store/different-product"]) {
+    window.location = new URL(`https://theruinedproject.com${path}`);
+    bridge.trackShopifyProductView(modalItem);
+  }
+  assert.equal(events.length, 3, "a modal must use its actual canonical product route");
+});
+
 test("pending, denied, failed, unavailable and GPC states neither emit nor expose tracking headers", () => {
   const b = fixture();
   const attempt = () => {

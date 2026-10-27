@@ -13,12 +13,15 @@ import type { ProductVariant } from "@/data/products";
 import ProductPurchase from "./ProductPurchase";
 import ProductGallery from "./ProductGallery";
 
-export default function ProductDetail({ product, children }: {
+export default function ProductDetail({ product, children, modal = false }: {
   product: Product;
   children: ReactNode;
+  modal?: boolean;
 }) {
   const searchParams = useSearchParams();
   const viewedProduct = useRef<string | null>(null);
+  const analyticsSource = modal ? "product_modal" : "product_page";
+  const Heading = modal ? "h2" : "h1";
   const colorOption = getProductColorOption(product);
   const requestedVariant = requestedProductVariant(product, searchParams.get("variant"));
   const requestedColor = requestedVariant?.selectedOptions.find((option) => option.name === colorOption?.name)?.value ?? searchParams.get("color");
@@ -54,19 +57,20 @@ export default function ProductDetail({ product, children }: {
 
   useEffect(() => {
     const view = () => {
-      if (viewedProduct.current === product.id) return;
+      const viewKey = `${product.id}:${analyticsSource}`;
+      if (viewedProduct.current === viewKey) return;
       const variant = viewVariant;
       if (trackStoreEvent("store_product_opened", {
         product_id: product.shopifyProductGid ?? product.id,
         product_handle: product.id,
-        source: "product_page",
+        source: analyticsSource,
         ...(variant ? { variant_id: variant.id, quantity: 1, value: Number(variant.priceAmount), currency: variant.currencyCode } : {}),
-      })) viewedProduct.current = product.id;
+      })) viewedProduct.current = viewKey;
     };
     view();
     window.addEventListener(MARKETING_CONSENT_EVENT, view);
     return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
-  }, [product.id, product.shopifyProductGid, viewVariant]);
+  }, [analyticsSource, product.id, product.shopifyProductGid, viewVariant]);
 
   function chooseColor(value: string) {
     if (!colorOption?.values.includes(value) || value === color) return;
@@ -85,24 +89,25 @@ export default function ProductDetail({ product, children }: {
   }
 
   return (
-    <div className="mt-6 grid gap-6 md:mt-10 md:grid-cols-12 md:gap-14">
+    <div className={`grid gap-6 text-[var(--color-faded)] md:grid-cols-12 ${modal ? "md:gap-8" : "mt-6 md:mt-10 md:gap-14"}`}>
       <ProductGallery
         key={`${product.id}:${color ?? ""}:${galleryFit ?? ""}`}
         images={images}
         tone={product.tone}
+        compact={modal}
         label={fitOption ? `${galleryFit} product photographs` : color ? `${color} product photographs` : "Product photographs"}
       />
-      <article className="self-start md:sticky md:top-28 md:col-span-5 md:pt-8">
+      <article className={`min-w-0 self-start md:col-span-5 ${modal ? "" : "md:sticky md:top-28 md:pt-8"}`}>
         {product.subtitle && (
           <p className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-poster)]">{product.subtitle}</p>
         )}
-        <h1 className="display mt-2 text-[clamp(2.5rem,7vw,5.5rem)] leading-[0.95] md:mt-4 md:leading-[0.9]">{product.name}</h1>
-        <ProductPurchase key={`${requestedVariant?.id ?? color ?? product.id}:${selectedFit ?? ""}`} product={product} initialColor={color} initialFit={selectedFit} initialVariant={requestedVariant} onColorChange={chooseColor} onFitChange={chooseFit} onVariantChange={chooseVariant} />
+        <Heading className={`display mt-2 leading-[0.95] ${modal ? "text-[clamp(2.25rem,5vw,3.5rem)]" : "text-[clamp(2.5rem,7vw,5.5rem)] md:mt-4 md:leading-[0.9]"}`}>{product.name}</Heading>
+        <ProductPurchase key={`${requestedVariant?.id ?? color ?? product.id}:${selectedFit ?? ""}`} product={product} analyticsSource={analyticsSource} initialColor={color} initialFit={selectedFit} initialVariant={requestedVariant} onColorChange={chooseColor} onFitChange={chooseFit} onVariantChange={chooseVariant} />
         {children}
-        <dl className="mt-8 space-y-3 border-y border-white/15 py-6 font-mono text-xs uppercase leading-relaxed tracking-[0.1em]">
+        <dl className="mt-8 space-y-3 border-y border-black/15 py-6 font-mono text-xs uppercase leading-relaxed tracking-[0.1em]">
           {specs.map((spec) => (
             <div key={spec.label} className="grid grid-cols-3 gap-3">
-              <dt className="text-white/65">{spec.label}</dt>
+              <dt className="text-black/60">{spec.label}</dt>
               <dd className="col-span-2">{spec.value}</dd>
             </div>
           ))}

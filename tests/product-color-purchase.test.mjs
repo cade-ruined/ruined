@@ -49,6 +49,7 @@ const dependencies = {
   "@/data/product-size-guides": { getProductSizeGuide: () => undefined, getProductSizeGuideConfig: () => undefined },
   "./BagLink": { default: () => null },
   "./ProductSizeGuideDialog": { default: () => null },
+  "./ProductSurface.module.css": { default: {} },
 };
 function elements(node) {
   return React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];

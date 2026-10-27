@@ -15,6 +15,7 @@ import { trackMetaAddToCart } from "@/lib/marketing/meta";
 import BagLink from "./BagLink";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
+import styles from "./ProductSurface.module.css";
 
 function optionValue(variant: ProductVariant | undefined, name: string): string | undefined {
   return variant?.selectedOptions.find((option) => option.name === name)?.value;
@@ -51,7 +52,7 @@ function formatExpectedShipDate(value?: string): string | undefined {
   }).format(date);
 }
 
-export default function ProductPurchase({ product, initialColor, initialFit, initialVariant, onColorChange, onFitChange, onVariantChange }: {
+export default function ProductPurchase({ product, initialColor, initialFit, initialVariant, onColorChange, onFitChange, onVariantChange, analyticsSource = "product_page" }: {
   product: Product;
   initialColor?: string;
   initialFit?: string;
@@ -59,6 +60,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
   onColorChange?: (color: string) => void;
   onFitChange?: (fit: string) => void;
   onVariantChange?: (variant: ProductVariant) => void;
+  analyticsSource?: "product_modal" | "product_page";
 }) {
   const options = useMemo(() => visibleOptions(product), [product]);
   const colorOption = getProductColorOption(product);
@@ -127,7 +129,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
       trackStoreEvent("store_variant_selected", {
         product_id: product.shopifyProductGid ?? product.id,
         product_handle: product.id,
-        source: "product_page",
+        source: analyticsSource,
         option_name: name,
         option_value: value,
       });
@@ -169,7 +171,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
         product_id: product.shopifyProductGid ?? product.id,
         product_handle: product.id,
         variant_id: selectedVariant.id,
-        source: "product_page",
+        source: analyticsSource,
         quantity: addedQuantity,
         value: Number(selectedVariant.priceAmount) * addedQuantity,
         currency: selectedVariant.currencyCode,
@@ -188,7 +190,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
           <p className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-poster)]">
             Preorder — pay in full
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-white/65">
+          <p className="mt-2 text-sm leading-relaxed text-black/65">
             Pay {formatPriceForSentence(selectedVariant?.price ?? product.price)} now. Expected to ship {expectedShipDate}.
           </p>
         </div>
@@ -196,9 +198,9 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
 
       {options.map((option) => (
         <fieldset key={option.name} className="mt-8">
-          <legend className="flex w-full flex-wrap justify-between gap-2 font-mono text-xs uppercase tracking-[0.12em] text-white/70">
+          <legend className="flex w-full flex-wrap justify-between gap-2 font-mono text-xs uppercase tracking-[0.12em] text-black/60">
             <span>Select {option.name}</span>
-            <span className="text-white">{selection[option.name] || "Required"}</span>
+            <span className="text-[var(--color-faded)]">{selection[option.name] || "Required"}</span>
           </legend>
           {option.name === sizeGuideConfig?.sizeOption && (
             <div className="mt-1 flex min-h-11 items-center justify-end">
@@ -206,16 +208,16 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
                 <ProductSizeGuideDialog guide={sizeGuide} onOpen={() => trackStoreEvent("store_size_guide_opened", {
                   product_id: product.shopifyProductGid ?? product.id,
                   product_handle: product.id,
-                  source: "product_page",
+                  source: analyticsSource,
                 })} />
               ) : (
-                <span className="font-mono text-xs uppercase tracking-[0.12em] text-white/65">
+                <span className="font-mono text-xs uppercase tracking-[0.12em] text-black/60">
                   Select fit for size guide
                 </span>
               )}
             </div>
           )}
-          <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5">
+          <div className="mt-3 grid grid-cols-4 gap-3 sm:grid-cols-5">
             {option.values.map((value) => {
               const active = selection[option.name] === value;
               const available = canSelect(option.name, value);
@@ -226,11 +228,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
                   onClick={() => choose(option.name, value)}
                   disabled={!available}
                   aria-pressed={active}
-                  className={`min-h-11 min-w-11 border px-2 py-3 font-mono text-xs uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/20 ${
-                    active
-                      ? "border-white bg-white text-black"
-                      : "border-white/30 text-white hover:border-white"
-                  }`}
+                  className={`${styles.option} px-2 py-3 font-mono text-xs uppercase tracking-[0.08em]`}
                 >
                   {value}
                 </button>
@@ -244,7 +242,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
         type="button"
         onClick={addSelectedVariant}
         disabled={!purchasable}
-        className="mt-8 w-full border border-white bg-white px-5 py-4 font-mono text-xs uppercase tracking-[0.28em] text-black transition-colors hover:bg-[var(--color-poster)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-transparent disabled:text-white/35"
+        className={`${styles.action} mt-8 w-full px-5 py-4 font-mono text-xs uppercase tracking-[0.2em]`}
       >
         <span aria-live="polite">
           {!hasAvailableVariant
@@ -258,22 +256,22 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
       </button>
 
       {isShopifyProduct && (
-        <p className="mt-4 text-sm leading-relaxed text-white/70">
+        <p className="mt-4 text-sm leading-relaxed text-black/65">
           {FREE_STANDARD_SHIPPING_COPY}
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 font-mono text-xs uppercase tracking-[0.1em] text-white/70">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 font-mono text-xs uppercase tracking-[0.1em] text-black/65">
         <span>{isShopifyProduct ? "Secure checkout" : "Studio confirmation"}</span>
-        <BagLink className="inline-flex min-h-11 min-w-11 items-center justify-end text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)]" />
+        <BagLink className={`${styles.action} px-4 text-xs`} />
       </div>
 
       {!isShopifyProduct && (
-        <p className="mt-5 text-sm leading-relaxed text-white/70">
+        <p className="mt-5 text-sm leading-relaxed text-black/65">
           Studio confirmation is required before payment.
         </p>
       )}
-      <Link href="/shipping-returns" className="mt-3 inline-flex min-h-11 items-center text-sm text-white/70 underline decoration-white/30 underline-offset-4 hover:text-white">
+      <Link href="/shipping-returns" className="mt-3 inline-flex min-h-11 items-center text-sm text-black/65 underline decoration-black/30 underline-offset-4 hover:text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-poster)]">
         Shipping + returns
       </Link>
     </div>
