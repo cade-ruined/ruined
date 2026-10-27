@@ -37,6 +37,7 @@ const elements = node => React.isValidElement(node) ? [node, ...React.Children.t
 const text = node => typeof node === "string" ? node : React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : "";
 const Stub = () => null;
 const SizeGuide = () => null;
+const FilterDrawer = () => null;
 const product = {
   id: "hoodie", shopifyProductGid: "gid://shopify/Product/123", name: "Hoodie", code: "RU-1", subtitle: "", material: "", origin: "", care: "", tone: "shadow", price: "$64",
   options: [{ name: "Color", values: ["Black", "Blue"] }, { name: "Size", values: ["S", "M"] }],
@@ -71,6 +72,7 @@ function fixture(path, props = {}, options = {}) {
     "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Shipping" },
     "@/data/product-size-guides": { getProductSizeGuide: () => ({ fit: "Unisex" }), getProductSizeGuideConfig: () => ({ sizeOption: "Size", fitOption: "Fit" }) },
     "./ProductGallery": { default: Stub }, "./ProductPurchase": { default: Stub }, "./ProductSizeGuideDialog": { default: SizeGuide }, "./BagLink": { default: Stub },
+    "./StoreVideoHeader": { default: Stub }, "./StoreFilterDrawer": { default: FilterDrawer }, "./StoreGallery.module.css": { default: {} },
   };
   const mutate = (action, value) => { if (mutationFails) throw new Error("storage private detail"); mutations.push({ action, value }); };
   const bag = { useBag: () => ({ items, hydrated, count: items.reduce((sum, item) => sum + item.quantity, 0), add: value => { mutate("add", value); return options.add ? options.add(value) : (options.addedQuantity ?? 1); }, setQuantity: (key, quantity) => mutate("quantity", { key, quantity }), remove: key => mutate("remove", key), clear: () => mutate("clear") }), isShopifyVariantId: value => value.startsWith("gid://shopify/ProductVariant/") };
@@ -365,7 +367,7 @@ test("catalog views retry after consent without replaying denied filters or colo
   assert.equal(view.named("store_color_selected").length, 0);
   view.button("Hoodies").props.onClick();
   assert.equal(view.named("store_filter_changed").length, 0);
-  view.button("Tees & Tanks").props.onClick(); view.render();
+  view.button("Tees").props.onClick(); view.render();
   assert.deepEqual(view.named("store_filter_changed")[0].properties, {filter:"category:tees-tanks",results:0});
   assert.deepEqual(view.named("store_catalog_viewed").at(-1).properties, {selection:"category=tees-tanks|collection=all|fit=all",results:0});
   view.button("View all pieces").props.onClick(); view.render();
@@ -389,8 +391,12 @@ test("fit choices intersect, report their result count, and clear with the other
   assert.deepEqual(cards.map(node=>node.props.product.id),["camo-hoodie"]);
   elements(view.renderChild(cards[0])).find(node=>node.props.href?.startsWith("/store/")).props.onClick();
   assert.equal(view.named("store_catalog_product_selected")[0].properties.selection,"category=all|collection=all|fit=unisex");
-  view.button("Clear filters").props.onClick();
+  const drawer = elements(view.render()).find(node => node.type === FilterDrawer);
+  assert.equal(drawer.props.activeCount, 1);
+  assert.equal(drawer.props.resultCount, 1);
+  drawer.props.onClear();
   assert.doesNotMatch(view.calls.at(-1).navigation,/fit=/);
+  assert.deepEqual(view.named("store_filter_changed").at(-1).properties, {filter:"reset:all",results:2});
 });
 
 test("product color events cover actual changes and exclude size choices and repeated colors", () => {

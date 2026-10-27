@@ -291,6 +291,9 @@ test("one catalog card offers four colors with matching URLs, photos, price and 
     const slots = [];
     let cursor = 0;
     const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
+      "./StoreVideoHeader": { default: () => null },
+      "./StoreFilterDrawer": { default: ({ children }) => children },
+      "./StoreGallery.module.css": { default: {} },
       "@/lib/analytics/storefront": { configureCatalogAnalytics: () => {}, catalogAnalyticsSelection: ({category, collection, fit}) => `category=${category}|collection=${collection || "all"}|fit=${fit}`, trackStoreEvent: () => false },
       "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
       react: { ...React, useRef: () => ({current:null}), useEffect: () => {}, useState(initial) {
