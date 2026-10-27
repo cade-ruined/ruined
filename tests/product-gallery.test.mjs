@@ -9,7 +9,7 @@ const images = ["front", "back", "detail"].map(view => ({ url: `/${view}.jpg`, a
 const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
 const text = node => typeof node === "string" || typeof node === "number" ? String(node) : React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : "";
 
-function fixture({ photos = images, reducedMotion = false, desktop = false } = {}) {
+function fixture({ photos = images, reducedMotion = false, desktop = false, compact = false } = {}) {
   const slots = [], scrolls = [];
   let cursor = 0;
   const Image = () => null;
@@ -22,6 +22,7 @@ function fixture({ photos = images, reducedMotion = false, desktop = false } = {
     "react/jsx-runtime": jsxRuntime,
     "next/image": { default: Image },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
+    "./ProductSurface.module.css": { default: {} },
   };
   const code = ts.transpileModule(readFileSync(new URL("../src/components/store/ProductGallery.tsx", import.meta.url), "utf8"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
@@ -34,7 +35,7 @@ function fixture({ photos = images, reducedMotion = false, desktop = false } = {
   const viewport = { clientWidth: 350, scrollLeft: 0, scrollTo(value) { scrolls.push(value); } };
   const render = () => {
     cursor = 0;
-    const tree = elements(output.exports.default({ images: photos, tone: "shadow", label: "Black product photographs" }));
+    const tree = elements(output.exports.default({ images: photos, tone: "shadow", label: "Black product photographs", compact }));
     const list = tree.find(node => node.type === "ul");
     if (list) list.props.ref.current = viewport;
     return tree;
@@ -101,4 +102,18 @@ test("one-photo and missing-photo products do not offer empty navigation", () =>
     assert.equal(view.render().filter(node => node.type === view.Image).length, photos.length);
     assert.equal(view.list()?.props.tabIndex, undefined);
   }
+});
+
+test("a compact desktop gallery keeps carousel arrows and keyboard navigation available", () => {
+  const view = fixture({ desktop: true, compact: true });
+  const prevented = [];
+  view.list().props.onKeyDown({ key: "ArrowRight", preventDefault: () => prevented.push("ArrowRight") });
+  assert.deepEqual(prevented, ["ArrowRight"]);
+  assert.deepEqual(view.scrolls.at(-1), { left: 350, behavior: "smooth" });
+  assert.equal(view.counter(), "2 / 3");
+  view.button("Next product image").props.onClick();
+  assert.equal(view.counter(), "3 / 3");
+  assert.equal(view.button("Next product image").props.disabled, true);
+  view.list().props.onKeyDown({ key: "Home", preventDefault() {} });
+  assert.equal(view.counter(), "1 / 3");
 });

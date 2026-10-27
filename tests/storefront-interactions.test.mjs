@@ -56,11 +56,11 @@ function fixture(path, props = {}, options = {}) {
   let items = options.items ?? [bagItem], hydrated = options.hydrated ?? true;
   let mutationFails = false, redirectFails = false;
   const window = new EventTarget();
-  window.location = { pathname: "/store/hoodie", search: "", assign(url) { if (redirectFails) throw new Error("private redirect detail"); calls.push({ redirect: url }); } };
+  window.location = { pathname: path.endsWith("StoreGallery.tsx") ? "/store" : "/store/hoodie", search: "", assign(url) { if (redirectFails) throw new Error("private redirect detail"); calls.push({ redirect: url }); } };
   window.history = { replaceState() {}, pushState(_state, _title, url) { const next = new URL(url, "https://store.test"); params = next.searchParams; window.location.search = next.search; calls.push({ navigation: url }); } };
   const dependencies = {
     react: hookProxy, "react/jsx-runtime": jsxRuntime,
-    "next/link": { default: Stub }, "next/image": { default: Stub }, "next/navigation": { useSearchParams: () => params },
+    "next/link": { default: Stub }, "next/image": { default: Stub }, "next/navigation": { useSearchParams: () => params, usePathname: () => window.location.pathname },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
     "@/lib/store/catalog": { catalogNotice: () => ({}) },
@@ -73,6 +73,7 @@ function fixture(path, props = {}, options = {}) {
     "@/data/product-size-guides": { getProductSizeGuide: () => ({ fit: "Unisex" }), getProductSizeGuideConfig: () => ({ sizeOption: "Size", fitOption: "Fit" }) },
     "./ProductGallery": { default: Stub }, "./ProductPurchase": { default: Stub }, "./ProductSizeGuideDialog": { default: SizeGuide }, "./BagLink": { default: Stub },
     "./StoreVideoHeader": { default: Stub }, "./StoreFilterDrawer": { default: FilterDrawer }, "./StoreGallery.module.css": { default: {} },
+    "./ProductSurface.module.css": { default: {} },
   };
   const mutate = (action, value) => { if (mutationFails) throw new Error("storage private detail"); mutations.push({ action, value }); };
   const bag = { useBag: () => ({ items, hydrated, count: items.reduce((sum, item) => sum + item.quantity, 0), add: value => { mutate("add", value); return options.add ? options.add(value) : (options.addedQuantity ?? 1); }, setQuantity: (key, quantity) => mutate("quantity", { key, quantity }), remove: key => mutate("remove", key), clear: () => mutate("clear") }), isShopifyVariantId: value => value.startsWith("gid://shopify/ProductVariant/") };
@@ -92,6 +93,7 @@ function fixture(path, props = {}, options = {}) {
     }, events, calls, mutations, metaAdds, cleanup: state.cleanup,
     setAllowed(value) { allowed = value; }, consent() { window.dispatchEvent(new Event("consent")); },
     setProps(value) { currentProps = value; }, setParams(value) { params = new URLSearchParams(value); },
+    setPathname(value) { window.location.pathname = value; },
     setItems(value) { items = value; }, setHydrated(value) { hydrated = value; }, failMutation() { mutationFails = true; }, failRedirect() { redirectFails = true; },
     named(name) { return events.filter(event => event.name === name); },
     button(label) { return elements(render()).find(node => node.type === "button" && (text(node) === label || node.props["aria-label"] === label)); },
@@ -229,7 +231,7 @@ test("size guide notifies only after opening the native dialog", () => {
   let opens = 0;
   const document = { body: { style: { overflow: "auto" } } };
   const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; } };
-  const Component = load("src/components/store/ProductSizeGuideDialog.tsx", { react: state.react, "react/jsx-runtime": jsxRuntime, "next/image": { default: Stub } }, { document, requestAnimationFrame: callback => callback() });
+  const Component = load("src/components/store/ProductSizeGuideDialog.tsx", { react: state.react, "react/jsx-runtime": jsxRuntime, "next/image": { default: Stub }, "./ProductSurface.module.css": { default: {} }, "@/lib/store/product-scroll-lock": { acquireProductScrollLock: () => () => {} } }, { document, requestAnimationFrame: callback => callback() });
   const tree = state.render(Component, { guide: { fit: "Unisex", label: "Size", image: { width: 1000, height: 800, cropTop: 0, src: "/guide.png", alt: "Size chart" } }, onOpen() { assert.equal(dialog.open, true); opens++; } });
   elements(tree).find(node => node.type === "dialog").props.ref.current = dialog;
   const trigger = elements(tree).find(node => node.type === "button" && text(node) === "Size guide");
@@ -325,7 +327,7 @@ test("catalog filters compose, retain campaign parameters, and recover from no r
   tree = view.render();
   assert.ok(text(tree).includes("No pieces in this combination."));
   view.button("View all pieces").props.onClick();
-  assert.equal(view.calls.at(-1).navigation, "/store/hoodie?utm_source=instagram");
+  assert.equal(view.calls.at(-1).navigation, "/store?utm_source=instagram");
   assert.equal(elements(view.render()).filter(node => node.props.product).length, 2);
   view.setParams("category=tees-tanks&collection=staples");
   assert.deepEqual(elements(view.render()).filter(node => node.props.product).map(node => node.props.product.id), ["ruined-tee"], "restored URL drives the selection");
@@ -432,4 +434,43 @@ test("a fitted catalog card uses only the selected cut's photo, price, stock, an
   assert.match(text(tree),/\$68/);
   assert.match(text(tree),/Sold out/);
   assert.doesNotMatch(text(tree),/\$48|Available/);
+});
+
+test("an intercepted product URL preserves the gallery selection and does not report a phantom catalog view", () => {
+  const products = [
+    { ...product, id: "camo-hoodie", name: "Camo Hoodie" },
+    { ...product, id: "ruined-tee", name: "Staple Tee" },
+  ];
+  const view = fixture("src/components/store/StoreGallery.tsx", { products });
+  view.setParams("category=hoodies");
+  view.render();
+  assert.equal(view.named("store_catalog_viewed").length, 1);
+  view.setPathname("/store/camo-hoodie");
+  view.setParams("color=Blue&variant=123");
+  const tree = view.render();
+  assert.deepEqual(elements(tree).filter(node => node.props.product).map(node => node.props.product.id), ["camo-hoodie"]);
+  assert.equal(view.named("store_catalog_viewed").length, 1);
+  view.setPathname("/store");
+  view.setParams("category=hoodies");
+  view.render();
+  assert.equal(view.named("store_catalog_viewed").length, 1);
+  view.button("All").props.onClick();
+  assert.equal(elements(view.render()).filter(node => node.props.product).length, 2);
+  view.cleanup();
+});
+
+test("modal views and purchases identify their presentation without changing variant or add quantities", () => {
+  const detail = fixture("src/components/store/ProductDetail.tsx", { product, modal: true });
+  const tree = detail.render();
+  assert.equal(detail.named("store_product_opened")[0].properties.source, "product_modal");
+  assert.equal(elements(tree).find(node => node.props.onColorChange).props.analyticsSource, "product_modal");
+  const purchase = fixture("src/components/store/ProductPurchase.tsx", { product, initialColor: "Black", analyticsSource: "product_modal" });
+  purchase.button("M").props.onClick();
+  purchase.button("Add to bag").props.onClick();
+  assert.equal(purchase.named("store_variant_selected")[0].properties.source, "product_modal");
+  assert.equal(purchase.named("store_add_to_bag")[0].properties.source, "product_modal");
+  assert.equal(purchase.named("store_add_to_bag")[0].properties.variant_id, product.variants[1].id);
+  assert.equal(purchase.named("store_add_to_bag")[0].properties.quantity, 1);
+  assert.equal(purchase.metaAdds.length, 1);
+  detail.cleanup(); purchase.cleanup();
 });

@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useEffect, useId, useRef } from "react";
 import type { ProductSizeGuide } from "@/data/product-size-guides";
+import { acquireProductScrollLock } from "@/lib/store/product-scroll-lock";
+import styles from "./ProductSurface.module.css";
 
 export default function ProductSizeGuideDialog({
   guide,
@@ -16,14 +18,19 @@ export default function ProductSizeGuideDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const chartViewportRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const previousOverflowRef = useRef("");
+  const releaseScrollLock = useRef<(() => void) | null>(null);
 
   function openGuide() {
     const dialog = dialogRef.current;
     if (!dialog || dialog.open) return;
-    previousOverflowRef.current = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    dialog.showModal();
+    releaseScrollLock.current = acquireProductScrollLock();
+    try {
+      dialog.showModal();
+    } catch (error) {
+      releaseScrollLock.current();
+      releaseScrollLock.current = null;
+      throw error;
+    }
     onOpen?.();
     requestAnimationFrame(() => {
       const viewport = chartViewportRef.current;
@@ -39,12 +46,16 @@ export default function ProductSizeGuideDialog({
   }
 
   function restorePage() {
-    document.body.style.overflow = previousOverflowRef.current;
+    const release = releaseScrollLock.current;
+    if (!release) return;
+    releaseScrollLock.current = null;
+    release();
     requestAnimationFrame(() => triggerRef.current?.focus());
   }
 
   useEffect(() => () => {
-    document.body.style.overflow = previousOverflowRef.current;
+    releaseScrollLock.current?.();
+    releaseScrollLock.current = null;
   }, []);
 
   const visibleHeight = guide.image.height - guide.image.cropTop;
@@ -57,7 +68,7 @@ export default function ProductSizeGuideDialog({
         onClick={openGuide}
         aria-haspopup="dialog"
         aria-controls={dialogId}
-        className="min-h-11 text-left font-mono text-xs uppercase tracking-[0.18em] text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        className={`${styles.action} px-3 font-mono text-xs uppercase tracking-[0.12em]`}
       >
         Size guide
       </button>
@@ -73,22 +84,22 @@ export default function ProductSizeGuideDialog({
         }}
         className="fixed inset-0 z-[120] m-0 hidden h-dvh max-h-none w-screen max-w-none grid-rows-[auto_1fr] bg-black p-0 text-white backdrop:bg-black open:grid"
       >
-        <header className="flex items-center justify-between gap-5 border-b border-white/20 px-4 py-3 sm:px-6 sm:py-4">
+        <header className="flex items-center justify-between gap-5 border-b border-black/20 bg-[var(--color-bone)] px-4 py-3 text-[var(--color-faded)] sm:px-6 sm:py-4">
           <div>
             <h2
               id={headingId}
-              className="font-mono text-xs uppercase tracking-[0.2em] text-white"
+              className="font-mono text-xs uppercase tracking-[0.2em]"
             >
               BYOB Tank · {guide.label}
             </h2>
-            <p className="mt-1 font-mono text-xs uppercase tracking-[0.16em] text-white/65">
+            <p className="mt-1 font-mono text-xs uppercase tracking-[0.16em] text-black/65">
               Measurements in inches<span className="sm:hidden"> · Swipe to read</span>
             </p>
           </div>
           <button
             type="button"
             onClick={closeGuide}
-            className="min-h-11 border border-white/35 px-3 font-mono text-xs uppercase tracking-[0.14em] transition-colors hover:bg-white hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            className={`${styles.action} px-3 font-mono text-xs uppercase tracking-[0.14em]`}
           >
             Close
           </button>

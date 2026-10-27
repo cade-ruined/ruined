@@ -1,0 +1,88 @@
+.action,
+.option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  border: 1px solid var(--color-faded);
+  border-radius: 0;
+  color: var(--color-faded);
+  box-shadow: 4px 4px 0 var(--color-faded);
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.action,
+.option[aria-pressed="true"] {
+  background: var(--color-signal);
+}
+
+.option {
+  background: var(--color-bone);
+}
+
+.action:focus-visible,
+.option:focus-visible,
+.gallery:focus-visible {
+  outline: 2px solid var(--color-poster);
+  outline-offset: 6px;
+}
+
+.action:disabled,
+.option:disabled {
+  cursor: not-allowed;
+  background: var(--color-bone);
+  color: rgb(0 0 0 / 50%);
+  border-color: rgb(0 0 0 / 30%);
+  box-shadow: none;
+}
+
+.option:disabled {
+  text-decoration: line-through;
+}
+
+.gallery {
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.gallery::-webkit-scrollbar {
+  display: none;
+}
+
+.compactFrame {
+  max-height: min(68dvh, 38rem);
+}
+
+@media (min-width: 768px) {
+  .fullGallery {
+    display: grid;
+    gap: 1.25rem;
+    overflow: visible;
+    scroll-snap-type: none;
+  }
+}
+
+@media (hover: hover) {
+  .action:not(:disabled):hover,
+  .option:not(:disabled):hover {
+    transform: translate(1px, 1px);
+    box-shadow: 3px 3px 0 var(--color-faded);
+  }
+}
+
+.action:not(:disabled):active,
+.option:not(:disabled):active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--color-faded);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .option {
+    transition: none;
+  }
+}

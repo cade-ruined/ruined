@@ -158,6 +158,50 @@ test("product-open events dispatch the commerce bridge only while tracking is al
   assert.equal(view.calls.productViews.length, 1);
 });
 
+test("modal expansion reports only its public product and source without fabricating commerce activity", async () => {
+  const view = fixture({ url: "https://theruinedproject.com/store/byob-tank?email=private@example.test#secret" });
+  view.configure();
+  assert.equal(view.analytics.trackStoreEvent("store_product_expanded", {
+    ...product, source: "product_modal", url: view.window.location.href, email: "private@example.test", token: "secret",
+  }), true);
+  await view.analytics.flushStoreCart();
+  assert.deepEqual(view.calls.events, [{ name: "store_product_expanded", properties: { product: "byob-tank", source: "product_modal" } }]);
+  assert.equal(view.calls.productViews.length, 0);
+  assert.equal(view.calls.requests.length, 0);
+  assert.equal(view.calls.adds.length, 0);
+  assert.doesNotMatch(JSON.stringify([view.calls.events, view.calls.pages]), /private|secret|email|token/);
+  for (const changes of [{ product_handle: "" }, { product_handle: "name@example.test" }, { product_handle: "hoodie?token=secret" },
+    { source: "product_page" }, { source: "quick_buy" }, { source: undefined }]) {
+    assert.equal(view.analytics.trackStoreEvent("store_product_expanded", { ...product, source: "product_modal", ...changes }), false);
+  }
+  assert.equal(view.calls.events.length, 1);
+});
+
+test("modal open, expand and add respect consent and never replay declined activity", async () => {
+  for (const mode of ["unknown", "denied", "pending", "gpc", "private"]) {
+    const view = fixture();
+    if (mode === "unknown") view.setChoice("");
+    if (mode === "denied") view.setChoice("no");
+    if (mode === "pending") view.consent.setConsentUpdatePending(true);
+    if (mode === "gpc") view.window.navigator.globalPrivacyControl = true;
+    if (mode === "private") view.window.location = new URL("https://theruinedproject.com/my/profile");
+    view.configure();
+    for (const event of ["store_product_opened", "store_product_expanded", "store_add_to_bag"]) {
+      assert.equal(view.analytics.trackStoreEvent(event, { ...product, source: "product_modal" }), false, `${mode}: ${event}`);
+    }
+    await view.analytics.flushStoreCart();
+    for (const key of Object.keys(view.calls)) assert.equal(view.calls[key].length, 0, `${mode}: ${key}`);
+    view.setChoice("yes"); view.consent.setConsentUpdatePending(false);
+    view.window.navigator.globalPrivacyControl = false;
+    view.window.location = new URL("https://theruinedproject.com/store/byob-tank");
+    view.analytics.refreshStoreAnalytics();
+    assert.equal(view.calls.events.length, 0);
+    assert.equal(view.calls.productViews.length, 0);
+    assert.equal(view.calls.requests.length, 0);
+    assert.equal(view.calls.adds.length, 0);
+  }
+});
+
 test("cart requests serialize immutable snapshots and additions wait for Shopify confirmation", async () => {
   const first = deferred();
   const view = fixture({ fetch: (_request, index) => index === 1 ? first.promise : { ok: true, json: async () => ({ cartId: "gid://shopify/Cart/cart123" }) } });
@@ -362,6 +406,36 @@ test("browse stages follow the selected product and only actual added bag lines 
   assert.equal(view.calls.adds.length, 1, "native Shopify add-to-cart behavior is preserved");
 });
 
+test("catalog attribution survives modal open and expansion through a confirmed addition and checkout", async () => {
+  const view = fixture({ url: "https://theruinedproject.com/store?category=tees-tanks&email=private@example.test" });
+  view.configure(); registerCatalog(view);
+  view.setLines([{ ...line, productId: product.product_handle }]);
+  selectFromCatalog(view);
+  view.window.location = new URL("https://theruinedproject.com/store/byob-tank?private=secret#private");
+  const modalProduct = { ...product, source: "product_modal" };
+  view.analytics.trackStoreEvent("store_product_opened", modalProduct);
+  view.analytics.trackStoreEvent("store_product_expanded", modalProduct);
+  view.analytics.trackStoreEvent("store_add_to_bag", modalProduct);
+  await view.analytics.flushStoreCart();
+  view.window.location = new URL("https://theruinedproject.com/bag");
+  view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 1, value: 48 });
+  view.analytics.trackStoreEvent("store_checkout_redirected", { quantity: 1, value: 48 });
+  assert.deepEqual(stages(view), [
+    { selection: tankSelection, stage: "product_selected" },
+    { selection: tankSelection, stage: "product_opened" },
+    { selection: tankSelection, stage: "add_to_bag" },
+    { selection: tankSelection, stage: "checkout_clicked" },
+    { selection: tankSelection, stage: "checkout_redirected" },
+  ]);
+  assert.deepEqual(view.calls.productViews, [modalProduct]);
+  assert.deepEqual(view.calls.adds, [{ cartId: "gid://shopify/Cart/cart123", item: modalProduct }]);
+  assert.deepEqual(view.calls.events.filter(event => event.name === "store_product_opened" || event.name === "store_add_to_bag").map(event => event.properties), [
+    { product: "byob-tank", source: "product_modal" }, { product: "byob-tank", source: "product_modal" },
+  ]);
+  assert.ok(view.calls.events.every(event => Object.keys(event.properties).length <= 2));
+  assert.doesNotMatch(JSON.stringify([view.calls.events, view.calls.pages]), /private|secret|email/);
+});
+
 test("checkout deduplicates matching selections and never attributes unrelated or removed variants", async () => {
   const view = fixture(); view.configure(); registerCatalog(view);
   const second = { ...product, variant_id: "gid://shopify/ProductVariant/790" };
@@ -383,19 +457,21 @@ test("checkout deduplicates matching selections and never attributes unrelated o
 });
 
 test("quick-buy and a fresh document cannot inherit catalog discovery attribution", async () => {
-  const view = fixture(); view.configure(); registerCatalog(view);
-  view.setLines([{ ...line, productId: product.product_handle }]);
-  selectFromCatalog(view);
-  view.analytics.trackStoreEvent("store_add_to_bag", product);
-  view.analytics.trackStoreEvent("store_product_opened", { ...product, source: "quick_buy" });
-  view.analytics.trackStoreEvent("store_add_to_bag", { ...product, source: "quick_buy" });
-  view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
-  assert.deepEqual(stages(view).map(event => event.stage), ["product_selected", "add_to_bag"]);
-  const reloaded = fixture(); reloaded.configure(); registerCatalog(reloaded);
-  reloaded.setLines([{ ...line, productId: product.product_handle }]);
-  reloaded.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
-  assert.deepEqual(stages(reloaded), [], "attribution is deliberately not persisted across reloads");
-  await view.analytics.flushStoreCart();
+  for (const source of ["product_page", "product_modal"]) {
+    const view = fixture(); view.configure(); registerCatalog(view);
+    view.setLines([{ ...line, productId: product.product_handle }]);
+    selectFromCatalog(view);
+    view.analytics.trackStoreEvent("store_add_to_bag", { ...product, source });
+    view.analytics.trackStoreEvent("store_product_opened", { ...product, source: "quick_buy" });
+    view.analytics.trackStoreEvent("store_add_to_bag", { ...product, source: "quick_buy" });
+    view.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
+    assert.deepEqual(stages(view).map(event => event.stage), ["product_selected", "add_to_bag"], source);
+    const reloaded = fixture(); reloaded.configure(); registerCatalog(reloaded);
+    reloaded.setLines([{ ...line, productId: product.product_handle }]);
+    reloaded.analytics.trackStoreEvent("store_checkout_clicked", { quantity: 2 });
+    assert.deepEqual(stages(reloaded), [], "attribution is deliberately not persisted across reloads");
+    await view.analytics.flushStoreCart();
+  }
 });
 
 test("unknown, denied, pending, GPC, and private navigation erase browse context without replay", async () => {

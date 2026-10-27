@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { catalogAnalyticsSelection, configureCatalogAnalytics, trackStoreEvent } from "@/lib/analytics/storefront";
 import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
 import Link from "next/link";
@@ -27,10 +27,18 @@ export default function StoreGallery({
   catalogStatus?: CatalogStatus;
 }) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const [catalogSearch, setCatalogSearch] = useState(() => searchParams.toString());
+  const isCatalog = pathname === "/store";
+  // Product modals share the URL while the gallery retains its own filters.
+  const catalogParams = isCatalog ? searchParams : new URLSearchParams(catalogSearch);
+  useEffect(() => {
+    if (isCatalog) setCatalogSearch(searchParams.toString());
+  }, [isCatalog, searchParams]);
   const filters = normalizeCatalogFilters({
-    category: searchParams.get("category") ?? undefined,
-    collection: searchParams.get("collection") ?? undefined,
-    fit: searchParams.get("fit") ?? undefined,
+    category: catalogParams.get("category") ?? undefined,
+    collection: catalogParams.get("collection") ?? undefined,
+    fit: catalogParams.get("fit") ?? undefined,
   }, products);
   const collections = getCollectionFilters(products);
   const visibleProducts = filterCatalogProducts(products, filters);
@@ -41,7 +49,7 @@ export default function StoreGallery({
 
   useEffect(() => {
     configureCatalogAnalytics(getCollectionFilters(products));
-    if (!products.length) return;
+    if (!products.length || !isCatalog) return;
     const view = () => {
       const key = `${selection}:${resultCount}`;
       if (lastReportedView.current !== key && trackStoreEvent("store_catalog_viewed", { selection, results: resultCount })) {
@@ -51,7 +59,7 @@ export default function StoreGallery({
     view();
     window.addEventListener(MARKETING_CONSENT_EVENT, view);
     return () => window.removeEventListener(MARKETING_CONSENT_EVENT, view);
-  }, [products, selection, resultCount]);
+  }, [products, selection, resultCount, isCatalog]);
 
   function chooseFilters(next: { category?: string; collection?: string; fit?: string }) {
     const nextFilters = normalizeCatalogFilters({ ...filters, ...next }, products);
@@ -223,6 +231,7 @@ function ProductCard({
     <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id}>
     <Link
       href={href}
+      scroll={false}
       onClick={() => {
         trackStoreEvent("store_product_selected", { product_id: product.shopifyProductGid ?? product.id, product_handle: product.id, source: "store" });
         trackStoreEvent("store_catalog_product_selected", { product_handle: product.id, selection });
