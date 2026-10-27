@@ -2,10 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import EventGallery from "@/components/events/EventGallery";
 import type { StudioEvent } from "@/data/events";
 import { usePublicEvents } from "@/lib/events/use-public-events";
+import { publicEventHref } from "@/lib/events/public-event-page";
 
 function eventState(event: StudioEvent, nextAvailableId?: string) {
   if (event.status === "Ended") return "Archive";
@@ -13,21 +15,26 @@ function eventState(event: StudioEvent, nextAvailableId?: string) {
   return event.status === "Ongoing" ? "Ongoing" : "Scheduled";
 }
 
-export default function EventsIndex({ initialEvents = [] }: { initialEvents?: StudioEvent[] }) {
+export default function EventsIndex({ initialEvents = [], initialSelectedId = null }: {
+  initialEvents?: StudioEvent[];
+  initialSelectedId?: string | null;
+}) {
+  const router = useRouter();
   const EVENTS = usePublicEvents(initialEvents);
   const NEXT_AVAILABLE = EVENTS.find((event) => event.status === "Upcoming");
   const ARCHIVE_EVENTS = EVENTS.filter((event) => event.status === "Ended");
   const UPCOMING_EVENTS = EVENTS.filter((event) => event.status !== "Ended");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const selected = selectedId
     ? EVENTS.find((event) => event.id === selectedId)
     : undefined;
 
   useEffect(() => {
     const selectFromHash = () => {
-      const id = decodeURIComponent(window.location.hash.slice(1));
+      let id = window.location.hash.slice(1);
+      try { id = decodeURIComponent(id); } catch { /* Ignore malformed legacy fragments. */ }
       const event = EVENTS.find((candidate) => candidate.id === id);
-      setSelectedId(event?.id ?? null);
+      setSelectedId(event?.id ?? initialSelectedId);
     };
 
     selectFromHash();
@@ -37,7 +44,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
       window.removeEventListener("hashchange", selectFromHash);
       window.removeEventListener("popstate", selectFromHash);
     };
-  }, [EVENTS]);
+  }, [EVENTS, initialSelectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -49,16 +56,11 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
   }, [selectedId]);
 
   function selectEvent(event: StudioEvent) {
-    setSelectedId(event.id);
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${window.location.search}#${event.id}`
-    );
+    router.push(publicEventHref(event.id));
   }
 
   if (!selected) {
-    return <EventsOverview events={EVENTS} onSelect={(event) => setSelectedId(event.id)} />;
+    return <EventsOverview events={EVENTS} />;
   }
 
   const selectedState = eventState(selected, NEXT_AVAILABLE?.id);
@@ -71,8 +73,6 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
 
   return (
     <main className="-mt-[3.25rem] min-h-screen bg-black text-[var(--color-bone)] sm:-mt-[3.5rem]">
-      <h1 className="sr-only">Community</h1>
-
       <section
         id={selected.id}
         aria-labelledby="event-index-heading"
@@ -81,7 +81,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
         <div className="mx-auto max-w-[96rem]">
           <header className="grid gap-3 border-y border-black/25 py-3 sm:grid-cols-[1fr_minmax(18rem,28rem)] sm:items-center sm:gap-6 sm:py-4">
             <div className="flex items-center justify-between gap-5 sm:justify-start">
-              <h2 id="event-index-heading">
+              <div>
                 <Link
                   href="/community"
                   onClick={(clickEvent) => {
@@ -99,7 +99,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
                 >
                   ← All events
                 </Link>
-              </h2>
+              </div>
               <p className="ui-heading text-right text-[0.55rem] uppercase tracking-[0.14em] text-black/45">
                 {String(EVENTS.length).padStart(2, "0")} dates
               </p>
@@ -157,9 +157,9 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
                 >
                   {selectedState}
                 </span>
-                <h2 className="display mt-3 text-[clamp(3.3rem,6vw,6.25rem)] leading-[.8]">
+                <h1 id="event-index-heading" className="display mt-3 text-[clamp(3.3rem,6vw,6.25rem)] leading-[.8]">
                   {selected.title}
-                </h2>
+                </h1>
               </div>
               {selected.registration?.status === "Open" ? (
                 <Link
@@ -202,6 +202,7 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
 
             <details
               key={selected.id}
+              open={Boolean(initialSelectedId)}
               className="group border-t border-black/25"
             >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-5 py-4 outline-none [&::-webkit-details-marker]:hidden focus-visible:text-[var(--color-poster)] sm:py-5">
@@ -285,10 +286,8 @@ export default function EventsIndex({ initialEvents = [] }: { initialEvents?: St
 
 function EventsOverview({
   events,
-  onSelect,
 }: {
   events: StudioEvent[];
-  onSelect: (event: StudioEvent) => void;
 }) {
   const ARCHIVE_EVENTS = events.filter((event) => event.status === "Ended")
     .sort((a, b) => Date.parse(b.dateTime) - Date.parse(a.dateTime));
@@ -324,12 +323,10 @@ function EventsOverview({
           <EventGroup
             heading="Upcoming"
             events={UPCOMING_EVENTS}
-            onSelect={onSelect}
           />
           <EventGroup
             heading="Previously held"
             events={ARCHIVE_EVENTS}
-            onSelect={onSelect}
           />
         </div>
       </section>
@@ -340,11 +337,9 @@ function EventsOverview({
 function EventGroup({
   heading,
   events,
-  onSelect,
 }: {
   heading: string;
   events: StudioEvent[];
-  onSelect: (event: StudioEvent) => void;
 }) {
   if (!events.length) return null;
 
@@ -369,7 +364,6 @@ function EventGroup({
             event={event}
             featured={index === 0}
             index={index}
-            onSelect={onSelect}
           />
         ))}
       </div>
@@ -381,27 +375,14 @@ function EventCard({
   event,
   featured,
   index,
-  onSelect,
 }: {
   event: StudioEvent;
   featured: boolean;
   index: number;
-  onSelect: (event: StudioEvent) => void;
 }) {
   return (
     <Link
-      href={`/community#${event.id}`}
-      onClick={(clickEvent) => {
-        if (
-          clickEvent.button === 0 &&
-          !clickEvent.metaKey &&
-          !clickEvent.ctrlKey &&
-          !clickEvent.shiftKey &&
-          !clickEvent.altKey
-        ) {
-          onSelect(event);
-        }
-      }}
+      href={publicEventHref(event.id)}
       className={`group border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${
         featured ? "col-span-2" : ""
       }`}

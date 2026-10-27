@@ -7,8 +7,17 @@ import {
   FOOTER_INDEX_ITEMS,
   SERVICE_NAV_ITEMS,
 } from "@/data/navigation";
+import { MEMBERSHIP_LINKS } from "@/data/public-membership";
 import { useBackgroundPathname } from "@/hooks/useBackgroundPathname";
 import { MARKETING_PREFERENCES_EVENT } from "@/lib/marketing/consent";
+
+// Keep the walk's Members stop in its menu, with a direct public destination
+// in the footer for visitors and crawlers that aren't opening the preview.
+const footerIndexLinks = FOOTER_INDEX_ITEMS.map((item) =>
+  item.id === "members"
+    ? { ...item, label: "Membership", href: MEMBERSHIP_LINKS.signUp }
+    : item,
+);
 
 export default function SiteFooter({ marketingEnabled = false }: { marketingEnabled?: boolean }) {
   const pathname = useBackgroundPathname();
@@ -39,7 +48,7 @@ export default function SiteFooter({ marketingEnabled = false }: { marketingEnab
           />
           <p className="mt-2 max-w-xs text-xs leading-relaxed opacity-60">The Ruined Project · Alpine, Utah.</p>
         </div>
-        <FooterColumn title="Index" links={FOOTER_INDEX_ITEMS} />
+        <FooterColumn title="Index" links={footerIndexLinks} />
         <FooterColumn title="Service" links={SERVICE_NAV_ITEMS} />
         <div className="col-span-2 min-w-0 sm:col-span-1">
           <p className="font-sans text-[0.58rem] uppercase tracking-[0.3em] opacity-45">Studio</p>

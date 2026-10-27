@@ -7,13 +7,15 @@ import { sharingMetadata } from "@/lib/sharing";
 // while a Draft product is being prepared for a later Headless release.
 export const dynamic = "force-dynamic";
 
+const description = "Shop Ruined apparel: hoodies, tees, tanks, and everyday pieces. Explore the collection, materials, fit, and available colors.";
+
 export const metadata: Metadata = {
   title: "Store",
-  description: "Apparel from Ruined.",
+  description,
   alternates: { canonical: "/store" },
   ...sharingMetadata({
     title: "Store",
-    description: "Apparel from Ruined.",
+    description,
     path: "/store",
   }),
 };

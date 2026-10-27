@@ -61,6 +61,7 @@ const { default: ProductPurchase } = await compile("src/components/store/Product
 const { JourneyStoreIndex, JourneyLobbyIndex } = await compile("src/components/sequence/JourneyIndexes.tsx", {
   ...uiDependencies,
   "./JourneyQuickBuy": { default: () => null },
+  "./JourneyPreviewVideo": { default: () => null },
   "@/data/navigation": { EXPLORE_ROOMS: [] },
   "@/data/public-membership": { MEMBERSHIP_LINKS: { signUp: "https://members.theruinedproject.com/membership" }, MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members" } },
 });

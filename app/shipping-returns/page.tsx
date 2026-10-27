@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import EditorialPage from "@/components/EditorialPage";
 import { getShopPolicies } from "@/lib/shopify";
 import { sharingMetadata } from "@/lib/sharing";
+import { SITE_URL } from "@/lib/site";
+import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
+import { merchantReturnPolicy } from "@/lib/store/return-policy";
 
 export const revalidate = 3600;
 
@@ -29,9 +32,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Page() {
   const { shipping, returns } = await getShopPolicies();
+  const returnPolicy = merchantReturnPolicy({ shipping, returns }, SITE_URL);
   const sections = [
     ...(shipping
-      ? [{ title: shipping.title, body: <PolicyBody html={shipping.body} /> }]
+      ? [{ title: shipping.title, body: <><p>{FREE_STANDARD_SHIPPING_COPY}</p><PolicyBody html={shipping.body} /></> }]
       : []),
     ...(returns
       ? [{ title: returns.title, body: <PolicyBody html={returns.body} /> }]
@@ -39,11 +43,26 @@ export default async function Page() {
   ];
 
   return (
-    <EditorialPage
-      eyebrow="Customer service"
-      title="Shipping + Returns"
-      intro="Current terms for dispatch, delivery, and returns."
-      sections={sections}
-    />
+    <>
+      {returnPolicy && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "@id": `${SITE_URL}/#organization`,
+            name: "Ruined",
+            url: SITE_URL,
+            hasMerchantReturnPolicy: returnPolicy,
+          }).replace(/</g, "\\u003c") }}
+        />
+      )}
+      <EditorialPage
+        eyebrow="Customer service"
+        title="Shipping + Returns"
+        intro="Current terms for dispatch, delivery, and returns."
+        sections={sections}
+      />
+    </>
   );
 }

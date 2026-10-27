@@ -64,11 +64,11 @@ export default function ProductGallery({ images, tone, label }: {
         <div className="aspect-[4/5]" aria-hidden="true" style={{ background: PRODUCT_TONES[tone] }} />
       )}
       {images.length > 1 && (
-        <div className="flex items-center justify-between border-b border-white/15 font-mono text-[0.58rem] uppercase tracking-[0.18em] md:hidden">
+        <div className="flex items-center justify-between border-b border-white/15 font-mono text-xs uppercase tracking-[0.1em] md:hidden">
           <button type="button" onClick={() => showImage(active - 1)} disabled={active === 0} aria-label="Previous product image" className="min-h-11 min-w-11 pr-3 text-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:text-white/25">
             ← Previous
           </button>
-          <span aria-live="polite" aria-atomic="true" className="text-white/55">{active + 1} / {images.length}</span>
+          <span aria-live="polite" aria-atomic="true" className="text-white/65">{active + 1} / {images.length}</span>
           <button type="button" onClick={() => showImage(active + 1)} disabled={active === images.length - 1} aria-label="Next product image" className="min-h-11 min-w-11 pl-3 text-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:text-white/25">
             Next →
           </button>

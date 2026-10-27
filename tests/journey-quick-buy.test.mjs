@@ -359,6 +359,7 @@ test("the walk shelf renders three purchase panels beside product links and a fu
     "@/data/public-membership": { MEMBERSHIP_INTRO: {} },
     "@/lib/store/catalog": load("src/lib/store/catalog.ts", {}),
     "./JourneyQuickBuy": { default: QuickBuy },
+    "./JourneyPreviewVideo": { default: () => null },
   });
   const items = Array.from({ length: 5 }, (_, index) => ({ ...product, id: `piece-${index + 1}`, name: `Piece ${index + 1}` }));
   const dom = parseFragment(renderToStaticMarkup(React.createElement(JourneyStoreIndex, { products: items, catalogStatus: "ready" })));
@@ -408,6 +409,7 @@ test("an overflowing rack keeps product gestures out of the walk without taking 
     "@/data/public-membership": { MEMBERSHIP_INTRO: {} },
     "@/lib/store/catalog": load("src/lib/store/catalog.ts", {}),
     "./JourneyQuickBuy": { default: () => quickBuy.render() },
+    "./JourneyPreviewVideo": { default: () => null },
   });
   const shelf = JourneyStoreIndex({ products: [product, { ...product, id: "another-piece" }] });
   const rack = elements(shelf).find((node) => node.props["data-journey-rack"] !== undefined);
@@ -459,6 +461,7 @@ test("On the Rack features Blue, the women's script crop, and the Crest polo in 
     "@/data/public-membership": { MEMBERSHIP_INTRO: {} },
     "@/lib/store/catalog": load("src/lib/store/catalog.ts", {}),
     "./JourneyQuickBuy": { default: QuickBuy },
+    "./JourneyPreviewVideo": { default: () => null },
   });
   const photo = (color, view) => ({ url: `/SundayClothes-${color}Hoodie${view}.png`, alt: "Sunday Clothes Hoodie" });
   const hoodie = {

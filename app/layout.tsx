@@ -37,7 +37,6 @@ export const metadata: Metadata = {
   },
   description: SITE_DESC,
   applicationName: SITE_NAME,
-  alternates: { canonical: "/" },
   icons: {
     icon: [
       { url: "/favicon-ruined-mark-v2.svg", type: "image/svg+xml" },
@@ -70,6 +69,7 @@ export default async function RootLayout({
   const organizationSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
+    "@id": `${SITE_URL}/#organization`,
     name: SITE_NAME,
     url: SITE_URL,
     email: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "connect@theruinedproject.com",

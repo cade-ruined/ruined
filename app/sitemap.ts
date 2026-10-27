@@ -1,11 +1,16 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
 import { getProducts, getShopPolicies } from "@/lib/shopify";
+import { getPublicCommunityEvents } from "@/lib/events/community-event-repository";
+import { publicEventHref } from "@/lib/events/public-event-page";
+
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [{ shipping, returns, terms }, products] = await Promise.all([
+  const [{ shipping, returns, terms }, products, events] = await Promise.all([
     getShopPolicies(),
     getProducts(),
+    getPublicCommunityEvents(),
   ]);
   const routes: Array<{
     path: string;
@@ -36,6 +41,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       url: `${SITE_URL}/store/${encodeURIComponent(product.id)}`,
       changeFrequency: "weekly" as const,
       priority: 0.8,
+    })),
+    ...events.map((event) => ({
+      url: `${SITE_URL}${publicEventHref(event.id)}`,
+      changeFrequency: event.status === "Ended" ? "monthly" as const : "weekly" as const,
+      priority: event.status === "Ended" ? 0.6 : 0.8,
     })),
   ];
 }

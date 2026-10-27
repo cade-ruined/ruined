@@ -1,4 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Page not found",
+  description: "This page is unavailable. Return to Ruined to explore the store, membership, and gatherings.",
+  robots: { index: false, follow: true },
+  alternates: { canonical: null },
+  openGraph: null,
+  twitter: null,
+};
 
 export default function NotFound() {
   return (

@@ -131,7 +131,7 @@ test("the live Store catalogue and commerce routes remain internally connected",
   assert.match(productPage, /getProductColorImages\(product, color\)/);
   assert.match(productPage, /slice\(0, 2\)/);
   assert.match(productPage, /"@type": "Product"/);
-  assert.match(productPage, /"@type": "AggregateOffer"/);
+  assert.match(productPage, /productOffers\(/);
   assert.match(await read("src/components/store/ProductDetail.tsx"), /spec\.value\.trim\(\)/);
   assert.match(purchase, /Secure checkout/);
   assert.doesNotMatch(

@@ -461,7 +461,7 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /key: "meet-the-cast"/);
   assert.match(lobbyIndex, /video: "\/media\/meet-the-cast\.mp4"/);
   assert.match(lobbyIndex, /href: "https:\/\/www\.instagram\.com\/theruinedproject\/"/);
-  assert.match(lobbyIndex, /muted[\s\S]*loop[\s\S]*autoPlay[\s\S]*playsInline/);
+  assert.match(lobbyIndex, /<JourneyPreviewVideo[\s\S]*src=\{selection.video\}[\s\S]*poster=\{selection.poster\}/);
   assert.match(lobbyIndex, /target=\{selection\.external \? "_blank" : undefined\}/);
   assert.match(lobbyIndex, /className="journey-card-title/);
   assert.match(indexes, /featuredProducts\.length === 3/);
@@ -478,8 +478,8 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(indexes, /const isNextAvailable = event\.id === nextAvailable\?\.id/);
   assert.match(indexes, /data-event-dimmed=\{isDimmed \? "true" : undefined\}/);
   assert.match(eventsIndex, /window\.location\.hash\.slice\(1\)/);
-  assert.match(eventsIndex, /setSelectedId\(event\.id\)/);
-  assert.match(eventsIndex, /window\.history\.replaceState/);
+  assert.match(eventsIndex, /router\.push\(publicEventHref\(event\.id\)\)/);
+  assert.doesNotMatch(eventsIndex, /window\.history\.replaceState/);
   assert.match(eventsIndex, /value=\{selected\.id\}/);
   assert.match(eventsIndex, /if \(nextEvent\) selectEvent\(nextEvent\)/);
   assert.match(eventsIndex, /aria-live="polite"/);
@@ -960,16 +960,17 @@ test("Community defaults to all events and event details return to that index", 
     "utf8"
   );
 
-  assert.match(eventsIndex, /useState<string \| null>\(null\)/);
+  assert.match(eventsIndex, /initialSelectedId = null/);
+  assert.match(eventsIndex, /useState<string \| null>\(initialSelectedId\)/);
   assert.match(eventsIndex, /return <EventsOverview/);
   assert.match(eventsIndex, /heading="Upcoming"/);
   assert.match(eventsIndex, /heading="Previously held"/);
   assert.match(eventsIndex, /href="\/community"[\s\S]*?← All events/);
-  assert.match(eventsIndex, /href=\{`\/community#\$\{event\.id\}`\}/);
+  assert.match(eventsIndex, /href=\{publicEventHref\(event\.id\)\}/);
   assert.match(eventsIndex, /id=\{selected\.id\}/);
   assert.match(eventsIndex, /getElementById\(selectedId\)\?\.scrollIntoView/);
   assert.match(eventsIndex, /addEventListener\("popstate", selectFromHash\)/);
-  assert.match(eventsIndex, /setSelectedId\(event\?\.id \?\? null\)/);
+  assert.match(eventsIndex, /setSelectedId\(event\?\.id \?\? initialSelectedId\)/);
 });
 
 test("BYOB Nº 01 is an ended recap and the next gathering stays current", async () => {
@@ -1292,7 +1293,6 @@ test("production route boundaries and metadata files exist", async () => {
   for (const file of [
     "app/error.tsx",
     "app/global-error.tsx",
-    "app/loading.tsx",
     "app/not-found.tsx",
     "app/events/page.tsx",
     "app/bag/page.tsx",

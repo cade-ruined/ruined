@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import ImmersiveParallax from "@/components/ImmersiveParallax";
 import MobileImmersiveJourney from "@/components/MobileImmersiveJourney";
 import { getHomepageCatalog } from "@/lib/store/homepage-catalog";
@@ -7,6 +8,10 @@ import { getHomepageCatalog } from "@/lib/store/homepage-catalog";
 // keep a lightweight, single-viewport swipe journey.
 // Keep catalog teasers current through the same bounded read as the Store.
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default async function Page() {
   const catalog = await getHomepageCatalog();

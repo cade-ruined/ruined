@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import sharp from "sharp";
 import ts from "typescript";
+import * as parse5 from "parse5";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const origin = "https://theruinedproject.com";
@@ -129,22 +130,23 @@ function productMetadataFixture(overrides = {}) {
     id: "sunday-clothes-hoodie", name: "Sunday Clothes Hoodie", description: "Cotton hoodie.",
     image: black[0], images: [black[0], blue[1], black[1], blue[0]],
     options: [{ name: "Color", values: ["Black", "Blue"] }],
-    variants: ["Black", "Blue"].map((color) => ({ selectedOptions: [{ name: "Color", value: color }] })),
+    variants: ["Black", "Blue"].map((color, index) => ({ id: `gid://shopify/ProductVariant/${index + 1}`, selectedOptions: [{ name: "Color", value: color }] })),
     ...overrides,
   };
   const component = { __esModule: true, default: () => null };
   const route = load("app/store/[handle]/page.tsx", {}, {
     "react/jsx-runtime": {},
     "next/link": component,
-    "next/navigation": { notFound: () => { throw new Error("Unexpected page rendering in metadata test"); } },
+    "next/navigation": { notFound: () => { throw new Error("NEXT_NOT_FOUND"); } },
     "@/components/store/ProductDetail": component,
     "@/components/store/ProductDescription": component,
     "@/lib/shopify": { getProducts: async () => [product] },
+    parse5,
   });
   return {
     black, blue,
-    metadata: (color, handle = product.id) => route.generateMetadata({
-      params: Promise.resolve({ handle }), searchParams: Promise.resolve({ color }),
+    metadata: (color, handle = product.id, variant) => route.generateMetadata({
+      params: Promise.resolve({ handle }), searchParams: Promise.resolve({ color, variant }),
     }),
   };
 }
@@ -206,11 +208,15 @@ test("a selected color without associated photography does not share another col
   assert.deepEqual(metadata.twitter.images, metadata.openGraph.images);
 });
 
-test("an unknown product clears inherited marketing metadata before the page returns not found", async () => {
-  const metadata = await productMetadataFixture().metadata("Blue", "missing-product");
-  assert.equal(metadata.openGraph, null);
-  assert.equal(metadata.twitter, null);
-  assert.equal(metadata.alternates.canonical, null);
+test("an unknown product stops metadata generation with not found rather than advertising a missing product", async () => {
+  await assert.rejects(productMetadataFixture().metadata("Blue", "missing-product"), /NEXT_NOT_FOUND/);
+});
+
+test("product share metadata follows an exact variant's color, matching the purchase controls", async () => {
+  const fixture = productMetadataFixture();
+  const metadata = await fixture.metadata("Black", undefined, "2");
+  assert.equal(metadata.openGraph.url, `${origin}/store/sunday-clothes-hoodie?color=Blue`);
+  assert.deepEqual(metadata.openGraph.images, [fixture.blue[0]]);
 });
 
 test("social copy strips markup and the rejected apparel terminology in both channels", () => {

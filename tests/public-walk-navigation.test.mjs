@@ -107,6 +107,8 @@ test("search discovers public membership and never sends Artifacts searches to t
 test("the sitemap excludes the retired Members subpage and private account routes", async () => {
   const { default: sitemap } = await compile("app/sitemap.ts", {
     "@/lib/site": { SITE_URL: "https://theruinedproject.com" },
+    "@/lib/events/community-event-repository": { getPublicCommunityEvents: async () => [] },
+    "@/lib/events/public-event-page": { publicEventHref: (id) => `/community/${encodeURIComponent(id)}` },
     "@/lib/shopify": {
       getShopPolicies: async () => ({ shipping: null, returns: null, terms: null }),
       getProducts: async () => [],

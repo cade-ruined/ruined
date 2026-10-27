@@ -19,6 +19,7 @@ function load(react = React, environment = {}, exportName = "JourneyLobbyIndex")
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
     "next/image": { default: ({ src, alt, className }) => React.createElement("img", { src, alt, className }) },
     "./JourneyQuickBuy": { default: () => null },
+    "./JourneyPreviewVideo": { default: ({ poster, label, className }) => React.createElement("video", { poster, "aria-label": label, className }) },
     "@/data/navigation": { EXPLORE_ROOMS: [] },
     "@/data/public-membership": { MEMBERSHIP_LINKS: { signUp: "https://members.theruinedproject.com/membership" }, MEMBERSHIP_INTRO: { image: "/members.webp", alt: "Members gathered" } },
     "@/lib/store/catalog": { catalogNotice: () => "" },

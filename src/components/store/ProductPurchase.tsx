@@ -185,7 +185,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
 
       {isPreorder && (
         <div className="mt-5 border-l border-[var(--color-poster)] pl-4">
-          <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-[var(--color-poster)]">
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-poster)]">
             Preorder — pay in full
           </p>
           <p className="mt-2 text-sm leading-relaxed text-white/65">
@@ -196,7 +196,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
 
       {options.map((option) => (
         <fieldset key={option.name} className="mt-8">
-          <legend className="flex w-full justify-between font-mono text-[0.58rem] uppercase tracking-[0.24em] text-white/55">
+          <legend className="flex w-full flex-wrap justify-between gap-2 font-mono text-xs uppercase tracking-[0.12em] text-white/70">
             <span>Select {option.name}</span>
             <span className="text-white">{selection[option.name] || "Required"}</span>
           </legend>
@@ -209,7 +209,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
                   source: "product_page",
                 })} />
               ) : (
-                <span className="font-mono text-[0.54rem] uppercase tracking-[0.16em] text-white/35">
+                <span className="font-mono text-xs uppercase tracking-[0.12em] text-white/65">
                   Select fit for size guide
                 </span>
               )}
@@ -226,7 +226,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
                   onClick={() => choose(option.name, value)}
                   disabled={!available}
                   aria-pressed={active}
-                  className={`min-h-11 border px-2 py-3 font-mono text-[0.6rem] uppercase tracking-[0.18em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/20 ${
+                  className={`min-h-11 min-w-11 border px-2 py-3 font-mono text-xs uppercase tracking-[0.08em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/20 ${
                     active
                       ? "border-white bg-white text-black"
                       : "border-white/30 text-white hover:border-white"
@@ -258,22 +258,22 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
       </button>
 
       {isShopifyProduct && (
-        <p className="mt-4 text-xs leading-relaxed text-white/65">
+        <p className="mt-4 text-sm leading-relaxed text-white/70">
           {FREE_STANDARD_SHIPPING_COPY}
         </p>
       )}
 
-      <div className="mt-4 flex items-center justify-between gap-4 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-white/65">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 font-mono text-xs uppercase tracking-[0.1em] text-white/70">
         <span>{isShopifyProduct ? "Secure checkout" : "Studio confirmation"}</span>
-        <BagLink className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)]" />
+        <BagLink className="inline-flex min-h-11 min-w-11 items-center justify-end text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)]" />
       </div>
 
       {!isShopifyProduct && (
-        <p className="mt-5 text-xs leading-relaxed text-white/65">
+        <p className="mt-5 text-sm leading-relaxed text-white/70">
           Studio confirmation is required before payment.
         </p>
       )}
-      <Link href="/shipping-returns" className="mt-3 inline-flex min-h-11 items-center text-xs text-white/65 underline decoration-white/30 underline-offset-4 hover:text-white">
+      <Link href="/shipping-returns" className="mt-3 inline-flex min-h-11 items-center text-sm text-white/70 underline decoration-white/30 underline-offset-4 hover:text-white">
         Shipping + returns
       </Link>
     </div>

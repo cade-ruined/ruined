@@ -94,15 +94,15 @@ export default function ProductDetail({ product, children }: {
       />
       <article className="self-start md:sticky md:top-28 md:col-span-5 md:pt-8">
         {product.subtitle && (
-          <p className="font-mono text-[0.64rem] uppercase tracking-[0.28em] text-[var(--color-poster)]">{product.subtitle}</p>
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--color-poster)]">{product.subtitle}</p>
         )}
         <h1 className="display mt-2 text-[clamp(2.5rem,7vw,5.5rem)] leading-[0.95] md:mt-4 md:leading-[0.9]">{product.name}</h1>
         <ProductPurchase key={`${requestedVariant?.id ?? color ?? product.id}:${selectedFit ?? ""}`} product={product} initialColor={color} initialFit={selectedFit} initialVariant={requestedVariant} onColorChange={chooseColor} onFitChange={chooseFit} onVariantChange={chooseVariant} />
         {children}
-        <dl className="mt-8 space-y-3 border-y border-white/15 py-6 font-mono text-[0.64rem] uppercase tracking-[0.16em]">
+        <dl className="mt-8 space-y-3 border-y border-white/15 py-6 font-mono text-xs uppercase leading-relaxed tracking-[0.1em]">
           {specs.map((spec) => (
             <div key={spec.label} className="grid grid-cols-3 gap-3">
-              <dt className="text-white/40">{spec.label}</dt>
+              <dt className="text-white/65">{spec.label}</dt>
               <dd className="col-span-2">{spec.value}</dd>
             </div>
           ))}

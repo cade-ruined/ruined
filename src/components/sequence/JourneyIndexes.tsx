@@ -12,6 +12,7 @@ import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 import { getProductColorHref, getProductColorImages } from "@/lib/store/product-colors";
 import JourneyQuickBuy from "./JourneyQuickBuy";
+import JourneyPreviewVideo from "./JourneyPreviewVideo";
 
 const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
@@ -268,15 +269,10 @@ export function JourneyLobbyIndex({
             </span>
           )}
           {selection.video && (
-            <video
+            <JourneyPreviewVideo
               src={selection.video}
               poster={selection.poster}
-              aria-label={selection.alt}
-              muted
-              loop
-              autoPlay
-              playsInline
-              preload="metadata"
+              label={selection.alt}
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.025]"
             />
           )}

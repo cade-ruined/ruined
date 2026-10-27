@@ -57,7 +57,7 @@ export default function ProductSizeGuideDialog({
         onClick={openGuide}
         aria-haspopup="dialog"
         aria-controls={dialogId}
-        className="min-h-11 text-left font-mono text-[0.58rem] uppercase tracking-[0.18em] text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        className="min-h-11 text-left font-mono text-xs uppercase tracking-[0.18em] text-white underline decoration-white/30 underline-offset-4 transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         Size guide
       </button>
@@ -77,18 +77,18 @@ export default function ProductSizeGuideDialog({
           <div>
             <h2
               id={headingId}
-              className="font-mono text-[0.62rem] uppercase tracking-[0.2em] text-white"
+              className="font-mono text-xs uppercase tracking-[0.2em] text-white"
             >
               BYOB Tank · {guide.label}
             </h2>
-            <p className="mt-1 font-mono text-[0.52rem] uppercase tracking-[0.16em] text-white/45">
+            <p className="mt-1 font-mono text-xs uppercase tracking-[0.16em] text-white/65">
               Measurements in inches<span className="sm:hidden"> · Swipe to read</span>
             </p>
           </div>
           <button
             type="button"
             onClick={closeGuide}
-            className="min-h-11 border border-white/35 px-3 font-mono text-[0.58rem] uppercase tracking-[0.14em] transition-colors hover:bg-white hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            className="min-h-11 border border-white/35 px-3 font-mono text-xs uppercase tracking-[0.14em] transition-colors hover:bg-white hover:text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             Close
           </button>
@@ -106,7 +106,7 @@ export default function ProductSizeGuideDialog({
                 fill
                 sizes="(min-width: 640px) 96vw, 48rem"
                 className="object-cover object-bottom"
-                priority
+                loading="lazy"
               />
             </div>
           </div>
