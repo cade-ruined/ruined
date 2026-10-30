@@ -1,0 +1,27 @@
+.experiment.scene{height:100%;min-height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);padding:2cqw 4cqw;gap:1.2cqw;overflow:hidden;isolation:isolate;background:var(--paper) url('assets/figma/paper.webp') center/cover;color:var(--ink)}
+.experiment .ex-head{display:flex;align-items:flex-start;justify-content:space-between;gap:2cqw;position:relative;z-index:2}
+.experiment .ex-head h1,.experiment>header h1{font:400 4.5cqw/1.05 var(--display);letter-spacing:-.025em;margin:0;animation:none;max-width:100%}
+.experiment .ex-kicker{font:700 1cqw/1.2 var(--mono);letter-spacing:.08em;margin:0 0 .6cqw}
+.experiment .ex-body{min-height:0;position:relative}
+.experiment p{margin:0}
+.experiment [hidden]{display:none!important}
+.experiment button,.experiment input{touch-action:manipulation}
+.experiment input[type=range]{appearance:none;width:100%;height:3cqw;min-height:32px;background:transparent;margin:0;cursor:ew-resize;touch-action:pan-y}
+.experiment input[type=range]::-webkit-slider-runnable-track{height:4px;background:currentColor}
+.experiment input[type=range]::-webkit-slider-thumb{appearance:none;width:2.7cqw;height:2.7cqw;min-width:28px;min-height:28px;background:var(--red);border:3px solid var(--paper);border-radius:50%;margin-top:calc(2px - 1.35cqw)}
+.experiment input[type=range]::-moz-range-track{height:4px;background:currentColor}
+.experiment input[type=range]::-moz-range-thumb{width:2.7cqw;height:2.7cqw;background:var(--red);border:3px solid var(--paper);border-radius:50%}
+.experiment input:focus-visible,.experiment button:focus-visible{outline:3px solid var(--red);outline-offset:4px}
+.experiment .ex-note,.experiment .ex-instruction{font:700 1.2cqw/1.25 var(--mono);letter-spacing:.04em}
+.experiment .ex-context-toggle{font:700 1.2cqw/1.3 var(--mono);border-bottom:1px solid currentColor;padding:.35cqw 0;white-space:nowrap}
+.experiment .ex-context{position:absolute;inset:0;z-index:12;background:var(--paper) url('assets/figma/paper.webp') center/cover;color:var(--ink);padding:3cqw;display:flex;flex-direction:column;justify-content:center;gap:2cqw}
+.experiment .ex-context p{font:400 5.3cqw/1.1 var(--display);letter-spacing:-.015em}
+.experiment .ex-context button{align-self:flex-start;font:700 1.5cqw/1.2 var(--mono);border-bottom:1px solid;padding:.5cqw 0}
+@media(max-width:600px){
+ .experiment.scene{height:auto;min-height:100%;grid-template-rows:auto auto;padding:24px 23px;gap:25px;overflow:hidden}
+ .experiment .ex-head{gap:16px;flex-wrap:wrap}.experiment .ex-head h1,.experiment>header h1{font-size:38px;line-height:1.08}
+ .experiment .ex-kicker{font-size:10px;margin-bottom:10px}.experiment .ex-body{min-height:360px}
+ .experiment .ex-context-toggle,.experiment .ex-note,.experiment .ex-instruction{font-size:12px}
+ .experiment input[type=range]{height:40px}.experiment input[type=range]::-webkit-slider-thumb{margin-top:-12px}
+ .experiment .ex-context{padding:24px;gap:25px;min-height:100%;height:auto}.experiment .ex-context p{font-size:36px}.experiment .ex-context button{font-size:14px}
+}

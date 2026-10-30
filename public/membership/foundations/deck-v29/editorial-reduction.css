@@ -1,0 +1,64 @@
+/* Audience layouts carry the idea; source titles and notes remain available. */
+.scene .er-hidden-heading{
+ position:absolute!important;width:1px!important;height:1px!important;
+ padding:0!important;margin:-1px!important;overflow:hidden!important;
+ clip:rect(0,0,0,0)!important;clip-path:inset(50%)!important;
+ white-space:nowrap!important;border:0!important;pointer-events:none!important;
+}
+.readable.scene.er-unframed{grid-template-rows:minmax(0,1fr) auto}
+.readable.scene.er-unframed[data-panel-count="1"]{grid-template-rows:minmax(0,1fr)}
+.readable.scene[data-panel-count="1"]>.readable-transport{display:none}
+.ed-timeline-invitation{display:flex;flex-direction:column;justify-content:center;gap:3cqw}
+.ed-timeline-invitation .ed-timeline-question{font-size:10cqw;line-height:1.04;max-width:100%;color:var(--yellow)}
+.ed-timeline-guidance{font:450 4.4cqw/1.18 Inter,Arial,sans-serif;letter-spacing:-.025em;max-width:93%}
+.experiment.scene:has(>.er-hidden-heading){grid-template-rows:minmax(0,1fr)}
+
+/* Optional context stays in a corner, outside the main composition's flow. */
+.ph-scene.experiment.scene,.purpose-experiment.scene,.fear-experiment.scene,
+.experiment.scene.ex-consequences,.experiment.scene.ex-reframe{
+ grid-template-rows:minmax(0,1fr);
+}
+.ph-scene>.ph-head,.purpose-experiment>.pp-head,.fear-experiment>.fear-head,
+.experiment:is(.ex-consequences,.ex-reframe)>.ex-head{
+ position:absolute;top:2cqw;right:4cqw;z-index:5;width:auto;padding:0;
+}
+.ph-change .ph-plan-field{grid-template-rows:minmax(0,1fr)}
+.ph-identity .ph-identity-statement{max-width:86%}
+.ph-identity .ph-body{justify-content:center}
+.fear-experiment .fear-invitation{max-width:84%}
+.ex-consequences .ex-belief-top{padding-right:12cqw}
+.ex-reframe .ex-fixed-event{padding-right:12cqw}
+
+/* A single part navigator is enough. Reclaim space from the removed repeats. */
+.readable-slide-21 .ed-timeline-questions{padding-bottom:0}
+.readable-slide-22 .ed-category-lens{padding-bottom:0}
+.readable-slide-29 .ed-reflection{padding-bottom:0}
+.readable-slide-32 .ed-poem{padding-left:0;padding-bottom:0}
+.readable-slide-12 .fsi-manifesto-main{padding:0 4cqw}
+.readable-slide-12 .fsi-manifesto-copy{max-width:88%}
+body[data-slide="12"] .readable.scene .readable-head .readable-title{
+ font:700 1.6cqw/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+}
+
+@media(max-width:600px){
+ .readable.scene.er-unframed{grid-template-rows:minmax(280px,1fr) auto}
+ .readable.scene.er-unframed[data-panel-count="1"]{grid-template-rows:minmax(280px,1fr)}
+ .ed-timeline-invitation{gap:30px}
+ .ed-timeline-invitation .ed-timeline-question{font-size:60px;line-height:1.03}
+ .ed-timeline-guidance{font-size:30px;line-height:1.2;max-width:100%}
+ .readable.scene.readable-slide-34.er-unframed{grid-template-rows:minmax(0,1fr) auto}
+ .ph-scene.experiment.scene,.purpose-experiment.scene,.fear-experiment.scene,
+ .experiment.scene.ex-consequences,.experiment.scene.ex-reframe{
+  padding-top:64px;grid-template-rows:auto;
+ }
+ .ph-scene>.ph-head,.purpose-experiment>.pp-head,.fear-experiment>.fear-head,
+ .experiment:is(.ex-consequences,.ex-reframe)>.ex-head{top:20px;right:23px}
+ .ph-identity .ph-identity-statement{max-width:100%}
+ .fear-experiment .fear-invitation{max-width:100%}
+ .ex-consequences .ex-belief-top{padding-right:0}
+ .ex-reframe .ex-fixed-event{padding-right:0}
+ .readable-slide-12 .fsi-manifesto-main{padding:0}
+ .readable-slide-12 .fsi-manifesto-copy{max-width:100%}
+ body[data-slide="12"] .readable.scene .readable-head .readable-title{font-size:14px}
+ .readable-slide-32 .ed-poem{padding:32px 0}
+}

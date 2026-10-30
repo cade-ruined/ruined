@@ -1,0 +1,35 @@
+/* A cover before the philosophy; both states keep the original slide identity. */
+.cv-opening,.cv-philosophy{height:100%;min-height:100%;position:relative}
+.cv-opening>[hidden]{display:none!important}
+.cv-front.scene{height:100%;min-height:100%;padding:2.5cqw 4cqw 3cqw;display:flex;flex-direction:column;justify-content:space-between;gap:0;isolation:isolate;background:var(--ink);color:var(--paper)}
+.cv-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 58%;z-index:-3;pointer-events:none}
+.cv-front:before{content:'';position:absolute;inset:0;z-index:-2;background:linear-gradient(180deg,#11191250,transparent 48%,#111912d4),linear-gradient(90deg,#11191226,transparent 60%);pointer-events:none}
+.cv-top{position:relative;z-index:1}
+.cv-brand-row{display:flex;justify-content:space-between;align-items:center;gap:3cqw;margin-bottom:1.1cqw}
+.cv-wordmark{width:16cqw;height:auto;filter:invert(1);opacity:.96}
+.cv-brand-row p{font:700 1.1cqw/1.2 var(--mono);letter-spacing:.12em}
+.cv-front.scene h1{font:400 15.3cqw/1 var(--display);letter-spacing:-.035em;max-width:none;margin:0 0 0 -.18cqw;animation:none}
+.cv-number{position:absolute;right:4cqw;bottom:12.5cqw;font:400 17cqw/.95 var(--display);letter-spacing:-.04em;color:var(--yellow)}
+.cv-bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:4cqw;position:relative;z-index:1}
+.cv-invitation{font:400 6.2cqw/1.1 Hand,cursive;letter-spacing:-.025em;color:var(--yellow);transform:rotate(-2deg);padding-bottom:.1cqw}
+.cv-enter{display:flex;justify-content:space-between;align-items:center;gap:3cqw;min-width:17cqw;padding:.65cqw 0;border-top:.14cqw solid currentColor;border-bottom:.14cqw solid currentColor;font:400 4.2cqw/1 var(--display);letter-spacing:-.02em;text-align:left}
+.cv-enter span{font:400 3.6cqw/1 Inter,Arial,sans-serif}
+.cv-enter:hover{color:var(--yellow)}
+.cv-enter:focus-visible{outline:.2cqw solid var(--yellow);outline-offset:.5cqw}
+@media(prefers-reduced-motion:no-preference){body:not(.still) .cv-enter span{transition:transform .18s}body:not(.still) .cv-enter:hover span{transform:translate(.15cqw,-.15cqw)}}
+@media(max-width:600px){
+ .cv-opening,.cv-philosophy{height:100%;min-height:100%}
+ .cv-front.scene{height:calc(100svh - 114px);min-height:600px;padding:27px 24px 29px}
+ .cv-photo{object-position:52% center}
+ .cv-front:before{background:linear-gradient(180deg,#11191255,transparent 43%,#111912c7)}
+ .cv-brand-row{gap:16px;margin-bottom:24px;align-items:flex-start}
+ .cv-wordmark{width:142px}
+ .cv-brand-row p{font-size:10px;max-width:95px;text-align:right;line-height:1.5;letter-spacing:.06em}
+ .cv-front.scene h1{font-size:17vw;line-height:1.02;letter-spacing:-.04em;margin-left:-1px}
+ .cv-number{right:26px;bottom:208px;font-size:119px;line-height:.95}
+ .cv-bottom{display:block}
+ .cv-invitation{font-size:44px;line-height:1.12;margin-bottom:28px}
+ .cv-enter{font-size:32px;min-width:155px;width:170px;gap:25px;padding:10px 0;border-width:1px}
+ .cv-enter span{font-size:30px}
+ .cv-enter:focus-visible{outline-width:3px;outline-offset:5px}
+}

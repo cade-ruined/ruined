@@ -1,0 +1,46 @@
+.ex-consequences .ex-body{display:grid;grid-template-rows:auto 2.5cqw minmax(0,1fr) auto;gap:.35cqw}
+.ex-belief-top{display:flex;align-items:center;justify-content:space-between;gap:2cqw}
+.ex-belief-quote{font:400 4.7cqw/1.04 var(--display);max-width:82%;letter-spacing:-.02em}
+.ex-branches svg{width:100%;height:100%;overflow:visible}.ex-branches path{fill:none;stroke:var(--red);stroke-width:4;vector-effect:non-scaling-stroke}.ex-branches circle{fill:var(--red)}
+.ex-branches .ex-branch-left{stroke-width:calc(2px + (1 - var(--attention,.5))*6px)}.ex-branches .ex-branch-right{stroke-width:calc(2px + var(--attention,.5)*6px)}
+.ex-effects{display:grid;grid-template-columns:1fr 1fr;gap:4cqw;min-height:0}
+.ex-effects article{padding:.4cqw 1.2cqw;display:flex;flex-direction:column;gap:.6cqw;border-top:.25cqw solid var(--ink);transition:background .15s,color .15s}
+.ex-effects h2{font:400 4.2cqw/1 var(--display);letter-spacing:.01em;color:var(--red)}
+.ex-effects ul{padding:0;list-style:none;display:flex;flex-direction:column;gap:.25cqw}
+.ex-strength li{font:400 4.2cqw/1.02 var(--display)}.ex-cost li{font:400 4.2cqw/1.06 var(--display)}
+.ex-consequences[data-attention=strength] .ex-strength,.ex-consequences[data-attention=cost] .ex-cost{background:var(--ink) url('assets/figma/black-texture.webp') center/cover;color:var(--paper);border-color:var(--yellow)}
+.ex-consequences[data-attention=strength] .ex-strength h2,.ex-consequences[data-attention=cost] .ex-cost h2{color:var(--yellow)}
+.ex-balance-labels{display:flex;align-items:center;justify-content:space-between;gap:2cqw}.ex-balance-labels button{font:700 1.6cqw/1 var(--mono);padding:0}.ex-balance-labels button[aria-pressed=true]{color:var(--red)}
+.ex-balance-controls .ex-instruction{text-align:center}.ex-balance-controls{margin-top:.5cqw}
+.ex-reframe .ex-body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:1cqw}
+.ex-fixed-event{display:flex;align-items:baseline;gap:1.3cqw;border-bottom:2px solid var(--ink);padding-bottom:.8cqw}
+.ex-fixed-event p{font:400 4.2cqw/1.08 var(--display);flex:1}
+.ex-reframe-window{position:relative;min-height:0;--reframe:0%;isolation:isolate}
+.ex-view{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:1cqw;padding:1.4cqw 2.3cqw}
+.ex-view h2{font:400 4.2cqw/1 var(--display);color:var(--red)}
+.ex-view p{font:400 5.2cqw/1.04 var(--display);letter-spacing:-.015em}
+.ex-view-then{background:var(--ink) url('assets/figma/black-texture.webp') center/cover;color:var(--paper)}.ex-view-then h2{color:var(--yellow)}
+.ex-view-now{background:var(--sage) url('assets/figma/sage-paper.webp') center/cover;color:var(--ink);clip-path:inset(0 calc(100% - var(--reframe)) 0 0);z-index:1}
+.ex-reframe-divider{position:absolute;left:var(--reframe);top:0;bottom:0;width:3px;background:var(--red);z-index:2;cursor:ew-resize;touch-action:none}
+.ex-reframe-divider span{display:grid;place-items:center;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--red);color:var(--paper);width:3.6cqw;height:4.2cqw;font:2.4cqw/1 Inter}
+.ex-reframe-controls>div{display:flex;align-items:center;justify-content:space-between;gap:2cqw}.ex-reframe-controls button{font:700 1.6cqw/1 var(--mono);padding:0}.ex-reframe-controls button[aria-pressed=true]{color:var(--red)}
+@media(max-width:600px){
+ .ex-consequences .ex-body{grid-template-rows:auto 35px auto auto;gap:14px}.ex-belief-top{gap:12px;align-items:flex-start;flex-wrap:wrap}.ex-belief-quote{font-size:36px;max-width:100%}
+ .ex-effects{gap:15px;grid-template-columns:1fr}.ex-effects article{padding:16px 18px;gap:12px;border-top-width:3px}.ex-effects h2{font-size:32px}.ex-strength li,.ex-cost li{font-size:34px;line-height:1.12}.ex-effects ul{gap:8px}
+ .ex-branches{display:none}.ex-consequences .ex-body{grid-template-rows:auto auto auto}.ex-balance-labels button{font-size:12px}.ex-balance-labels .ex-note{font-size:10px}.ex-balance-controls{padding-top:15px}
+ .ex-reframe .ex-body{grid-template-rows:auto minmax(290px,1fr) auto;gap:18px}.ex-fixed-event{flex-wrap:wrap;gap:10px;padding-bottom:15px}.ex-fixed-event p{font-size:32px;flex-basis:85%}.ex-view{padding:24px 20px;gap:20px}.ex-view h2{font-size:34px}.ex-view p{font-size:37px;line-height:1.1}.ex-reframe-divider span{width:25px;height:40px;font-size:24px}.ex-reframe-controls button{font-size:14px}.ex-reframe-controls .ex-instruction{font-size:10px;text-align:center}
+}
+
+/* Keep the live question above its belief example and context control. */
+body[data-slide="25"] .experiment.scene.ex-consequences{grid-template-rows:auto minmax(0,1fr);gap:1.2cqw}
+body[data-slide="25"] .experiment.scene.ex-consequences>.ex-head.ex-meaning-head{position:relative;top:auto;right:auto;width:100%;padding:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:2cqw}
+body[data-slide="25"] .ex-consequences .ex-meaning-heading{min-width:0}
+body[data-slide="25"] .experiment.scene.ex-consequences>.ex-meaning-head h1{font:500 4.2cqw/1.12 Inter,Arial,sans-serif;letter-spacing:-.035em;text-wrap:balance;max-width:100%}
+body[data-slide="25"] .ex-consequences .ex-meaning-head>.ex-context-toggle{align-self:start;margin-top:.55cqw}
+body[data-slide="25"] .ex-consequences .ex-belief-top{padding-right:0}
+@media(max-width:600px){
+ body[data-slide="25"] .experiment.scene.ex-consequences{grid-template-rows:auto auto;padding-top:24px;gap:24px}
+ body[data-slide="25"] .experiment.scene.ex-consequences>.ex-head.ex-meaning-head{grid-template-columns:minmax(0,1fr);gap:12px}
+ body[data-slide="25"] .experiment.scene.ex-consequences>.ex-meaning-head h1{font-size:32px;line-height:1.13;text-wrap:pretty}
+ body[data-slide="25"] .ex-consequences .ex-meaning-head>.ex-context-toggle{justify-self:end;margin-top:0}
+}

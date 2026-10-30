@@ -1,0 +1,7 @@
+/* The original collage remains the poster; real footage plays beneath its foreground. */
+.foundation-storm{position:relative;display:block;isolation:isolate;overflow:hidden;width:100%;aspect-ratio:16/9;margin:0;background:#171917;color:#eee9dd}
+.foundation-storm>.foundation-storm-poster,.foundation-storm>.foundation-storm-video,.foundation-storm>.foundation-storm-foreground{position:absolute;inset:0;display:block;width:100%;max-width:none;margin:0;pointer-events:none;user-select:none}
+.foundation-storm>.foundation-storm-poster{height:100%;object-fit:contain;z-index:0}
+.foundation-storm>.foundation-storm-video{height:100%;object-fit:cover;object-position:center;z-index:1;opacity:0;visibility:hidden}
+.foundation-storm>.foundation-storm-foreground{height:auto;min-height:100%;z-index:2;opacity:0;visibility:hidden}
+.foundation-storm.has-video-frame>.foundation-storm-video,.foundation-storm.has-video-frame>.foundation-storm-foreground{opacity:1;visibility:visible}

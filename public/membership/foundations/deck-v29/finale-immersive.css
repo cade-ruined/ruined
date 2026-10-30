@@ -1,0 +1,57 @@
+/* The closing composition fills the presentation canvas, beneath its controls. */
+body[data-slide="34"] #app{position:relative;isolation:isolate;overflow:hidden;grid-template-rows:minmax(0,1fr)}
+body[data-slide="34"] #stage{grid-area:1/1;overflow:hidden}
+body[data-slide="34"] .masthead,body[data-slide="34"] .transport{position:absolute;left:0;right:0;color:var(--paper);background:transparent;border-color:#eee9dd35}
+body[data-slide="34"] .masthead{top:0;height:4.375cqw;background:linear-gradient(#11191280,transparent)}
+body[data-slide="34"] .transport{bottom:0;height:5.15625cqw;background:linear-gradient(transparent,#111912aa)}
+body[data-slide="34"] .brand img{filter:brightness(0) invert(1)}
+body[data-slide="34"] .progress-track{background:#eee9dd33}
+body[data-slide="34"] .progress-track>span{background:var(--paper)}
+.readable.scene.readable-slide-34{padding:7cqw 4cqw 7cqw;background:transparent!important}
+.readable.scene.readable-slide-34:before{z-index:1;background:linear-gradient(90deg,#0c140de0 0%,#0c140db5 30%,#0c140d33 52%,transparent 72%);pointer-events:none}
+.readable.scene.readable-slide-34:has(.ed-finale[data-final="2"]):before{background:linear-gradient(90deg,#0c140de0 0%,#0c140dc4 45%,#0c140d91 69%,transparent 82%)}
+.readable-slide-34 .readable-panel,.readable-slide-34 .ed-finale{position:static;isolation:auto;animation:none!important;clip-path:none;transform:none}
+.readable-slide-34 .ed-finale{display:flex;align-items:center;height:100%;min-height:0}
+.readable-slide-34 .ed-storm-image{position:absolute;grid-area:auto;inset:0;width:100%;height:100%;aspect-ratio:auto;z-index:0}
+.readable-slide-34 .foundation-storm{width:100%;height:100%;aspect-ratio:auto}
+.readable-slide-34 .foundation-storm>.foundation-storm-poster,.readable-slide-34 .foundation-storm>.foundation-storm-video{height:100%;object-fit:cover;object-position:center}
+.readable-slide-34 .foundation-storm>.foundation-storm-foreground{height:100.648%;min-height:0;object-fit:cover;object-position:center top}
+.readable-slide-34 .ed-finale-message{position:relative;z-index:2;width:46%;max-width:46%}
+.readable-slide-34 .ed-finale-copy{width:100%;max-width:100%;margin:0;font:450 4.4cqw/1.16 Inter,Arial,sans-serif;letter-spacing:-.025em;text-wrap:pretty;text-shadow:0 2px 18px #0004}
+.readable-slide-34 .ed-foundations-title{margin:0 0 2.5cqw;font:400 5cqw/1 var(--display);letter-spacing:-.015em;color:var(--yellow)}
+.readable-slide-34 .foundation-storm--moving>.foundation-storm-foreground{opacity:1;visibility:visible}
+.readable-slide-34 .foundation-storm-person{position:absolute;inset:0;z-index:3;pointer-events:none;user-select:none}
+.readable-slide-34 .foundation-storm-person>img{position:absolute;left:75%;top:28%;height:63%;width:auto;max-width:none;transform:translateX(-50%)}
+.readable-slide-34 .ed-finale-recap{position:relative;z-index:2;width:78%}
+.readable-slide-34 .ed-finale-recap>h2{margin:0 0 1.5cqw;font:400 5cqw/1 var(--display);color:var(--paper)}
+.readable-slide-34 .ed-recap-groups{display:grid;grid-template-columns:1fr 1fr;gap:4cqw}
+.readable-slide-34 .ed-recap-group{border-top:1px solid #eee9dd77;padding-top:1.3cqw}
+.readable-slide-34 .ed-recap-group>h3{margin:0 0 1.3cqw;font:400 4.2cqw/1 var(--display);color:var(--yellow)}
+.readable-slide-34 .ed-recap-group>ul{display:grid;gap:1.1cqw;list-style:none;padding:0;margin:0;font:500 4cqw/1.07 Inter,Arial,sans-serif;letter-spacing:-.025em}
+.readable-slide-34 .ed-recap-group li{line-height:inherit}
+.readable-slide-34 .ed-finale[data-final="2"] .foundation-storm-person>img{left:86%;top:31%;height:59%}
+.readable-slide-34 .ed-finale[data-final="0"] .ed-finale-copy{font-size:5.2cqw;line-height:1.1}
+.readable-slide-34 .readable-head,.readable-slide-34 .readable-transport{position:relative;z-index:2}
+@media(max-width:600px){
+ body[data-slide="34"] .masthead{height:48px}
+ body[data-slide="34"] .transport{height:66px}
+ .readable.scene.readable-slide-34{min-height:100%;height:100%;padding:76px 23px 92px;gap:20px}
+ .readable.scene.readable-slide-34:before{background:linear-gradient(#0c140dc9 0%,#0c140d55 25%,#0c140d24 48%,#0c140dd4 75%,#0c140de8 100%)}
+ .readable.scene.readable-slide-34:has(.ed-finale[data-final="2"]):before{background:linear-gradient(#0c140d77 0%,#0c140d33 27%,#0c140dc4 47%,#0c140de8 100%)}
+ .readable-slide-34 .ed-finale{align-items:flex-end;min-height:0}
+ .readable-slide-34 .ed-finale-message{width:100%;max-width:100%}
+ .readable-slide-34 .ed-finale-copy{font-size:30px;line-height:1.17}
+ .readable-slide-34 .ed-foundations-title{font-size:42px;margin-bottom:20px}
+ .readable-slide-34 .foundation-storm-person>img{left:65%;top:20%;height:69%}
+ .readable-slide-34 .ed-finale-recap{width:100%}
+ .readable-slide-34 .ed-finale-recap>h2{font-size:38px;margin-bottom:20px}
+ .readable-slide-34 .ed-recap-groups{grid-template-columns:1fr 1fr;gap:20px}
+ .readable-slide-34 .ed-recap-group{padding-top:12px}
+ .readable-slide-34 .ed-recap-group>h3{font-size:30px;margin-bottom:12px}
+ .readable-slide-34 .ed-recap-group>ul{font-size:20px;line-height:1.15;gap:14px}
+ .readable-slide-34 .ed-finale[data-final="2"] .foundation-storm-person>img{left:72%;top:20%;height:69%}
+ .readable-slide-34 .ed-finale[data-final="0"] .ed-finale-copy{font-size:36px;line-height:1.1}
+}
+
+.readable-slide-34 .readable-head{width:44%;pointer-events:none}
+@media(max-width:600px){.readable-slide-34 .readable-head{width:100%}}

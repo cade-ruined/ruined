@@ -1,0 +1,123 @@
+/* The philosophy stays legible; each physical change has a specific meaning. */
+.ph-scene.experiment.scene{padding:2cqw 4cqw;gap:1.3cqw;grid-template-rows:auto minmax(0,1fr);background:var(--paper) url('assets/figma/paper.webp') center/cover;color:var(--ink);isolation:isolate}
+.ph-head{position:relative;z-index:3;display:flex;align-items:flex-start;justify-content:space-between;gap:2cqw}
+.ph-head>div{min-width:0}
+.ph-head .ph-overline{font:700 1cqw/1.2 var(--mono);letter-spacing:.12em;margin:0 0 .55cqw}
+.ph-scene.experiment .ph-head h1{font:400 4.2cqw/1.04 var(--display);letter-spacing:-.025em;margin:0;max-width:100%;text-align:left;animation:none}
+.ph-context-open{font:700 1.15cqw/1.2 var(--mono);letter-spacing:.04em;white-space:nowrap;padding:.35cqw 0;border-bottom:1px solid currentColor}
+.ph-body{min-height:0;position:relative;z-index:1}
+.ph-scene .ph-core{font:400 5.8cqw/1.06 var(--display);letter-spacing:-.02em;margin:0}
+.ph-controls{display:flex;align-items:center;gap:3cqw}
+.ph-controls button,.ph-shape-button{font:400 4.2cqw/1.04 var(--display);letter-spacing:-.015em;padding:.5cqw 0;border-bottom:.2cqw solid transparent;text-align:left}
+.ph-controls button[aria-pressed=true]{border-bottom-color:currentColor}
+.ph-controls button:focus-visible,.ph-shape-button:focus-visible,.ph-context-open:focus-visible,.ph-context button:focus-visible{outline:.2cqw solid var(--red);outline-offset:.35cqw}
+.ph-controls button:hover{color:var(--red)}
+.ph-scene .ph-context{position:absolute;inset:0;z-index:30;background:var(--paper) url('assets/figma/paper.webp') center/cover;color:var(--ink);padding:3cqw 4cqw;display:flex;flex-direction:column;justify-content:center;gap:2cqw}
+.ph-context .ph-context-core{flex:none;font:400 5.2cqw/1.06 var(--display);letter-spacing:-.02em;border-bottom:.16cqw solid currentColor;padding-bottom:1.5cqw}
+.ph-context-copy{display:grid;gap:1.4cqw;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:1cqw}
+.ph-context .ph-context-copy p{font:400 4.2cqw/1.13 var(--display);letter-spacing:-.015em}
+.ph-context button{flex:none;align-self:flex-start;font:400 4.2cqw/1.05 var(--display);margin-top:1cqw;padding:.3cqw 0;border-bottom:.15cqw solid currentColor}
+
+/* 01: one common identity, set within the existing Figma landscape. */
+.ph-identity.experiment.scene{color:var(--paper);background:var(--ink)}
+.ph-cover-photo{position:absolute;inset:0;z-index:-3;width:100%;height:100%;object-fit:cover;object-position:center 58%;pointer-events:none}
+.ph-identity:before{content:'';position:absolute;inset:0;z-index:-2;background:linear-gradient(90deg,#111912d9 0%,#11191288 62%,#11191238),linear-gradient(0deg,#111912bf,transparent 55%);pointer-events:none}
+.ph-identity .ph-body{display:flex;flex-direction:column;justify-content:space-between;gap:1cqw}
+.ph-identity-statement{margin:auto 0;max-width:80%}
+.ph-identity .ph-core{font-size:8.3cqw;line-height:1.02;letter-spacing:-.035em}
+.ph-identity-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:3cqw}
+.ph-identity-foot>p{font:400 4.2cqw/1.1 var(--display);max-width:70%;letter-spacing:-.015em}
+.ph-identity-foot>span{font:400 2.2cqw/1.05 var(--display);color:var(--yellow);max-width:17%}
+.ph-identity .ph-context-open{color:var(--paper)}
+
+/* 02: the line is the same plan; interruption and intention alter it differently. */
+.ph-change .ph-body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:1cqw}
+.ph-change .ph-core{font-size:5.4cqw;max-width:95%;line-height:1.04}
+.ph-plan-field{min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:.2cqw}
+.ph-plan-field svg{display:block;width:100%;height:100%;min-height:0;overflow:visible}
+.ph-plan-original{stroke:#7f8777;stroke-width:3;stroke-dasharray:8 10;fill:none;opacity:.4;vector-effect:non-scaling-stroke}
+.ph-plan-live{stroke:var(--ink);stroke-width:11;fill:none;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.ph-plan-branch{stroke:var(--ink);stroke-width:4;stroke-dasharray:6 10;fill:none;opacity:0;vector-effect:non-scaling-stroke}
+.ph-plan-start{fill:var(--ink)}.ph-plan-end{fill:var(--red)}
+.ph-plan-obstacle{fill:var(--ink);opacity:0;transform:translateY(-35px)}
+.ph-plan-choice{stroke:var(--red);stroke-width:7;fill:none;opacity:0;vector-effect:non-scaling-stroke}
+.ph-plan-field[data-changed=true][data-cause="0"] .ph-plan-obstacle{opacity:1;transform:translateY(0)}
+.ph-plan-field[data-changed=true][data-cause="1"] .ph-plan-branch,.ph-plan-field[data-changed=true][data-cause="1"] .ph-plan-choice{opacity:1}
+.ph-plan-field[data-changed=true][data-cause="1"] .ph-plan-live{stroke:var(--red)}
+.ph-plan-description{font:400 4.2cqw/1.05 var(--display);letter-spacing:-.015em}
+.ph-plan-controls{border-top:.15cqw solid var(--ink);gap:4cqw}
+.ph-plan-controls .ph-reset{font:400 4.2cqw/1 Inter,Arial,sans-serif;margin-left:auto;width:5cqw;padding:.2cqw;text-align:center}
+
+/* 03: the four pieces keep their dimensions and integrity in both arrangements. */
+.ph-intact.experiment.scene{background:linear-gradient(#d3d7c740,#d3d7c740),url('assets/photoshop/polymailer-green.webp') center/cover}
+.ph-intact .ph-body{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:1cqw}
+.ph-intact-composition{display:grid;grid-template-columns:1.3fr 1fr;align-items:center;gap:3cqw;min-height:0}
+.ph-intact .ph-core{font-size:6.7cqw;line-height:1.03}
+.ph-intact-field{width:100%;min-height:0;max-height:100%;aspect-ratio:400/340}
+.ph-intact-field svg{display:block;width:100%;height:100%;overflow:visible}
+.ph-intact-piece{stroke:var(--ink);stroke-width:1;transform-origin:0 0;transform-box:view-box}
+.ph-intact-controls{justify-content:space-between;border-top:.15cqw solid currentColor;padding-top:.5cqw}
+.ph-intact-controls>span{font:400 4.2cqw/1 Inter,Arial,sans-serif}
+
+/* 04: the anchor remains; a larger field opens beside the purpose statement. */
+.ph-purpose.experiment.scene{--ph-direction:0;background:linear-gradient(#191b185c,#191b185c),url('assets/photoshop/polymailer-black.webp') center/cover;color:var(--paper)}
+.ph-purpose .ph-head>div{max-width:70%}
+.ph-purpose .ph-context-open{color:var(--paper);background:var(--ink);padding:.4cqw .65cqw}
+.ph-purpose .ph-body{display:flex;flex-direction:column;justify-content:space-between;gap:1.3cqw}
+.ph-purpose .ph-core{font-size:5.8cqw;line-height:1.04;max-width:68%;margin:auto 0;letter-spacing:-.025em}
+.ph-purpose-material{position:absolute;right:0;top:0;bottom:0;width:calc(14% + var(--ph-direction)*19%);z-index:-2;background:linear-gradient(#d3d7c740,#d3d7c740),url('assets/photoshop/polymailer-green.webp') center/cover;pointer-events:none}
+.ph-purpose-straps{position:absolute;right:3cqw;bottom:2cqw;width:auto;height:130%;max-width:none;object-fit:contain;pointer-events:none;z-index:-1;transform:translateX(calc(var(--ph-direction)*-3cqw))}
+.ph-purpose-controls{max-width:67%;display:flex;flex-direction:column;align-items:flex-start;gap:.5cqw}
+.ph-purpose-controls button{color:var(--paper);font-size:4.2cqw;padding:.3cqw 0}
+.ph-purpose-controls button[aria-pressed=true]{color:var(--yellow)}
+.ph-purpose-controls button:hover{color:var(--yellow)}
+
+/* 05: see the whole field, distinguish influence, then shape what is within it. */
+.ph-principles .ph-body{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:1cqw}
+.ph-principles .ph-core{font-size:5.7cqw;line-height:1.04}
+.ph-principle-controls{justify-content:space-between;gap:2cqw;border-bottom:.15cqw solid currentColor}
+.ph-principle-controls button{font-size:4.2cqw;letter-spacing:-.02em;padding:.7cqw 0}
+.ph-principle-controls button[aria-pressed=true]{color:var(--red);border-bottom:.3cqw solid var(--red)}
+.ph-principle-composition{display:grid;grid-template-columns:1fr 1.08fr;gap:4cqw;align-items:center;min-height:0}
+.ph-principle-field{height:100%;min-height:0;position:relative;padding-bottom:3.5cqw}
+.ph-principle-field svg{display:block;width:100%;height:100%;overflow:visible}
+.ph-influence-boundary{fill:none;stroke:var(--red);stroke-width:3;stroke-dasharray:8 8;opacity:0;vector-effect:non-scaling-stroke}
+.ph-circumstances rect{fill:#6d7767;stroke:var(--ink);stroke-width:1}
+.ph-influence-pieces rect{fill:var(--ink);transform-origin:0 0;transform-box:view-box}
+.ph-principle-field[data-principle="1"] .ph-influence-boundary,.ph-principle-field[data-principle="2"] .ph-influence-boundary{opacity:1}
+.ph-principle-field[data-principle="1"] .ph-circumstances,.ph-principle-field[data-principle="2"] .ph-circumstances{opacity:.24}
+.ph-principle-field[data-principle="2"] .ph-influence-pieces rect{fill:var(--red)}
+.ph-principle-definition{font:400 5.4cqw/1.05 var(--display);letter-spacing:-.02em}
+.ph-shape-button{position:absolute;left:0;bottom:0;font-size:4.2cqw;line-height:1;padding:.1cqw 0;color:var(--red)}
+
+/* 07: authorship is the closing statement, not another required interaction. */
+.ph-authors.experiment.scene{background:linear-gradient(#d3d7c740,#d3d7c740),url('assets/photoshop/polymailer-green.webp') center/cover}
+.ph-authors .ph-body{display:flex;flex-direction:column;justify-content:center;gap:1.3cqw}
+.ph-authors-statement{display:grid;gap:.7cqw;font:400 9.2cqw/.99 var(--display);letter-spacing:-.035em}
+.ph-authors-statement span:nth-child(2){text-align:center}
+.ph-authors-statement span:last-child{justify-self:end;background:var(--ink);color:var(--paper);padding:.45cqw 1.2cqw .8cqw}
+.ph-authors-rule{display:flex;gap:.5cqw;height:.45cqw;margin-top:1cqw}
+.ph-authors-rule i{display:block;background:var(--ink);flex:1}
+.ph-authors-rule i:nth-child(2){flex:2}.ph-authors-rule i:last-child{flex:4}
+
+@media(prefers-reduced-motion:no-preference){
+ body:not(.still) .ph-plan-obstacle,body:not(.still) .ph-plan-choice{transition:opacity .25s,transform .45s cubic-bezier(.2,.75,.25,1)}
+ body:not(.still) .ph-intact-piece{transition:transform .65s cubic-bezier(.2,.75,.25,1)}
+ body:not(.still) .ph-purpose-material{transition:width .7s cubic-bezier(.2,.75,.25,1)}
+ body:not(.still) .ph-purpose-straps{transition:transform .7s cubic-bezier(.2,.75,.25,1)}
+ body:not(.still) .ph-influence-pieces rect{transition:transform .55s cubic-bezier(.2,.75,.25,1),fill .25s}
+ body:not(.still) .ph-circumstances,body:not(.still) .ph-influence-boundary{transition:opacity .3s}
+}
+
+@media(max-width:600px){
+ .ph-scene.experiment.scene{height:auto;min-height:100%;padding:24px 23px;gap:24px;grid-template-rows:auto auto}
+ .ph-head{gap:14px}.ph-scene.experiment .ph-head h1{font-size:36px;line-height:1.07}.ph-head .ph-overline{font-size:10px;margin-bottom:9px}.ph-context-open{font-size:11px;padding:5px 0}
+ .ph-scene .ph-core{font-size:40px;line-height:1.08}.ph-controls{gap:20px}.ph-controls button,.ph-shape-button{font-size:30px;line-height:1.08;padding:7px 0}
+ .ph-scene .ph-context{padding:24px;gap:22px;min-height:100%;height:auto;justify-content:flex-start;overflow:auto}.ph-context .ph-context-core{font-size:36px;padding-bottom:20px}.ph-context-copy{gap:20px}.ph-context .ph-context-copy p{font-size:30px;line-height:1.15}.ph-context button{font-size:30px;margin-top:10px}
+ .ph-identity .ph-body{min-height:510px;gap:30px}.ph-identity-statement{max-width:100%;margin:auto 0}.ph-identity .ph-core{font-size:56px;line-height:1.03}.ph-identity-foot{display:block}.ph-identity-foot>p{font-size:32px;max-width:100%;line-height:1.12}.ph-identity-foot>span{display:block;font-size:26px;max-width:100%;margin-top:22px}
+ .ph-change .ph-body{grid-template-rows:auto minmax(180px,1fr) auto;gap:20px;min-height:490px}.ph-change .ph-core{font-size:39px;max-width:100%}.ph-plan-field{min-height:210px;gap:15px}.ph-plan-description{font-size:30px}.ph-plan-controls{gap:16px;flex-wrap:wrap}.ph-plan-controls .ph-reset{font-size:32px;width:42px}.ph-plan-controls button:first-child{flex-basis:100%}
+ .ph-intact .ph-body{grid-template-rows:auto auto;gap:20px}.ph-intact-composition{grid-template-columns:1fr;gap:22px}.ph-intact .ph-core{font-size:43px}.ph-intact-field{max-height:250px;width:100%;aspect-ratio:400/340}.ph-intact-controls{gap:14px;padding-top:12px}.ph-intact-controls>span{font-size:30px}.ph-intact-controls button{font-size:28px}
+ .ph-purpose .ph-body{min-height:540px;gap:26px;padding-bottom:195px}.ph-purpose .ph-head>div{max-width:100%}.ph-purpose .ph-core{font-size:43px;max-width:100%;margin:0;line-height:1.07}.ph-purpose-controls{max-width:100%;gap:5px}.ph-purpose-controls button{font-size:28px}.ph-purpose-material{width:calc(15% + var(--ph-direction)*20%);opacity:.3}.ph-purpose-straps{height:330px;bottom:20px;right:15px;transform:translateX(calc(var(--ph-direction)*-18px))}
+ .ph-principles .ph-body{grid-template-rows:auto auto auto;gap:20px}.ph-principles .ph-core{font-size:40px}.ph-principle-controls{gap:9px;flex-wrap:wrap;justify-content:flex-start}.ph-principle-controls button{font-size:27px;padding:8px 0}.ph-principle-composition{grid-template-columns:1fr;gap:22px}.ph-principle-field{height:250px;padding-bottom:38px}.ph-principle-definition{font-size:36px;line-height:1.1}.ph-shape-button{font-size:30px}
+ .ph-authors .ph-body{min-height:430px;gap:20px}.ph-authors-statement{font-size:52px;line-height:1.04;gap:20px}.ph-authors-statement span:nth-child(2){text-align:left;margin-left:20px}.ph-authors-statement span:last-child{padding:5px 12px 10px}.ph-authors-rule{height:5px;gap:5px;margin-top:12px}
+}

@@ -1,0 +1,84 @@
+{
+  "source": "Native Photoshop Export Layers to Files from open cloud document; original source document not saved or modified",
+  "materials": [
+    {
+      "name": "green",
+      "sourcePSD": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/source/photoshop-layers/polymailer_0023_Layer 1.psd",
+      "sourceSHA256": "725921cc3f690a25f3f24f45b8ffe07becf4915b13e8e00042fac5c9a05b82fd",
+      "documentTitle": "Polymailer (1) - August 26, 2026 10.21.52.psdc",
+      "nativeExportCanvas": [
+        6076,
+        7121
+      ],
+      "sourceLayer": "Layer 1",
+      "sourceLayerKind": "pixel",
+      "sourceLayerBounds": [
+        389,
+        2219,
+        1872,
+        3360
+      ],
+      "sourceLayerDimensions": [
+        1483,
+        1141
+      ],
+      "sourceColorMode": "CMYK 8-bit",
+      "sourceICCProfile": "U.S. Web Coated (SWOP) v2",
+      "conversion": "psd-tools Layer.topil(apply_icc=True): CMYK inversion repair, embedded ICC to sRGB, original transparency retained",
+      "geometry": "Native layer bounds exported exactly; only empty document canvas padding omitted. No artwork crop, retouch, or regeneration.",
+      "fullResolutionPNG": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/source/photoshop-materials/polymailer-green-full-layer.png",
+      "fullResolutionPNGSHA256": "e8a50e158ac8ed211169dc956d2c7674f26dce087e408df17cefd9a44004a3ed",
+      "webAsset": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/site/dist/assets/photoshop/polymailer-green.webp",
+      "webDimensions": [
+        1483,
+        1141
+      ],
+      "webEncoding": "lossless",
+      "initialLosslessBytes": 2006842,
+      "webBytes": 2006842,
+      "webSHA256": "b349bbfa37622cd9bf0cafd58b80e51c7d6d29970b01ddbd803c3dc2eba93d0a",
+      "webICCProfile": "sRGB",
+      "exportReadbackVerified": true,
+      "pixelIdenticalToConvertedFullResolutionLayer": true
+    },
+    {
+      "name": "black",
+      "sourcePSD": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/source/photoshop-layers/polymailer_0020_Obsidian Texture Mar 13 2026 copy.psd",
+      "sourceSHA256": "f4a0c66d30382f7bff422c05a58718433b2e1828187996bf7c2083d14857806b",
+      "documentTitle": "Polymailer (1) - August 26, 2026 10.21.52.psdc",
+      "nativeExportCanvas": [
+        6076,
+        7121
+      ],
+      "sourceLayer": "Obsidian Texture Mar 13 2026 copy",
+      "sourceLayerKind": "smartobject",
+      "sourceLayerBounds": [
+        3250,
+        2593,
+        5574,
+        6505
+      ],
+      "sourceLayerDimensions": [
+        2324,
+        3912
+      ],
+      "sourceColorMode": "CMYK 8-bit",
+      "sourceICCProfile": "U.S. Web Coated (SWOP) v2",
+      "conversion": "psd-tools Layer.topil(apply_icc=True): CMYK inversion repair, embedded ICC to sRGB, original transparency retained",
+      "geometry": "Native layer bounds exported exactly; only empty document canvas padding omitted. No artwork crop, retouch, or regeneration.",
+      "fullResolutionPNG": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/source/photoshop-materials/polymailer-black-full-layer.png",
+      "fullResolutionPNGSHA256": "74a2896029093fd8cd7907c61280a6029391b56351cf33b892d2751301ee3a7b",
+      "webAsset": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/site/dist/assets/photoshop/polymailer-black.webp",
+      "webDimensions": [
+        1521,
+        2560
+      ],
+      "webEncoding": "quality95",
+      "initialLosslessBytes": 11708850,
+      "webBytes": 1736466,
+      "webSHA256": "f7d0ffebfd6a64e36168fec5590cccea2c8c83a1a77b8fbe927a31245fa1ff79",
+      "webICCProfile": "sRGB",
+      "exportReadbackVerified": true
+    }
+  ]
+}
