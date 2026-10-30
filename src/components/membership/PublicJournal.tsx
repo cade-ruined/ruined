@@ -71,7 +71,7 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
               {!loading && !error && entries.length === 0 && <div className={journalStyles.empty}><h3>No Timeline posts yet.</h3><p>Shared thoughts, photographs, and moments will appear here.</p></div>}
               {!!entries.length && <div className={journalStyles.feed}>{entries.map(entry => <article className={journalStyles.feedPost} key={entry.id}>
                 <div className={journalStyles.feedMeta}><time dateTime={entry.createdAt}>{new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(entry.createdAt))}</time>{entry.timelineReflection && entry.eventYear ? <span>Remembering {entry.eventMonth ? `${new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(entry.eventYear, entry.eventMonth - 1, 1)))} ` : ""}{entry.eventDay ? `${entry.eventDay}, ` : ""}{entry.eventYear}</span> : null}</div>
-                {entry.title && <h3 className={journalStyles.feedTitle}>{entry.title}</h3>}
+                {entry.title && !entry.body?.trim().startsWith(entry.title) && <h3 className={journalStyles.feedTitle}>{entry.title}</h3>}
                 {entry.body && <p className={journalStyles.feedBody}>{entry.body}</p>}
                 <TimelineStoryContent reflection={entry.timelineReflection} />
                 {!!entry.media.length && <div className={styles.media}>{entry.media.map((media, index) => media.mimeType.startsWith("video/")

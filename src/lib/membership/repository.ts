@@ -3280,7 +3280,7 @@ export async function getMemberHome(
     };
   } else if (!requirements.timeline.completed) {
     nextAction = {
-      body: "Explore a moment through six questions. Review your story before publishing it to your public Timeline, or keep it as a private Journal draft.",
+      body: "Share a thought, photo, or moment on your public Timeline. Optional prompts help you go deeper, and drafts stay private until you post.",
       href: "/my/timeline",
       kind: "timeline",
       title: "Add to your Timeline.",
