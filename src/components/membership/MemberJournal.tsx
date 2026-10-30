@@ -358,7 +358,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     if (sharing && timelineView) return <article className={styles.feedPost} key={entry.id}>
       <button className={styles.feedOpen} type="button" onClick={() => { setSelected(entry); setImageIndex(0); setMediaError(""); }} aria-label={`Open entry: ${entryTitle(entry)}`}>
         <span className={styles.feedMeta}><time dateTime={entry.createdAt}>{postedDate(entry.createdAt)}</time>{eventDate(entry) ? <span>Remembering {eventDate(entry)}</span> : null}</span>
-        {entry.title ? <span className={styles.feedTitle}>{entry.title}</span> : null}
+        {entry.title && !entry.body?.trim().startsWith(entry.title) ? <span className={styles.feedTitle}>{entry.title}</span> : null}
         {entry.body ? <span className={styles.feedBody}>{entry.body}</span> : null}
         {entry.kind === "images" && entry.media[0] ? <span className={styles.feedImage}><Image src={entry.media[0].url} alt="" width={900} height={675} sizes="(max-width: 700px) 100vw, 680px" unoptimized/>{entry.media.length > 1 ? <span className={styles.imageCount}>1 / {entry.media.length}</span> : null}</span> : entry.kind === "video" ? <span className={styles.storyVideo} aria-hidden="true">▷ <span>Play video</span></span> : null}
         {entry.timelineReflection?.perspective ? <span className={styles.storyPerspective}>{entry.timelineReflection.perspective}</span> : null}
@@ -399,7 +399,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       <p className={styles.subtitle}>Choose where it belongs.</p>
       <div className={styles.destinationChoices}>
         <button type="button" onClick={() => startEntry("private")} aria-label="Journal (Private)"><span>Journal <small>Private</small></span><p>A thought, a photograph, a moment. Just for you.</p><span aria-hidden="true">↗</span></button>
-        <button type="button" onClick={() => startEntry("public")} aria-label="Timeline (Public)"><span>Timeline <small>Public</small></span><p>Six questions. A moment in perspective. Share your story.</p><span aria-hidden="true">↗</span></button>
+        <button type="button" onClick={() => startEntry("public")} aria-label="Timeline (Public)"><span>Timeline <small>Public</small></span><p>Share a thought, photo, or moment. Go deeper if you want to.</p><span aria-hidden="true">↗</span></button>
       </div>
     </Dialog>
     <Dialog open={composer} onClose={() => setComposer(false)} title={sharing ? (draft.editingId ? "Edit your " : "New ") + (isPublicTimeline(draft) ? "Timeline post." : "Journal entry.") : draft.editingId ? "Edit your entry." : "Leave something here."}>
@@ -433,7 +433,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       {mediaError ? <p className={styles.draftError} role="alert">{mediaError}</p> : null}
       {selected.body ? <p className={styles.detailBody}>{selected.body}</p> : null}
       <TimelineStoryContent reflection={selected.timelineReflection} />
-      {selected.legacyTimelineReflection ? <p className={styles.privacyHint}>This moment has private reflection answers. Open the guided editor to review them before publishing.</p> : null}
+      {selected.legacyTimelineReflection ? <p className={styles.privacyHint}>This moment has private reflection answers. Edit the entry to review them before posting.</p> : null}
       {writable ? <footer className={styles.storyEntryActions}><button className="member-button" type="button" disabled={pending} onClick={() => editEntry(selected)}>Edit entry</button><button className={styles.quiet} type="button" disabled={pending} onClick={() => void deleteEntry(selected)}>Delete entry</button></footer> : null}
     </> : null}</Dialog>
   </section>;

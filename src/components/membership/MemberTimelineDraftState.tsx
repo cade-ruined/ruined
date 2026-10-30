@@ -10,6 +10,9 @@ export type PublicTimelineMediaDraft = {
   files: File[];
   uploadIds: Array<[File, string]>;
   attemptedVisibility: JournalVisibility | null;
+  editingExisting?: boolean;
+  eventDay?: number | null;
+  baselineEventDay?: number | null;
 };
 
 export function copyPublicTimelineMedia(draft: PublicTimelineMediaDraft): PublicTimelineMediaDraft {
