@@ -1,0 +1,79 @@
+/* Four independent objects, with one selected sheet pulled out of the archive. */
+.experiment.scene.mf-archive{padding:2cqw 4cqw 1.7cqw;gap:1.15cqw;grid-template-rows:auto minmax(0,1fr);background:#ded9ce url('assets/figma/paper.webp') center/cover}
+.mf-archive .mf-head{display:flex;align-items:flex-start;justify-content:space-between;gap:2cqw;position:relative;z-index:10}
+.mf-archive .mf-head h1{font:500 3.1cqw/1.16 Inter,Arial,sans-serif;letter-spacing:-.035em;animation:none}
+.mf-archive .mf-overline{font:700 1.05cqw/1.2 var(--mono);letter-spacing:.08em;margin:0 0 .65cqw}
+.mf-archive .mf-close{font:700 1.25cqw/1.2 var(--mono);letter-spacing:.035em;padding:.65cqw 0;border-bottom:1px solid currentColor}
+.mf-archive .mf-close:disabled{visibility:hidden}
+.mf-archive .mf-body{min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:.8cqw}
+.mf-archive .mf-field{position:relative;min-height:0;isolation:isolate}
+.mf-archive .mf-folders{position:absolute;inset:0}
+.mf-archive .mf-folder{position:absolute;left:calc(0% + var(--folder-index)*4.8%);top:calc(22% - var(--folder-index)*7.2%);width:40%;height:78%;padding:0;transform:rotate(calc(-2deg + var(--folder-index)*1deg));transform-origin:50% 90%;filter:drop-shadow(.3cqw .7cqw .45cqw #17191745);z-index:calc(5 - var(--folder-index));outline-offset:-.3cqw}
+.mf-archive .mf-folder img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;user-select:none;pointer-events:none;max-width:none}
+.mf-archive .mf-folder-back{opacity:0;filter:brightness(.86);transform:translate(.2cqw,-.15cqw)}
+.mf-archive .mf-folder-front{transform-origin:50% 94%;backface-visibility:hidden}
+.mf-archive .mf-folder:focus-visible{outline:.3cqw solid var(--red)}
+.mf-archive .mf-placeholder{position:absolute;left:60%;right:1%;top:27%;font:450 3.1cqw/1.2 Inter,Arial,sans-serif;letter-spacing:-.035em;color:var(--ink);max-width:37%;transform:translateY(0);opacity:1}
+.mf-archive.is-open .mf-placeholder{opacity:0;visibility:hidden;transform:translateY(1cqw);pointer-events:none}
+.mf-archive.is-open .mf-folder{left:calc(-3% + var(--folder-index)*3%);top:calc(19% - var(--folder-index)*4.8%);width:27%;height:74%;filter:drop-shadow(.2cqw .4cqw .25cqw #17191735);opacity:1;transform:rotate(calc(-5deg + var(--folder-index)*1.8deg))}
+.mf-archive.is-open .mf-folder.is-selected{left:4%;top:6%;width:43%;height:94%;z-index:7;opacity:1;transform:rotate(-3deg);filter:drop-shadow(.4cqw .8cqw .6cqw #17191740)}
+.mf-archive.is-open .mf-folder.is-selected .mf-folder-back{opacity:1}
+.mf-archive.is-open .mf-folder.is-selected .mf-folder-front{transform:perspective(70cqw) rotateX(54deg) translateY(8%);filter:brightness(.96)}
+.mf-archive .mf-paper-dock{position:absolute;left:35%;right:0;top:5%;bottom:7%;z-index:8;pointer-events:none;perspective:100cqw}
+.mf-archive .mf-sheet{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:2.5cqw 3cqw 4.8cqw;background:#f0ece2 url('assets/figma/paper.webp') center/cover;box-shadow:.15cqw .22cqw 0 #a59c88,.6cqw .7cqw .9cqw #1719172c;border:1px solid #9d948c55;transform:translate(-35%,35%) scale(.55) rotate(-5deg);transform-origin:10% 90%;visibility:hidden;opacity:0;backface-visibility:hidden}
+.mf-archive .mf-sheet:after{content:'';position:absolute;inset:.4cqw -.4cqw -.4cqw .4cqw;z-index:-1;background:#e5dfd3;border:1px solid #9d948c55;box-shadow:.1cqw .2cqw .2cqw #17191718;pointer-events:none}
+.mf-archive .mf-sheet.is-selected{visibility:visible;opacity:1;transform:translate(0,0) scale(1) rotate(1deg)}
+.mf-archive .mf-sheet-number{font:700 1.15cqw/1.2 var(--mono);letter-spacing:.06em;position:absolute;left:3cqw;top:1.6cqw;color:var(--ink)}
+.mf-archive .mf-question{font:400 5.7cqw/1.04 var(--display);letter-spacing:-.015em;color:var(--red);text-wrap:balance;max-width:100%;margin:0}
+.mf-archive .mf-face-pages{position:absolute;left:38%;right:3%;bottom:10.2%;z-index:9;display:flex;gap:1.2cqw;align-items:center;font:700 1.4cqw/1.2 var(--mono);letter-spacing:.04em}
+.mf-archive .mf-face-pages button{padding:.45cqw .2cqw;border-bottom:.2cqw solid transparent;opacity:.4}
+.mf-archive .mf-face-pages button[aria-pressed="true"]{border-color:var(--red);opacity:1;color:var(--red)}
+.mf-archive .mf-face-pages button:last-child span{padding-left:.6cqw}
+.mf-archive .mf-tabs{position:relative;z-index:12;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.5cqw;border-top:1px solid #17191755;padding-top:.9cqw}
+.mf-archive .mf-tab{font:400 3.1cqw/1 var(--display);letter-spacing:-.01em;display:flex;align-items:center;justify-content:space-between;text-align:left;padding:.5cqw 0;gap:1cqw;border-bottom:.25cqw solid transparent}
+.mf-archive .mf-tab i{font:400 1.8cqw/1 Inter,Arial,sans-serif;font-style:normal;opacity:.35}
+.mf-archive .mf-tab.is-selected{color:var(--red);border-color:var(--red)}
+.mf-archive .mf-tab.is-selected i{opacity:1;transform:rotate(45deg)}
+/* Mitch's portrait introduces the story; the folders take the stage when opened. */
+.mf-archive .mf-portrait{position:absolute;inset:0 0 0 32%;display:flex;align-items:center;margin:0;pointer-events:none}
+.mf-archive .mf-portrait img{width:100%;height:auto;max-height:100%;object-fit:contain;display:block}
+.mf-archive.is-open .mf-portrait{opacity:0;visibility:hidden}
+.experiment.scene.mf-archive:not(.is-open){grid-template-rows:minmax(0,1fr)}
+.mf-archive:not(.is-open) .mf-head{position:absolute;left:4cqw;right:4cqw;top:14cqw;pointer-events:none}
+.mf-archive:not(.is-open) .mf-head h1{font:400 11.5cqw/.98 var(--display);letter-spacing:-.025em;text-transform:uppercase;max-width:28%;color:var(--red)}
+.mf-archive:not(.is-open) .mf-folders{visibility:hidden;pointer-events:none}
+@media(prefers-reduced-motion:no-preference){
+ body:not(.still) .mf-archive .mf-portrait{transition:opacity .28s,visibility .28s}
+ body:not(.still) .mf-archive .mf-folder{transition:left .62s cubic-bezier(.2,.7,.15,1),top .62s cubic-bezier(.2,.7,.15,1),width .62s cubic-bezier(.2,.7,.15,1),height .62s cubic-bezier(.2,.7,.15,1),transform .62s cubic-bezier(.2,.7,.15,1),opacity .35s,filter .5s}
+ body:not(.still) .mf-archive .mf-folder-front{transition:transform .65s cubic-bezier(.2,.7,.15,1),filter .65s}
+ body:not(.still) .mf-archive .mf-folder-back,body:not(.still) .mf-archive .mf-placeholder{transition:opacity .25s,transform .4s}
+ body:not(.still) .mf-archive .mf-sheet{transition:transform .65s cubic-bezier(.2,.7,.15,1),opacity .25s,visibility .65s}
+ body:not(.still) .mf-archive .mf-sheet.is-selected{transition-delay:.08s}
+ body:not(.still) .mf-archive .mf-tab i{transition:transform .3s}
+ body:not(.still) .mf-archive:not(.is-open) .mf-folder:hover{transform:translateY(-.7cqw) rotate(calc(-2deg + var(--folder-index)*1deg))}
+}
+@media(max-width:600px){
+ .experiment.scene.mf-archive{padding:25px 23px 24px;gap:20px;min-height:100%;height:auto;grid-template-rows:auto auto}
+ .mf-archive .mf-head{gap:12px}.mf-archive .mf-head h1{font-size:29px;line-height:1.16}.mf-archive .mf-overline{font-size:10px;margin-bottom:10px}.mf-archive .mf-close{font-size:12px;padding:8px 0;white-space:nowrap}
+ .mf-archive .mf-body{grid-template-rows:490px auto;gap:14px}
+ .mf-archive .mf-folder{left:calc(1% + var(--folder-index)*5.5%);top:calc(19% - var(--folder-index)*5.7%);width:72%;height:65%;transform:rotate(calc(-2deg + var(--folder-index)*1deg));filter:drop-shadow(3px 5px 4px #17191745)}
+ .mf-archive .mf-placeholder{left:0;right:0;top:auto;bottom:0;max-width:100%;font-size:27px;line-height:1.2;letter-spacing:-.025em}
+ .mf-archive.is-open .mf-folder{left:calc(0% + var(--folder-index)*3%);top:calc(36% - var(--folder-index)*4%);width:52%;height:54%}
+ .mf-archive.is-open .mf-folder.is-selected{left:0;top:25%;width:78%;height:75%;transform:rotate(-4deg)}
+ .mf-archive.is-open .mf-folder.is-selected .mf-folder-front{transform:perspective(700px) rotateX(58deg) translateY(4%)}
+ .mf-archive .mf-paper-dock{left:5%;right:0;top:3%;bottom:21%;perspective:800px}
+ .mf-archive .mf-sheet{padding:48px 23px 65px;box-shadow:2px 3px 0 #a59c88,5px 7px 10px #1719172c;transform:translate(-10%,45%) scale(.55) rotate(-5deg)}
+ .mf-archive .mf-sheet:after{inset:4px -4px -4px 4px}
+ .mf-archive .mf-sheet.is-selected{transform:translate(0,0) scale(1) rotate(1deg)}
+ .mf-archive .mf-sheet-number{left:23px;top:22px;font-size:13px}
+ .mf-archive .mf-question{font-size:42px;line-height:1.05}
+ .mf-archive .mf-face-pages{left:calc(5% + 23px);right:23px;bottom:calc(21% + 20px);font-size:18px;gap:16px}
+ .mf-archive .mf-face-pages button{padding:7px 4px;border-bottom-width:2px;min-height:40px}.mf-archive .mf-face-pages button:last-child span{padding-left:8px}
+ .mf-archive .mf-tabs{gap:12px;padding-top:14px}.mf-archive .mf-tab{font-size:28px;min-height:44px;padding:7px 0;gap:4px;border-bottom-width:3px}.mf-archive .mf-tab i{font-size:16px}
+ .mf-archive .mf-folder:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+ .experiment.scene.mf-archive:not(.is-open){height:100%;grid-template-rows:auto minmax(0,1fr);gap:18px}
+ .mf-archive:not(.is-open) .mf-head{position:relative;inset:auto;pointer-events:auto}
+ .mf-archive:not(.is-open) .mf-head h1{font-size:72px;line-height:1;max-width:100%}
+ .mf-archive:not(.is-open) .mf-body{grid-template-rows:minmax(220px,1fr) auto}
+ .mf-archive .mf-portrait{inset:0}
+}

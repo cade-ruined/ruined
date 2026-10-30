@@ -1,0 +1,38 @@
+/* Navigation for the member reader; slide artwork and layouts are untouched. */
+#presenterOpen,
+#presenterPanel {
+  display: none !important;
+}
+
+.masthead .member-return {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 600 clamp(11px, .86cqw, 15px)/1.4 Inter, Arial, sans-serif;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.masthead .member-return:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+@media (max-width: 600px) {
+  .member-deck .masthead {
+    gap: 12px;
+    padding-inline: 14px;
+  }
+
+  .member-deck .masthead .brand {
+    width: clamp(74px, 22vw, 110px);
+  }
+
+  .member-deck .masthead .member-return {
+    font-size: 11px;
+  }
+
+  .member-deck .masthead > button:last-child {
+    gap: 4px;
+  }
+}

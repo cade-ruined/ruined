@@ -16,10 +16,10 @@ type FoundationApiResponse = {
 };
 
 function actionLabel(state: MemberFoundationsState) {
-  if (state.status === "completed") return "Revisit Foundations";
-  if (!state.enrollmentId || state.status === "not_started") return "Begin Foundations";
+  if (state.status === "completed") return "Revisit practice";
+  if (!state.enrollmentId || state.status === "not_started") return "Begin practice";
   if (state.readyForCircle) return "Return to final moment";
-  return "Continue Foundations";
+  return "Continue practice";
 }
 
 export default function MemberFoundationsHome({
@@ -99,7 +99,23 @@ export default function MemberFoundationsHome({
           </p>
         </header>
 
-        <section aria-label="Your Foundations progress" className={styles.practice}>
+        <section aria-label="Foundations 01 presentation" className={styles.practice}>
+          <p className={styles.deckLabel}>Foundations 01</p>
+          <div className={styles.resume}>
+            <p className={styles.moment}>After the Fear.</p>
+            {/* This route returns standalone HTML, not a Next.js page payload. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a className={`member-button member-button-primary ${styles.continue}`} href="/my/foundations/deck">
+              <span>Open Foundations 01</span>
+              <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <p className={styles.privacy}>Explore the presentation at your own pace.</p>
+        </section>
+      </div>
+
+        <section aria-label="Your Foundations progress" className={styles.exercises}>
+          <h2 className={styles.exercisesTitle}>Practice &amp; exercises</h2>
           <div className={styles.progressLabel}>
             <span>{completed ? "Completed" : state.enrollmentId ? "Your place" : "A shared beginning"}</span>
             <span>{state.completedUnits} / {state.totalUnits} moments</span>
@@ -121,7 +137,7 @@ export default function MemberFoundationsHome({
               {completed ? "Foundations, at your own pace." : nextMoment?.label ?? "A shared beginning"}
             </p>
             <button
-              className={`member-button member-button-primary ${styles.continue}`}
+              className={`member-button member-button-secondary ${styles.continue}`}
               disabled={pending}
               onClick={enterFoundations}
               type="button"
@@ -133,7 +149,6 @@ export default function MemberFoundationsHome({
           {error ? <p role="alert" className={styles.error}>{error}</p> : null}
           <p className={styles.privacy}>Only your place in the path is saved.</p>
         </section>
-      </div>
 
       <aside className={styles.circle} aria-label="Circle status">
         <p>

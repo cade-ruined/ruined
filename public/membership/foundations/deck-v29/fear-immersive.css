@@ -1,0 +1,71 @@
+/* The storm stays present while the participant moves toward an action. */
+body[data-slide="06"] #app{position:relative;isolation:isolate;overflow:hidden;grid-template-rows:minmax(0,1fr)}
+body[data-slide="06"] #stage{grid-area:1/1;overflow:hidden}
+body[data-slide="06"] .masthead,body[data-slide="06"] .transport{position:absolute;left:0;right:0;color:var(--paper);background:transparent;border-color:#eee9dd35}
+body[data-slide="06"] .masthead{top:0;height:4.375cqw;background:linear-gradient(#11191280,transparent)}
+body[data-slide="06"] .transport{bottom:0;height:5.15625cqw;background:linear-gradient(transparent,#111912aa)}
+body[data-slide="06"] .brand img{filter:brightness(0) invert(1)}
+body[data-slide="06"] .progress-track{background:#eee9dd33}
+body[data-slide="06"] .progress-track>span{background:var(--paper)}
+.experiment.scene.fear-experiment{height:100%;min-height:100%;padding:0;display:block;background:#111912;color:var(--paper)}
+.fear-experiment .foundation-storm:after{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(90deg,#0b150fe8 0%,#0b150fc4 30%,#0b150f33 51%,#0b150f55 64%,#0b150fd9 100%),linear-gradient(transparent 65%,#0b150fba 100%)}
+.fear-experiment>.fear-shutter{position:absolute;inset:0;width:100%;height:100%;display:block;border:0;z-index:0;padding:0;background:none;overflow:hidden}
+.fear-experiment>.fear-shutter .foundation-storm{height:100%;width:100%;aspect-ratio:auto}
+.fear-experiment .foundation-storm>.foundation-storm-poster,.fear-experiment .foundation-storm>.foundation-storm-video{height:100%;object-fit:cover;object-position:center}
+.fear-experiment .foundation-storm>.foundation-storm-foreground{height:100.648%;min-height:0;object-fit:cover;object-position:center top}
+.fear-experiment .foundation-storm--moving>.foundation-storm-foreground{opacity:1;visibility:visible}
+.fear-experiment .foundation-storm-person{position:absolute;inset:0;z-index:2;pointer-events:none;user-select:none;transform-origin:50% 65%;transform:translate(calc(var(--person-progress,0)*15%),var(--person-rise,0%)) scale(var(--person-scale,1));will-change:transform}
+.fear-experiment .foundation-storm-person>img{position:absolute;left:49.7%;top:31.5%;height:58.3%;width:auto;max-width:none;transform:translateX(-50%);pointer-events:none;user-select:none}
+.fear-experiment>.fear-head{top:6cqw;right:4cqw;z-index:5}
+.fear-experiment .fear-why-toggle{font:700 1.2cqw/1.2 var(--mono);letter-spacing:.06em;gap:.7em;margin:0;min-height:34px;padding:.65em .8em;border:1px solid #eee9dd66;background:#171917e8;color:var(--paper)}
+.fear-experiment .fear-body{position:static;display:block;height:100%;min-height:0;pointer-events:none}
+.fear-experiment .fear-why-dialog{pointer-events:auto}
+.fear-experiment .fear-invitation{position:absolute;left:4cqw;top:22%;width:39%;max-width:39%;z-index:2;text-wrap:pretty;text-shadow:0 2px 14px #0007}
+.fear-experiment .fear-invitation>span{display:block;font:450 2.7cqw/1.22 Inter,Arial,sans-serif;letter-spacing:-.035em;max-width:92%}
+.fear-experiment .fear-invitation>strong{display:block;font:400 5.1cqw/1.04 var(--display);letter-spacing:-.02em;color:var(--yellow);margin-top:2cqw}
+.fear-experiment .fear-chamber{position:absolute;left:34%;right:4%;top:20%;bottom:23%;min-height:0;display:block;overflow:visible;isolation:auto;background:none;color:var(--paper);z-index:2}
+.fear-experiment .fear-choice-map{position:absolute;inset:0;height:100%;pointer-events:none}
+.fear-experiment .fear-shutter-word{position:absolute;left:34%;top:50%;transform:translate(-50%,-165%);font:400 4cqw/1 var(--display);letter-spacing:-.02em;writing-mode:horizontal-tb;text-shadow:0 2px 18px #000;pointer-events:none}
+.fear-experiment .fear-guide{stroke:#eee9dd77;stroke-width:.12cqw}
+.fear-experiment .fear-route{stroke-width:.25cqw;filter:drop-shadow(0 1px 4px #111912)}
+.fear-experiment .fear-progress-marker{width:3.5cqw;height:3.5cqw;min-width:40px;min-height:40px;pointer-events:auto;border:0;box-shadow:0 2px 20px #0005}
+.fear-experiment .fear-progress-marker span{font-size:3cqw}
+.fear-experiment .fear-destinations{left:69%;right:0}
+.fear-experiment .fear-destinations button{font-size:3.5cqw;line-height:1.06;white-space:nowrap;pointer-events:auto;text-shadow:0 2px 12px #0008;border-color:#eee9dd3d}
+.fear-experiment .fear-destinations button[aria-pressed=true]{color:var(--yellow);border-color:var(--yellow)}
+.fear-experiment .fear-controls{position:absolute;left:4cqw;right:4cqw;bottom:8.1cqw;z-index:2;grid-template-columns:auto minmax(0,1fr) 3.8cqw;gap:2.5cqw;pointer-events:auto}
+.fear-experiment .fear-move-label{font:700 1.5cqw/1.2 var(--mono);letter-spacing:.045em}
+.fear-experiment input.fear-range{height:3.5cqw;color:var(--paper)}
+.fear-experiment input.fear-range::-webkit-slider-runnable-track{height:2px;background:#eee9dd99}
+.fear-experiment input.fear-range::-webkit-slider-thumb{height:2.3cqw;width:.8cqw;background:var(--yellow);margin-top:calc(1px - 1.15cqw)}
+.fear-experiment input.fear-range::-moz-range-track{height:2px;background:#eee9dd99}
+.fear-experiment input.fear-range::-moz-range-thumb{height:2.3cqw;width:.8cqw;background:var(--yellow)}
+.fear-experiment .fear-reset{height:3.5cqw;width:3.8cqw;font-size:3cqw}
+
+@media(max-width:600px){
+ body[data-slide="06"] .masthead{height:48px}
+ body[data-slide="06"] .transport{height:66px}
+ .experiment.scene.fear-experiment{height:100%;min-height:100%;padding:0}
+ .fear-experiment .foundation-storm:after{background:linear-gradient(90deg,#0b150fa8,#0b150f33 57%,#0b150fba),linear-gradient(#0b150f80,transparent 44%,#0b150fa8 78%)}
+ .fear-experiment .foundation-storm-person{transform-origin:35% 65%;transform:translate(calc(var(--person-progress,0)*8%),calc(var(--person-rise,0%)*.45)) scale(var(--person-scale,1))}
+ .fear-experiment .foundation-storm-person>img{left:34.5%;top:43.3%;height:39%}
+ .fear-experiment>.fear-head{top:64px;right:23px}
+ .fear-experiment .fear-why-toggle{font-size:11px;min-height:40px;padding:10px 12px;gap:7px}
+ .fear-experiment .fear-invitation{top:135px;left:23px;width:82%;max-width:82%}
+ .fear-experiment .fear-invitation>span{font-size:20px;line-height:1.22;max-width:86%}
+ .fear-experiment .fear-invitation>strong{font-size:39px;line-height:1.06;margin-top:15px;max-width:95%}
+ .fear-experiment .fear-chamber{left:0;right:23px;top:43%;bottom:22%;height:auto;display:block}
+ .fear-experiment .fear-choice-map{position:absolute;inset:0;height:100%}
+ .fear-experiment .fear-shutter-word{left:47%;top:4%;font-size:34px;transform:translate(-50%,-50%)}
+ .fear-experiment .fear-destinations{left:69%;right:0}
+ .fear-experiment .fear-destinations button{font-size:26px;white-space:normal;border-bottom-width:1px}
+ .fear-experiment .fear-progress-marker{width:34px;height:34px;min-width:34px;min-height:34px}
+ .fear-experiment .fear-progress-marker span{font-size:30px}
+ .fear-experiment .fear-guide{stroke-width:1px}.fear-experiment .fear-route{stroke-width:3px}
+ .fear-experiment .fear-controls{left:23px;right:23px;bottom:86px;grid-template-columns:minmax(0,1fr) 34px;gap:10px 18px}
+ .fear-experiment .fear-move-label{grid-column:1/-1;font-size:13px}
+ .fear-experiment input.fear-range{height:38px}
+ .fear-experiment input.fear-range::-webkit-slider-thumb{width:10px;height:30px;margin-top:-14px}
+ .fear-experiment input.fear-range::-moz-range-thumb{width:10px;height:30px}
+ .fear-experiment .fear-reset{font-size:30px;width:34px;height:38px}
+}

@@ -1,0 +1,43 @@
+/* The layout itself changes: one fixed column becomes an open composition. */
+.purpose-experiment.scene{--pp-progress:0;--pp-ink:#eee9dd;background:#1c211b url('assets/photoshop/polymailer-black.webp') center/cover;color:var(--pp-ink);padding:2cqw 4cqw;display:grid;grid-template-rows:auto minmax(0,1fr);gap:1.2cqw;isolation:isolate}
+.pp-green{position:absolute;inset:0;z-index:-2;background:linear-gradient(#d3d7c740,#d3d7c740),url('assets/photoshop/polymailer-green.webp') center/cover;opacity:min(1,calc(var(--pp-progress)*1.7))}
+.pp-head{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:3;gap:2cqw}
+.pp-head>div>p{font:700 1cqw/1.2 var(--mono);letter-spacing:.12em;margin:0 0 .55cqw}
+.purpose-experiment .pp-head h1{font:400 4.2cqw/1.04 var(--display);letter-spacing:-.025em;margin:0;animation:none}
+.pp-head>button{background:var(--ink);color:var(--paper);font:700 1.15cqw/1.2 var(--mono);padding:.5cqw .65cqw;white-space:nowrap}
+.pp-body{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:1.2cqw;min-height:0}
+.pp-composition{position:relative;min-height:0;isolation:isolate;touch-action:pan-y;cursor:ew-resize;outline-offset:.3cqw;overflow:visible}
+.pp-composition:focus-visible{outline:.18cqw solid var(--yellow)}
+.pp-composition.is-dragging{cursor:grabbing;touch-action:none}
+.pp-known-grid{position:absolute;inset:0 37% 0 0;background:#11171099;border:.15cqw solid #eee9dd44;opacity:max(0,calc(1 - var(--pp-progress)*2.5));pointer-events:none;z-index:-1}
+.pp-piece{position:absolute;display:flex;align-items:center;padding:0 1.4cqw;pointer-events:none;isolation:isolate;min-width:0}
+.pp-material{position:absolute;inset:auto 0 0;height:calc(100% - var(--pp-progress)*97%);background:#121612 url('assets/photoshop/polymailer-black.webp') center/cover;z-index:-1;border-top:.1cqw solid #eee9dd55;opacity:clamp(.08,calc(1 - var(--pp-progress)*1.7),1)}
+.pp-word{font:400 calc(var(--pp-font)*1cqw)/.97 var(--display);letter-spacing:-.025em;white-space:nowrap;color:var(--pp-ink);display:block;user-select:none}
+.pp-known-word{opacity:clamp(0,calc((.5 - var(--pp-progress))*1000),1)}
+.pp-imagined-word{position:absolute;left:1.4cqw;opacity:clamp(0,calc((var(--pp-progress) - .499)*1000),1)}
+.pp-straps{position:absolute;right:12%;top:-130%;height:230%;width:auto;max-width:none;z-index:2;pointer-events:none;transform-origin:80% 0;transform:translateX(calc(var(--pp-progress)*360%)) rotate(calc(var(--pp-progress)*-28deg));opacity:calc(1 - var(--pp-progress))}
+.pp-drag-hint{position:absolute;right:1.2cqw;bottom:1cqw;font:700 1cqw/1.2 var(--mono);letter-spacing:.05em;background:var(--ink);color:var(--paper);padding:.5cqw .7cqw;opacity:calc(1 - var(--pp-progress));pointer-events:none;z-index:4}
+.pp-purpose{font:400 4.2cqw/1.06 var(--display);letter-spacing:-.015em;margin:0;max-width:100%}
+.pp-controls{min-width:0;padding-top:.65cqw;border-top:.12cqw solid currentColor}
+.pp-endpoints{display:flex;justify-content:space-between;gap:2cqw;margin-bottom:.7cqw}
+.pp-endpoints button{font:400 3.6cqw/1.05 var(--display);padding:0;text-align:left;letter-spacing:-.01em;opacity:.6}
+.pp-endpoints button:last-child{text-align:right}
+.pp-endpoints button[aria-pressed=true]{opacity:1}
+.pp-endpoints button:focus-visible,.pp-head button:focus-visible{outline:.2cqw solid var(--red);outline-offset:.3cqw}
+.pp-controls input{display:block;width:100%;height:1.6cqw;margin:0;accent-color:var(--yellow);cursor:ew-resize}
+.pp-dialog{max-width:90%;max-height:90%;border:0;padding:3cqw 4cqw;background:var(--paper) url('assets/figma/paper.webp') center/cover;color:var(--ink)}
+.pp-dialog::backdrop{background:#111a}
+.pp-dialog header{display:flex;justify-content:space-between;gap:3cqw;border-bottom:.15cqw solid currentColor;padding-bottom:1.5cqw;margin-bottom:2cqw}
+.pp-dialog h2{font:400 4.2cqw/1 var(--display)}
+.pp-dialog header button{font:400 4cqw/1 Arial;padding:0}
+.pp-dialog>p{font:400 4.2cqw/1.12 var(--display);margin-bottom:2cqw}
+@media(max-width:600px){
+ .purpose-experiment.scene{padding:24px 23px;gap:20px;height:auto;min-height:100%;grid-template-rows:auto auto}
+ .pp-head>div>p{font-size:10px;margin-bottom:9px}.purpose-experiment .pp-head h1{font-size:36px;line-height:1.07}.pp-head>button{font-size:11px;padding:6px 8px}
+ .pp-body{grid-template-rows:400px auto;gap:18px}.pp-piece{padding:0 9px}.pp-word{font-size:calc(var(--pp-mobile-font)*1px)}.pp-imagined-word{left:9px}
+ .pp-purpose{font-size:30px;line-height:1.1}.pp-controls{padding-top:12px}.pp-endpoints{gap:20px;margin-bottom:10px}.pp-endpoints button{font-size:24px;max-width:48%}.pp-controls input{height:32px}
+ .pp-straps{right:-100px;top:-80%;height:180%}.pp-drag-hint{font-size:9px;padding:6px 8px;left:8px;right:auto;bottom:7px}
+ .pp-dialog{padding:24px}.pp-dialog header{padding-bottom:20px;margin-bottom:24px}.pp-dialog h2{font-size:32px}.pp-dialog header button{font-size:32px}.pp-dialog>p{font-size:28px;line-height:1.15;margin-bottom:22px}
+}
+
+@media(prefers-reduced-motion:no-preference){body:not(.still) .purpose-experiment.is-morphing .pp-piece{transition:left .6s cubic-bezier(.2,.75,.25,1),top .6s cubic-bezier(.2,.75,.25,1),width .6s cubic-bezier(.2,.75,.25,1),height .6s cubic-bezier(.2,.75,.25,1)}body:not(.still) .purpose-experiment.is-morphing .pp-word{transition:font-size .6s cubic-bezier(.2,.75,.25,1)}body:not(.still) .purpose-experiment.is-morphing .pp-straps{transition:transform .6s cubic-bezier(.2,.75,.25,1),opacity .6s}}

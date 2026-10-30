@@ -1,0 +1,40 @@
+{
+  "sourceDocument": "Untitled-1",
+  "sourceDocumentCanvas": [
+    4086,
+    4239
+  ],
+  "sourceDocumentMode": "CMYK 8-bit",
+  "sourceDocumentPriorState": "Already unsaved, per native UI observation by root; exported without saving original",
+  "nativeExportPSD": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/source/photoshop-straps-v6/straps-v6_0000_Layer 2 copy 2 (merged).psd",
+  "nativeExportSHA256": "b014cf2a04c9d6cc31f8d29be3e8750b7440e0c2e29e62f565c6494563fa0f38",
+  "sourceLayer": "Layer 2 copy 2 (merged)",
+  "sourceLayerBounds": [
+    1974,
+    144,
+    3774,
+    4138
+  ],
+  "fullArtworkDimensions": [
+    1800,
+    3994
+  ],
+  "sourceICCProfile": "U.S. Web Coated (SWOP) v2",
+  "outputICCProfile": "sRGB",
+  "colorConversion": "psd-tools Layer.topil(apply_icc=True): embedded CMYK ICC converted to sRGB; source alpha retained",
+  "geometry": "Full native merged layer bounds; only empty document canvas padding omitted. No crop inside artwork, retouch, regeneration, or resizing.",
+  "fullResolutionPNG": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/source/photoshop-straps-v6/straps-bracket-full-layer.png",
+  "fullResolutionPNGSHA256": "8ec6e6b59c48baa1bebb697ecab5fcc8410d45facb2927ca32e603e9dd18aef0",
+  "webAsset": "/Users/cademangelson/.codex/.chatgpt-projects/g-p-68b1f6007f1c81919f1b9b7085c9eeac/outputs/foundations-interactive/site/dist/assets/photoshop/straps-bracket.webp",
+  "webDimensions": [
+    1800,
+    3994
+  ],
+  "webEncoding": "lossless",
+  "initialLosslessBytes": 3378880,
+  "webBytes": 3413052,
+  "webSHA256": "3bdb57a64b8d889e95f0ebe78e0570d2b3aca99795324433de63753932f22404",
+  "alphaPixelIdentical": true,
+  "rgbaPixelsIdenticalToMaster": true,
+  "priorAssetsVerifiedUnchanged": 62
+}

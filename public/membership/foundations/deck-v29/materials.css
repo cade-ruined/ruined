@@ -1,0 +1,16 @@
+/* Materials exported from the user's open Polymailer Photoshop document.
+   Scoped surfaces preserve slide 18 and the existing palette/type system. */
+.experiment.scene:is(.ex-relationships,.ex-causal),
+.experiment.scene.ex-reframe .ex-view-now {
+  background-color:var(--sage);
+  background-image:linear-gradient(#d3d7c740,#d3d7c740),url('assets/photoshop/polymailer-green.webp');
+  background-position:center;background-size:cover;background-repeat:no-repeat;
+}
+.experiment.scene:is(.ex-relationships,.ex-causal){--red:#913620}
+.experiment.scene.fear-experiment .fear-shutter,
+.readable.refined.readable-slide-6:has(.fsi-definition.is-recognizes),
+.experiment.scene.ex-reframe .ex-view-then {
+  background-color:var(--ink);
+  background-image:linear-gradient(#191b185c,#191b185c),url('assets/photoshop/polymailer-black.webp');
+  background-position:center;background-size:cover;background-repeat:no-repeat;
+}

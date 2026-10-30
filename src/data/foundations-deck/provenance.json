@@ -1,0 +1,460 @@
+{
+  "title": "RUINED \u2014 Foundations 01",
+  "version": 29,
+  "source_url": "https://ruined-foundations-01.lightningcafe.chatgpt.site",
+  "source_commit": "6685531a996133d5dc0ffb2b926a029af5628cfe",
+  "files": [
+    {
+      "path": "app.js",
+      "sha256": "d570dddf28ec04c6fc8707b4fab4e21b39605e52a6aaa96ca37df73f16f77da9"
+    },
+    {
+      "path": "assets/brand/ruined-wordmark.svg",
+      "sha256": "46351873b1cced56f09233a6b79b693559908b4ad89518eb1b6d0581fc5e413d"
+    },
+    {
+      "path": "assets/figma/archive-folders-thumb.webp",
+      "sha256": "8c21ccc5ca138e279517fc15be517773972029b38eff97c53363db45ee2fe764"
+    },
+    {
+      "path": "assets/figma/archive-folders.webp",
+      "sha256": "139a94cf2afa2f2028013a89cf31e76db6666f98bca87ed531dd127f380799f3"
+    },
+    {
+      "path": "assets/figma/archive-wall-thumb.webp",
+      "sha256": "8664c946c31dd6e40c24a0b32e49abad1daa615b791c50e664ebe7673c25928e"
+    },
+    {
+      "path": "assets/figma/archive-wall.webp",
+      "sha256": "29d33a90d6a2f69b8e4eae0c31436e31f175d41942a480697d8399b53b1dd825"
+    },
+    {
+      "path": "assets/figma/black-texture-thumb.webp",
+      "sha256": "7b87dcd5e2b978fceea12bc0eca6c482800d0732575f062b6ff9f539499c48b8"
+    },
+    {
+      "path": "assets/figma/black-texture.webp",
+      "sha256": "dd75ce63a59b4b10ec0f146f9e3e5688c6095b82164c4b0210cd8b9740de00a2"
+    },
+    {
+      "path": "assets/figma/blur-thumb.webp",
+      "sha256": "f8e11d2b909b6309206d1cd4dec21bb67f685f31b6128bd1c24cfcc6c6755ba9"
+    },
+    {
+      "path": "assets/figma/blur.webp",
+      "sha256": "2e27f190263ccd353c011adc87cb5944654855944e7c803ca11ebfe63b912408"
+    },
+    {
+      "path": "assets/figma/collage-thumb.webp",
+      "sha256": "f94cfad8011e1085c92c36389d3181361b40dbe2c3a185352a1194273b13a2b1"
+    },
+    {
+      "path": "assets/figma/collage-white-thumb.webp",
+      "sha256": "063662487ad920e6ce40b6e767fbf919a3a728f8a0b1b0ba6aae549e8813a26b"
+    },
+    {
+      "path": "assets/figma/collage-white.webp",
+      "sha256": "6894debd73a3c3e7bc475a1671203551a8682d2cd4bd8b8e1c4043d7814d232f"
+    },
+    {
+      "path": "assets/figma/collage.webp",
+      "sha256": "d26b65c29cb7b8ae45f466049446477dd9df6b82705e387b90e67c9c9ea03932"
+    },
+    {
+      "path": "assets/figma/couch-thumb.webp",
+      "sha256": "ce172f1fd193203b92fa856de7c07a3aafde0750525445d2fd9c13acd4700084"
+    },
+    {
+      "path": "assets/figma/couch.webp",
+      "sha256": "519b73ebf789ae16ed37f43b0a0a302c79c2de39a21e1235135d6de7eb2a507d"
+    },
+    {
+      "path": "assets/figma/doorway-thumb.webp",
+      "sha256": "4e25c7c5f8f8ee1401a5fb1342d28569d5f08eac127bafd77bcebffa6f5f3719"
+    },
+    {
+      "path": "assets/figma/doorway.webp",
+      "sha256": "c31cd36388f30f11ffeec01c4e85a3a9f8c0f24a02dfb1bc4c14ef6089a5e26d"
+    },
+    {
+      "path": "assets/figma/falling-figure-thumb.webp",
+      "sha256": "287f474015602b83027d014a18e68ebbf52dd699681c4057da3be6c40184a514"
+    },
+    {
+      "path": "assets/figma/falling-figure.webp",
+      "sha256": "f564084781400f9ca8eca614fba141c71b6272c8ad1f7a652e15b8cd7623999e"
+    },
+    {
+      "path": "assets/figma/flowers-thumb.webp",
+      "sha256": "0d1b5d1eb2b8a8b75a4c06a91e6d68fc0cd1fb5bab106310ec5cb950c6bb934f"
+    },
+    {
+      "path": "assets/figma/flowers.webp",
+      "sha256": "febb86b7a0a7a22b0b613f4a990f091035d969848e580120722f643757753966"
+    },
+    {
+      "path": "assets/figma/frame-1140-281.webp",
+      "sha256": "edb8c080d54fba14cda95119ee6e456069c25d520a2a63dc798027becc06dc68"
+    },
+    {
+      "path": "assets/figma/frame-1140-294.webp",
+      "sha256": "b1f5d143493a26c6b28f608b1d4ad180713e9ffbc05003c377666861ca50e0aa"
+    },
+    {
+      "path": "assets/figma/frame-1148-310.webp",
+      "sha256": "f058ac1bbd7678235cbad19064d764a58e77e618f84f3547f25f202c885865b6"
+    },
+    {
+      "path": "assets/figma/frame-1149-319.webp",
+      "sha256": "9993edc251a096613370a4bcb3b865aee382bfbafcd30bfc0741fea2efe49c80"
+    },
+    {
+      "path": "assets/figma/frame-1149-321.webp",
+      "sha256": "ef4a7bb807665a586492c6ef1c5c9939db5d143e921594350569af8702d5acfe"
+    },
+    {
+      "path": "assets/figma/frame-1149-323.webp",
+      "sha256": "d95d8f3395449c4dee6fdb3521365d62f505202d88a102ae9eed75f010669708"
+    },
+    {
+      "path": "assets/figma/frame-1155-350.webp",
+      "sha256": "9eded28c3a5d10e75529a07a4b06e60cbcc01850f4db18afb4910e494b3cd4af"
+    },
+    {
+      "path": "assets/figma/frame-1155-353.webp",
+      "sha256": "1d867fc37f4b42b640fff6f53bc6a9a13100a3a23ba834481528666fc0ada325"
+    },
+    {
+      "path": "assets/figma/frame-1162-356.webp",
+      "sha256": "f55c5447f87b7f9a2f520b0db24658d443ee4a23acda5f011a304870c5296a43"
+    },
+    {
+      "path": "assets/figma/frame-1163-357.webp",
+      "sha256": "05e45514a534e81b8279cb2da20dbe455c9f4d496cb96d8d877ab6683e6fd359"
+    },
+    {
+      "path": "assets/figma/frame-1165-358.webp",
+      "sha256": "1065477840eb7e74f60f3d3b3b037185baad4767f30dfddcdd48ac1a7e71ff09"
+    },
+    {
+      "path": "assets/figma/frame-1167-359.webp",
+      "sha256": "295980f7b5c87f427bbbb83f4814f97b3aa281e60e5a26f26494363bbaa98f6c"
+    },
+    {
+      "path": "assets/figma/frame-1167-362.webp",
+      "sha256": "18c548042244cc1462935ea9d5a1f402fff3a90bceab0e1e7cbcdc9d4e800b82"
+    },
+    {
+      "path": "assets/figma/frame-1167-366.webp",
+      "sha256": "ffcf65fbae335fbb817e8004487778cfa1c8aeaa36f46b9857494e3c794ed556"
+    },
+    {
+      "path": "assets/figma/frame-1167-367.webp",
+      "sha256": "be05cd29f3bf2efba26d99d0c6ebf7c02b889fea2da17ac664da9433405e259e"
+    },
+    {
+      "path": "assets/figma/frame-1167-369.webp",
+      "sha256": "8ae5eeab892bfda63ebc7793b5e6d05fbbf5c0e484cd7804836dfd65304b70a8"
+    },
+    {
+      "path": "assets/figma/frame-1167-373.webp",
+      "sha256": "36dfcac855f5cb0419a9516fca35e6735241dab138431f445b7c25aaa3b53e29"
+    },
+    {
+      "path": "assets/figma/frame-1167-376.webp",
+      "sha256": "4fca9e7180e77829a491a2e965fea291c8bef4c3c25d1e220acb6e63ba5b9a8b"
+    },
+    {
+      "path": "assets/figma/frame-1167-377.webp",
+      "sha256": "449ee0735f9523aef69605f3b140bc288fc71abce135d609573eb82b4c2803b7"
+    },
+    {
+      "path": "assets/figma/frame-1167-378.webp",
+      "sha256": "eab7d009c17ea9c1bcc772f25f495ca68c3813794c36df726f916dc075377252"
+    },
+    {
+      "path": "assets/figma/frame-1167-379.webp",
+      "sha256": "b89428618e306460df8ec92bdc5cfbef79dab98008e0028e7faac1f9e2adebd3"
+    },
+    {
+      "path": "assets/figma/honor-roll-thumb.webp",
+      "sha256": "7d6ac325eefb0b0301fbc699d421d810af4bc004777f90eafcf29856e8aed9a1"
+    },
+    {
+      "path": "assets/figma/honor-roll.webp",
+      "sha256": "2c764c527a5d12578797bde0855113b1df40a56f8655f1246fd027dd0f1c8de8"
+    },
+    {
+      "path": "assets/figma/meadow-figure-thumb.webp",
+      "sha256": "0b21686edc23fd9f6e07c74f0ee79123efdb0b5fd9c595e8b572543674b16930"
+    },
+    {
+      "path": "assets/figma/meadow-figure.webp",
+      "sha256": "dbac875832c960dc3f76e4af28a2aa134dcad9a40a86f96a02694cdca72dbc43"
+    },
+    {
+      "path": "assets/figma/paper-thumb.webp",
+      "sha256": "7bf165db13c4cf8304b6bd2fa9675b14315c9dfb5c91324c467086a0bf56c945"
+    },
+    {
+      "path": "assets/figma/paper.webp",
+      "sha256": "84351076e92da846991f14dd8ca769c362b5bdc5274dd53a7995903e61de2cf0"
+    },
+    {
+      "path": "assets/figma/sage-paper-thumb.webp",
+      "sha256": "3e36350997d386558432966d5c546c67539d28ad9e42f80ba5e665371218920e"
+    },
+    {
+      "path": "assets/figma/sage-paper.webp",
+      "sha256": "6f1daf5ed406a405da044045bf60395d4cd561bcd7f71d5294c880bdb4805cfd"
+    },
+    {
+      "path": "assets/figma/shutter-wall-thumb.webp",
+      "sha256": "8df686abba885247f09ebbe78d08e0c4b2b6bc36efd47e490fbf9cea227e77d2"
+    },
+    {
+      "path": "assets/figma/shutter-wall.webp",
+      "sha256": "3eeed7ec2786d79b333effd16cd328faf04dc7a6f9f9041eaf2c65b42f09f1b9"
+    },
+    {
+      "path": "assets/figma/storm-thumb.webp",
+      "sha256": "73382f4bad9ebb099950d9f3a120391095649eb5479d85954c69a408cfbcf487"
+    },
+    {
+      "path": "assets/figma/storm.webp",
+      "sha256": "c2b07246a1fad8e8ec170cee1bca48e2468030df28e48929fe88ea7fa84c2312"
+    },
+    {
+      "path": "assets/figma/yellow-lines-original.webp",
+      "sha256": "dd051d7b559193683c862449eaebb06b77097cec875d74a736db2e09be3e91a2"
+    },
+    {
+      "path": "assets/figma/yellow-lines-thumb.webp",
+      "sha256": "cf2149af5de8b563cf4ff7e89448ae29d89f6263788d29b77fec00cfc79840c3"
+    },
+    {
+      "path": "assets/figma/yellow-lines.webp",
+      "sha256": "0a9370ef59a41e98e16ab4448c977649d988b7d25c0575640ff3fd083ab1ef7e"
+    },
+    {
+      "path": "assets/folders/cut.webp",
+      "sha256": "cfb162fcefdf6f1177bd43fbca53359b41c55eca71d0ce3cea0fa0429cee8cd4"
+    },
+    {
+      "path": "assets/folders/face.webp",
+      "sha256": "9a6d7708f9441dbd46269a9777021aa920bbde214a692b829c5421797a9c33f8"
+    },
+    {
+      "path": "assets/folders/grow.webp",
+      "sha256": "209e39135ec84cae786fb1cf3d5ed3eb8b7b7e53be6dbb33db5d8cdd80c0296a"
+    },
+    {
+      "path": "assets/folders/see.webp",
+      "sha256": "35eae5c700bcff53734d15b4f620baad6482bd376e903fe8476fce683c9d43fc"
+    },
+    {
+      "path": "assets/fonts/CadeHandy2.otf",
+      "sha256": "29bdf414c04d6980928a4a817ca780c949fe3fea61c6f4f72db6b458f081b3b0"
+    },
+    {
+      "path": "assets/fonts/anton.ttf",
+      "sha256": "fd9301f2837c99df2be07cc7f0be66e9470f5354d8fcf1606027c67fcd637a53"
+    },
+    {
+      "path": "assets/fonts/inter.woff2",
+      "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
+    },
+    {
+      "path": "assets/moving-fear/landscape-clean.png",
+      "sha256": "7f00d950c6c1dc8251128ec787125a0b79a202b689af471ab89bc1c167af46ea"
+    },
+    {
+      "path": "assets/moving-fear/woman-cutout.png",
+      "sha256": "29b8c7a91f9c8234a56007919fe0ca3429028db0e4cad2af6fe9498906c61939"
+    },
+    {
+      "path": "assets/people/mitch-ford-couch.webp",
+      "sha256": "e26784b28f4e3c3a08d3e71b84eb59573f37e39e2702d138b9ed9b08342a3ffc"
+    },
+    {
+      "path": "assets/photoshop/polymailer-black.webp",
+      "sha256": "f7d0ffebfd6a64e36168fec5590cccea2c8c83a1a77b8fbe927a31245fa1ff79"
+    },
+    {
+      "path": "assets/photoshop/polymailer-green.webp",
+      "sha256": "b349bbfa37622cd9bf0cafd58b80e51c7d6d29970b01ddbd803c3dc2eba93d0a"
+    },
+    {
+      "path": "assets/photoshop/provenance.json",
+      "sha256": "f78d1e5b17307a6d6f97ede9ea20fc853170285d9eb8fc52d6f00c8a2f9a8315"
+    },
+    {
+      "path": "assets/photoshop/straps-bracket-provenance.json",
+      "sha256": "3fdddea7256bb06495ba367cc47861ee43364e71a83682ea0b0833a0e03db8c0"
+    },
+    {
+      "path": "assets/photoshop/straps-bracket.webp",
+      "sha256": "3bdb57a64b8d889e95f0ebe78e0570d2b3aca99795324433de63753932f22404"
+    },
+    {
+      "path": "assets/video/tornado.mp4",
+      "sha256": "9644131dac3b148e90dcc515300353d7921e5873034025dfc7e2467be890d9af"
+    },
+    {
+      "path": "content.js",
+      "sha256": "b735c1e5072558981404b5ccf78ede67101e4dacd48e83264ef1b1617cb10936"
+    },
+    {
+      "path": "controls.js",
+      "sha256": "50702bee159a0dd505135bf7a2b32795aa6628afe3b9e543db51af7cf0a3165d"
+    },
+    {
+      "path": "cover.css",
+      "sha256": "7c9f2e7a22801f650ef9cb5f9bde8dfcae35e12e1fb0d613fa59a213bc544b7e"
+    },
+    {
+      "path": "cover.js",
+      "sha256": "6b4a4327a36a0e27ea28b6a4480e881e6fa79f555877921c672ad1b49838de5e"
+    },
+    {
+      "path": "editorial-reduction.css",
+      "sha256": "8c60e8e1eb77237bd5a937332d546560538bcd98cee8276a363fe4c4242ce27f"
+    },
+    {
+      "path": "editorial-scenes.css",
+      "sha256": "2eccc2c1a5bc40550550b17138b9b385a557621ba9462fa7379b0e9324a8fd1e"
+    },
+    {
+      "path": "editorial-scenes.js",
+      "sha256": "a3c7684f4f9068b713a66982f2849acbb61e69521d50e689bd14da26f36f2656"
+    },
+    {
+      "path": "experiments.css",
+      "sha256": "799fd21f7c121f79e84ea874af886a6c5e106469c4e7b60dd9c347dffb894275"
+    },
+    {
+      "path": "experiments.js",
+      "sha256": "2d451744f8a8648a2bf6b9f94e7a99d8349c1ef91f61d3a69ff0ac62cad61d40"
+    },
+    {
+      "path": "fear-immersive.css",
+      "sha256": "a9e9a0db143d673f2ad8cd6ff29811f918dd62ca3034bd03a84d0db6dab723d5"
+    },
+    {
+      "path": "finale-immersive.css",
+      "sha256": "6cd355a3d9e71cc627e71268fa226a979ec8f7a5a18e132d4afd44d900069a9b"
+    },
+    {
+      "path": "index.html",
+      "sha256": "686fca58b9f7e83c29549abdcd02bc8ab04670b54e630e30018086952792e46d"
+    },
+    {
+      "path": "interaction-scenes.css",
+      "sha256": "be666a42344d662a77645ea88346bc694303deeb280d51b4fcc663313d82a13a"
+    },
+    {
+      "path": "interaction-scenes.js",
+      "sha256": "bcbc0d269fb7d8732e16efe9441c7e7e05417295832ef1b17023f719633dab94"
+    },
+    {
+      "path": "materials.css",
+      "sha256": "4c505bdbae6e4987a78eb8c2db0746d4e88adf1780e640e62c6c706ed1362f8a"
+    },
+    {
+      "path": "mechanism-connections.css",
+      "sha256": "841b9ceb6eb8a60da84275bf4ad796600a8b31a6ed9c893706002a93c69184e2"
+    },
+    {
+      "path": "mechanism-connections.js",
+      "sha256": "435bd058c17d6c73b3b4f1832d66247c2591dbe1b01421fe16fbdf96ec7895b3"
+    },
+    {
+      "path": "mechanism-fear.css",
+      "sha256": "e10f5e5e0f4f7d5ce125385db1384c8f4620426bb4f5fe8643ff0ad41d456b60"
+    },
+    {
+      "path": "mechanism-fear.js",
+      "sha256": "355ee4cc0d6b6d8a9954fa738b28c6364be07a7a85a2ab2714b6abb2a96ed74f"
+    },
+    {
+      "path": "mechanism-folders.css",
+      "sha256": "8325501c9915c3e7dd864ba5744f47e6de478f44a178b5cc74b179a7725a2ff5"
+    },
+    {
+      "path": "mechanism-folders.js",
+      "sha256": "e83359929d93ed5851c04466a8d034fded55d5dd98c1e4e0e38e3f69b77caaa7"
+    },
+    {
+      "path": "mechanism-meaning.css",
+      "sha256": "0b234b33c83b24b74a507e077297956620ca47db32cf6924cb89754f947df0a1"
+    },
+    {
+      "path": "mechanism-meaning.js",
+      "sha256": "50ef19c64fcfe8b742d42e508a2ac9fc4205cd7c2238ae35c6916c967f971b3f"
+    },
+    {
+      "path": "mechanism-stories.css",
+      "sha256": "ccc7b3139193aed161583ee55f31d1c4b0d4d0a4ba0b0cfa308aba33a49f9ffe"
+    },
+    {
+      "path": "mechanism-stories.js",
+      "sha256": "bb48fada93fbc7a5566dec63157694d2929806963ca1fdf62a539aa476791639"
+    },
+    {
+      "path": "philosophy.css",
+      "sha256": "c56e67c37509f649e1c915fda20cb2b9a531d45f567a6aee6005d4548d5fadf2"
+    },
+    {
+      "path": "philosophy.js",
+      "sha256": "65613177d042221e5ba5bc7d498a083190ff73d5e269d74065327879d3cabc1c"
+    },
+    {
+      "path": "presentation.css",
+      "sha256": "4a1a991c3b01e723b8332f1c0ec5a420a3d3929bee7cd0ffb42860afe88871a3"
+    },
+    {
+      "path": "purpose.css",
+      "sha256": "2b887a8d2649422b92a9f9881be27d2fc0b6890d9edada95c72c04645c1b0d40"
+    },
+    {
+      "path": "purpose.js",
+      "sha256": "f76f7c8d3cc0e2b2dc6cc65f85830b45db2c4ced7ecab26d75bc7699ac042e66"
+    },
+    {
+      "path": "readability.css",
+      "sha256": "540960c2a436e786fb264775db673c2fa395bdb91adad4ab131ba460771bd64b"
+    },
+    {
+      "path": "readability.js",
+      "sha256": "54fea3fe0f8eb41bec2fe939f9e3a77d3a3fd2b459d20fad673546edf57ea9ca"
+    },
+    {
+      "path": "refined.css",
+      "sha256": "b94aacecb09a2751b64d4c764f5838755e97f3d7215e36a311d10c66549dd40f"
+    },
+    {
+      "path": "storm-media.css",
+      "sha256": "7e068d5fc5be4b2f02025c9771f3df16f5b09f869a71b6e257e2c869b29d4c4d"
+    },
+    {
+      "path": "storm-media.js",
+      "sha256": "6e18bcfbe323ff361440055409057bc6ffa78ec99f3992d768252c092da2e2ed"
+    },
+    {
+      "path": "style.css",
+      "sha256": "5d070ed90181bf44de7e7f98df15c71fe530a3f034402a53fe95b9449d243f87"
+    },
+    {
+      "path": "typography-practice.css",
+      "sha256": "8568f488f4c4ec37e04aa3128b6dc3a446bfa27d1957a4601c15e9e40469d821"
+    },
+    {
+      "path": "typography-reflection.css",
+      "sha256": "d85af526bae67ead7c84e13101e03056c643b0575a6b7bf6d331d2def3c00a9f"
+    }
+  ],
+  "integration_adapters": [
+    "member.js",
+    "member.css"
+  ]
+}
