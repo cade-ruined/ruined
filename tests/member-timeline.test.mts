@@ -174,7 +174,7 @@ test("approved examples remain presentation-only and in chronological order", ()
   );
 });
 
-test("Foundations exercise navigation is distinct from the public Timeline", async () => {
+test("profile and Foundations navigation lead to the same guided public Timeline", async () => {
   const [navigation, home, page, repository] = await Promise.all([
     readFile(new URL("../src/lib/membership/navigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8"),
@@ -182,17 +182,18 @@ test("Foundations exercise navigation is distinct from the public Timeline", asy
     readFile(new URL("../src/lib/membership/repository.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(navigation, /href: "\/my\/foundations\/timeline", label: "Foundations timeline"/);
+  assert.match(navigation, /href: "\/my\/timeline", label: "Timeline"/);
   assert.match(home, /"timeline","journal"/);
-  assert.doesNotMatch(page, /redirect\("\/my#timeline"\)/);
-  assert.match(repository, /title: "Build your Foundations timeline\."/);
+  assert.match(page, /redirect\("\/my\/timeline"\)/);
+  assert.match(repository, /href: "\/my\/timeline"/);
+  assert.doesNotMatch(repository, /Build your private Foundations timeline/);
 });
 
-test("the timeline retains its private member API and existing downloadable export pipeline", async () => {
+test("legacy timeline tools retain their private API and export pipeline while the profile uses the guided editor", async () => {
   const [component, exportStudio, page, persistence] = await Promise.all([
     readFile(new URL("../src/components/membership/RuinedTimeline.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/TimelineExportStudio.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/my/timeline/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/membership/timeline-persistence.ts", import.meta.url), "utf8"),
   ]);
 
@@ -215,7 +216,8 @@ test("the timeline retains its private member API and existing downloadable expo
   assert.match(exportStudio, /preparedRef\.current !== nextPrepared/);
   assert.doesNotMatch(exportStudio, /html2canvas|dom-to-image|foreignObject/i);
   assert.doesNotMatch(component, /localStorage|sessionStorage|<iframe/i);
-  assert.match(page, /<RuinedTimeline initialTimeline=\{timeline\}/);
+  assert.match(page, /<GuidedTimelinePage moment=\{moment\}/);
+  assert.doesNotMatch(page, /RuinedTimeline/);
 });
 
 test("guided answers survive model conversion, remain searchable, and mark drafts dirty independently", () => {

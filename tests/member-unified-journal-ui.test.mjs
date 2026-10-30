@@ -23,10 +23,11 @@ const text = node => React.isValidElement(node) ? React.Children.toArray(node.pr
 const nodes = node => !React.isValidElement(node) ? [] : [node, ...(node.type.name === "Dialog" && !node.props.open ? [] : React.Children.toArray(node.props.children).flatMap(nodes))];
 
 function fixture({ initialEntries = [entry()], writable = true, preview = false, previewEmpty = false, initialMode = "all", view = "journal", sharingEnabled = false, publicUrl = "/journal/public-member-token", renderLayout, pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false } = {}) {
-  const slots = [], calls = [], guards = [], rendered = [], events = [], eventDetails = [], timers = new Map(), frames = new Map(), revoked = [], createdUrls = [];
+  const slots = [], calls = [], guards = [], rendered = [], events = [], eventDetails = [], navigations = [], timers = new Map(), frames = new Map(), revoked = [], createdUrls = [];
   const entries = new Map(initialEntries.map(value => [value.id, structuredClone(value)]));
   const media = new Map(initialEntries.flatMap(value => value.media.map(item => [item.id, item])));
   const Export = () => null;
+  const StoryContent = () => null;
   let cursor = 0, queued = [], changed = false, tree, uuid = 100, timerId = 0, urlId = 0, cleared = 0, focused = 0, confirmResult = true;
   const props = { writable, preview, previewEmpty, initialMode, view, sharingEnabled, renderLayout, onModeChange(mode) { props.initialMode = mode; } };
   const same = (left, right) => left?.length === right?.length && left.every((value, i) => Object.is(value, right[i]));
@@ -89,8 +90,10 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     if (name === "@/lib/membership/journal-model") return journalModel.exports;
     if (name === "./timeline-model") return timelineModel;
     if (name === "./TimelineExportStudio") return { __esModule: true, default: Export };
+    if (name === "./TimelineStoryContent") return { __esModule: true, default: StoryContent };
     if (name === "./useJournalDraftGuard") return { __esModule: true, default: state => { guards.push(state); return { ownerId, recoveryDraft, dismissRecovery() { recoveryDraft = null; }, clearDraft() { cleared++; } }; } };
     if (name === "next/link") return { __esModule: true, default: "a" };
+    if (name === "next/navigation") return { useRouter: () => ({ push: href => navigations.push(href) }) };
     if (name === "next/image") return { __esModule: true, default: "image" };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     throw Error(`Unexpected Journal dependency ${name}`);
@@ -112,7 +115,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     assert.ok(container, `Missing field ${label}`);
     return nodes(container).find(node => ["input", "textarea", "select"].includes(node.type));
   };
-  return { calls, entries, guards, rendered, events, eventDetails, createdUrls, revoked, render, flush, find, button, field, Export,
+  return { calls, entries, guards, rendered, events, eventDetails, navigations, createdUrls, revoked, render, flush, find, button, field, Export, StoryContent,
     async click(label) { const control = button(label); assert.ok(control, `Missing button ${label}`); assert.equal(Boolean(control.props.disabled), false, `${label} should be enabled`); control.props.onClick(); return flush(); },
     change(label, value) { const control = field(label); control.props.onChange({ target: { value, checked: value } }); return render(); },
     submit(another = false) { return find(node => node.type === "form").props.onSubmit({ preventDefault() {}, nativeEvent: { submitter: { getAttribute: name => name === "data-add-another" && another ? "true" : null } } }); },
@@ -381,7 +384,7 @@ test("Journal and Timeline query separate collections and never flash the other 
   ui.unmount();
 });
 
-test("New + selects private Journal or public Timeline explicitly before composing", async () => {
+test("New + keeps Journal private and sends Timeline to the six-question composer", async () => {
   const ui = fixture({ sharingEnabled: true, initialEntries: [] }); await ui.flush(); await ui.click("New +");
   assert.equal(ui.find(node => node.type === "form"), undefined);
   assert.ok(ui.button("Journal (Private)")); assert.ok(ui.button("Timeline (Public)"));
@@ -392,13 +395,45 @@ test("New + selects private Journal or public Timeline explicitly before composi
   assert.equal(privateSave.body.visibility, "private"); assert.equal(privateSave.body.eventYear, null); assert.equal(privateSave.body.includeOnTimeline, false);
   assert.match(text(ui.render()), /Saved privately in your Journal/);
   await ui.click("New +"); await ui.click("Timeline (Public)");
-  assert.equal(ui.field("Add to Timeline").props.checked, true); assert.equal(ui.field("Title").props.required, false);
-  ui.change("Your words", "A public post without a title or date"); await ui.submit(); await ui.flush();
-  const publicSave = ui.mutate()[1];
-  assert.equal(publicSave.body.visibility, "public"); assert.equal(publicSave.body.includeOnTimeline, true);
-  assert.equal(publicSave.body.eventYear, null); assert.equal(publicSave.body.title, "");
-  assert.match(text(ui.render()), /Added to your public Timeline/);
-  assert.equal(nodes(ui.render()).filter(node => node.type === "article").length, 1);
+  assert.deepEqual(ui.navigations, ["/my/timeline/new"]);
+  assert.equal(ui.find(node => node.type === "form"), undefined, "Timeline does not reuse the ordinary Journal composer");
+  assert.equal(ui.mutate().length, 1, "Choosing Timeline does not publish or mutate a Journal entry");
+  ui.unmount();
+});
+
+test("structured and legacy reflection edits open the guided editor without exposing private answers", async () => {
+  for (const field of ["timelineReflection", "legacyTimelineReflection"]) {
+    const reflection = { meaning: "Only my interpretation", belief: "Only my belief", presentImpact: "Only my present pattern", perspective: "Only my new perspective" };
+    const item = entry({ visibility: "private", includeOnTimeline: false, [field]: reflection });
+    const ui = fixture({ sharingEnabled: true, initialEntries: [item] }); await ui.flush();
+    await ui.click(`Open entry: ${item.title}`);
+    const story = ui.find(node => node.type === ui.StoryContent);
+    assert.deepEqual(story.props.reflection, field === "timelineReflection" ? reflection : undefined);
+    if (field === "legacyTimelineReflection") {
+      assert.match(text(ui.render()), /private reflection answers/);
+      assert.doesNotMatch(text(ui.render()), /Only my interpretation|Only my belief|Only my present pattern|Only my new perspective/);
+    }
+    await ui.click("Edit entry");
+    assert.deepEqual(ui.navigations, [`/my/timeline?moment=${item.id}`]);
+    assert.equal(ui.find(node => node.type === "form"), undefined);
+    assert.equal(ui.mutate().length, 0);
+    assert.equal(ui.entries.get(item.id).visibility, "private");
+    assert.equal(ui.entries.get(item.id).includeOnTimeline, false);
+    ui.unmount();
+  }
+});
+
+test("a published guided Timeline entry previews its new perspective and uses the shared story reader", async () => {
+  const reflection = { meaning: "I had made it mean I failed.", belief: "I had to be perfect.", presentImpact: "I avoided starting.", perspective: "Starting is already a change." };
+  const item = entry({ visibility: "public", timelineReflection: reflection });
+  const ui = fixture({ sharingEnabled: true, initialMode: "timeline", initialEntries: [item] }); await ui.flush();
+  assert.match(text(ui.render()), /Starting is already a change\./);
+  assert.match(text(ui.render()), /Read the story/);
+  await ui.click(`Open entry: ${item.title}`);
+  assert.deepEqual(ui.find(node => node.type === ui.StoryContent).props.reflection, reflection);
+  await ui.click("Edit entry");
+  assert.deepEqual(ui.navigations, [`/my/timeline?moment=${item.id}`]);
+  assert.equal(ui.mutate().length, 0);
   ui.unmount();
 });
 
@@ -420,8 +455,8 @@ test("Timeline creation has no dependency on a card sharing toggle or loaded pro
   const ui = fixture({ sharingEnabled: true, publicUrl: null, initialEntries: [] }); await ui.flush();
   assert.doesNotMatch(text(ui.render()), /Enable public profile sharing/);
   await ui.click("New +"); await ui.click("Timeline (Public)");
-  ui.change("Your words", "Public by explicit post choice"); assert.equal(ui.button("Post to Timeline").props.disabled, false);
-  await ui.submit(); await ui.flush(); assert.equal(ui.mutate()[0].body.visibility, "public"); ui.unmount();
+  assert.deepEqual(ui.navigations, ["/my/timeline/new"]);
+  assert.equal(ui.mutate().length, 0); ui.unmount();
 });
 
 test("a recovered explicitly shared draft retains its choice and stable retry identifier", async () => {
@@ -465,7 +500,7 @@ test("New + resumes an unfinished entry without replacing its destination or con
   assert.equal(nodes(ui.render()).filter(node => node.type === "button" && node.props["aria-label"] === "New +").length, 1);
   assert.equal(ui.find(node => node.props.role === "group" && node.props["aria-label"] === "Journal view"), undefined);
   assert.equal(ui.find(node => node.type === "h2" && text(node) === "Your journal"), undefined);
-  await ui.click("New +"); await ui.click("Timeline (Public)"); ui.change("Your words", "Keep my unfinished words");
+  await ui.click("New +"); await ui.click("Journal (Private)"); ui.change("Your words", "Keep my unfinished words"); ui.change("Add to Timeline", true);
   await ui.click("Keep draft & close"); await ui.click("Continue entry");
   assert.equal(ui.field("Your words").props.value, "Keep my unfinished words"); assert.equal(ui.field("Add to Timeline").props.checked, true);
   assert.equal(ui.button("Journal (Private)"), undefined); ui.unmount();

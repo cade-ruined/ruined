@@ -27,7 +27,7 @@ const expectedDestinations = {
   "/my/card": "My Card",
   "/my/invitation": "My Invitation",
   "/my/artifacts": "Artifacts",
-  "/my/foundations/timeline": "Foundations timeline",
+  "/my/timeline": "Timeline",
   "/my/circle": "Circle",
   "/my/experiences": "Calendar",
   "/my/foundations": "Foundations",
@@ -146,7 +146,7 @@ test("Member route selection chooses the longest matching page and respects segm
     assert.equal(currentMemberDestination(href), href);
     if (href !== "/my") assert.equal(currentMemberDestination(`${href}/example`), href);
   }
-  assert.equal(currentMemberDestination("/my/foundations/timeline/export"), "/my/foundations/timeline");
+  assert.equal(currentMemberDestination("/my/timeline/new"), "/my/timeline");
   assert.equal(currentMemberDestination("/my/foundations/experience"), "/my/foundations");
   for (const path of ["/my/learning", "/my/circles", "/my/cards", "/my/card-other", "/my/profile-other", "/my/supporting", "/my/unknown", "/my-other", "/ops"]) {
     assert.equal(currentMemberDestination(path), undefined, path);
@@ -163,7 +163,7 @@ test("Member page search supports common task terms, whitespace, case, and multi
     ["events", ["/my/experiences"]],
     ["help", ["/my/support"]],
     ["unread", ["/my/updates"]],
-    ["timeline export", ["/my/foundations/timeline"]],
+    ["timeline reflections", ["/my/timeline"]],
     ["  PUBLIC   share ", ["/my/card"]],
     ["card download", ["/my/card"]],
     ["invitation joined", ["/my/invitation"]],
@@ -215,14 +215,16 @@ test("the badge collection is searchable in Your record and keeps Profile as its
   f.unmount();
 });
 
-test("the private Foundations exercise stays in Foundations navigation", () => {
-  assert.equal(currentMemberPrimaryDestination("/my/foundations/timeline"), "/my/foundations");
-  assert.equal(currentMemberPrimaryDestination("/my/foundations/timeline/export"), "/my/foundations");
-  assert.deepEqual(findMemberDestinations("private exercise").map(({ href }) => href), ["/my/foundations/timeline"]);
+test("the public Timeline is part of the profile and is searchable by its guided reflection purpose", () => {
+  assert.equal(currentMemberPrimaryDestination("/my/timeline"), "/my");
+  assert.equal(currentMemberPrimaryDestination("/my/timeline/new"), "/my");
+  assert.equal(MEMBER_DESTINATIONS.find(({ href }) => href === "/my/timeline").group, "Your record");
+  assert.deepEqual(findMemberDestinations("public reflections").map(({ href }) => href), ["/my/timeline"]);
+  assert.equal(MEMBER_DESTINATIONS.some(({ href }) => href.startsWith("/my/foundations/timeline")), false);
 });
 
 test("Opening the menu calls showModal, focuses search, and exposes every destination with one current page", () => {
-  const f = fixture("/my/foundations/timeline/export");
+  const f = fixture("/my/timeline/new");
   f.trigger().props.onClick(); f.draw();
   assert.equal(f.trigger().props["aria-expanded"], true);
   assert.equal(f.dialog.open, true);
@@ -234,7 +236,7 @@ test("Opening the menu calls showModal, focuses search, and exposes every destin
   assert.deepEqual(links.map((node) => node.props.href), Object.keys(expectedDestinations));
   const current = links.filter((node) => node.props["aria-current"] === "page");
   assert.equal(current.length, 1);
-  assert.equal(current[0].props.href, "/my/foundations/timeline");
+  assert.equal(current[0].props.href, "/my/timeline");
   const label = f.find((node) => node.type === "label");
   assert.match(text(label), /Find a membership page/);
   assert.ok(nodes(label).includes(f.search()));

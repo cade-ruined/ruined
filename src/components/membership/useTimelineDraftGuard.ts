@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTimelineDraftStore, type TimelineDraftCheckpoint } from "./MemberTimelineDraftState";
+import { useTimelineDraftStore, type TimelineDraftCheckpoint, type PublicTimelineMediaDraft } from "./MemberTimelineDraftState";
 import type { TimelineFormValue } from "./timeline-model";
 
 type DraftState = {
@@ -13,11 +13,12 @@ type DraftState = {
   editingEntryId: string | null;
   revision: string;
   scope?: string;
+  publicTimelineMedia?: PublicTimelineMediaDraft;
   onNavigate?: (url: string) => void;
 };
 
 function checkpoint(state: DraftState): TimelineDraftCheckpoint {
-  return { form: state.form, baseline: state.baseline, editingEntryId: state.editingEntryId, revision: state.revision, wasPending: state.pending };
+  return { form: state.form, baseline: state.baseline, editingEntryId: state.editingEntryId, revision: state.revision, wasPending: state.pending, ...(state.publicTimelineMedia ? { publicTimelineMedia: state.publicTimelineMedia } : {}) };
 }
 
 function sameForm(left: TimelineFormValue, right: TimelineFormValue) {
@@ -29,7 +30,7 @@ function sameForm(left: TimelineFormValue, right: TimelineFormValue) {
 
 function sameDraft(left: DraftState | null, right: DraftState) {
   return left !== null && left.editingEntryId === right.editingEntryId && left.revision === right.revision
-    && left.pending === right.pending && sameForm(left.form, right.form) && sameForm(left.baseline, right.baseline);
+    && left.pending === right.pending && left.publicTimelineMedia === right.publicTimelineMedia && sameForm(left.form, right.form) && sameForm(left.baseline, right.baseline);
 }
 
 /** Links that leave this document, excluding a new tab, download, or hash jump. */

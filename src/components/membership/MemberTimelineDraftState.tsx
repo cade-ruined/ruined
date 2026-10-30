@@ -2,6 +2,19 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import type { TimelineFormValue } from "./timeline-model";
+import type { JournalKind, JournalMedia, JournalVisibility } from "@/lib/membership/journal-model";
+
+export type PublicTimelineMediaDraft = {
+  kind: JournalKind;
+  keptMedia: JournalMedia[];
+  files: File[];
+  uploadIds: Array<[File, string]>;
+  attemptedVisibility: JournalVisibility | null;
+};
+
+export function copyPublicTimelineMedia(draft: PublicTimelineMediaDraft): PublicTimelineMediaDraft {
+  return { ...draft, keptMedia: draft.keptMedia.map(media => ({ ...media })), files: [...draft.files], uploadIds: draft.uploadIds.map(([file, id]) => [file, id]) };
+}
 
 export type TimelineDraftCheckpoint = {
   form: TimelineFormValue;
@@ -9,12 +22,13 @@ export type TimelineDraftCheckpoint = {
   editingEntryId: string | null;
   revision: string;
   wasPending: boolean;
+  publicTimelineMedia?: PublicTimelineMediaDraft;
 };
 
 type StoredDraft = { writer: symbol; draft: TimelineDraftCheckpoint };
 
 function copyDraft(draft: TimelineDraftCheckpoint): TimelineDraftCheckpoint {
-  return { ...draft, form: { ...draft.form }, baseline: { ...draft.baseline } };
+  return { ...draft, form: { ...draft.form }, baseline: { ...draft.baseline }, ...(draft.publicTimelineMedia ? { publicTimelineMedia: copyPublicTimelineMedia(draft.publicTimelineMedia) } : {}) };
 }
 
 /** A single private draft lives only for this verified member-layout instance. */

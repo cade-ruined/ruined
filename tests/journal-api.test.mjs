@@ -66,6 +66,28 @@ test("Journal edit requires explicit version/full fields and preserves bookmark 
  assert.deepEqual(f.calls.find(call=>call.name==="saveJournalEntry").args,["verified-owner",id,true]);
  assert.equal(f.calls.filter(call=>call.name==="editJournalEntry").length,1);
 });
+test("guided Timeline API forwards reviewed answers and preserves omitted versus cleared reflection",async()=>{
+ const timelineReflection={meaning:" I was alone. ",belief:null,presentImpact:"I hesitate to ask.",perspective:"I can ask for help."};
+ const normalized={...timelineReflection,meaning:"I was alone."};
+ const creator=await fixture("app/api/my/journal/route.ts");
+ let response=await creator.POST(req("POST",{...input,id,visibility:"public",timelineReflection}));
+ assert.equal(response.status,201);
+ assert.deepEqual(creator.calls.find(call=>call.name==="createJournalEntry").args,["verified-owner",{...input,id,visibility:"public",timelineReflection:normalized}]);
+ for(const fields of [{legacyTimelineReflection:timelineReflection},{timelineReflection:{...timelineReflection,meaning:42}},{timelineReflection,eventYear:null},{timelineReflection,title:""}]){
+  response=await creator.POST(req("POST",{...input,id,visibility:"private",...fields}));assert.equal(response.status,400);
+ }
+ assert.equal(creator.calls.filter(call=>call.name==="createJournalEntry").length,1);
+ const editor=await fixture("app/api/my/journal/[id]/route.ts");
+ for(const fields of [{timelineReflection}, {}, {timelineReflection:null}]){
+  response=await editor.PATCH(req("PATCH",{action:"edit",expectedVersion:"3",...input,visibility:"public",...fields}),context);
+  assert.equal(response.status,200);
+ }
+ const calls=editor.calls.filter(call=>call.name==="editJournalEntry");
+ assert.deepEqual(calls[0].args[2].timelineReflection,normalized);
+ assert.equal("timelineReflection" in calls[1].args[2],false);
+ assert.equal(calls[2].args[2].timelineReflection,null);
+ assert.ok(calls.every(call=>call.args[0]==="verified-owner"&&call.args[1]===id));
+});
 test("Journal stale reload/deletion and complete export are private owner-scoped APIs",async()=>{
  const f=await fixture("app/api/my/journal/[id]/route.ts");
  assert.equal((await f.GET(req("GET"),context)).status,200);

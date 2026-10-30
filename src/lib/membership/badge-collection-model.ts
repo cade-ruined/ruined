@@ -21,7 +21,7 @@ export const BADGE_COLLECTION_KEYS = [
 
 const ACTIONS: Record<(typeof BADGE_COLLECTION_KEYS)[number], string | null> = {
   "make-it-yours": "/my/profile", "first-words": "/my#journal",
-  "your-story": "/my/foundations/timeline", "on-the-record": "/my#timeline",
+  "your-story": "/my/timeline", "on-the-record": "/my#timeline",
   groundwork: "/my/foundations", "in-the-room": "/my/experiences", "full-circle": "/my/circle",
   "the-whole-month": "/my/experiences", "open-door": "/my/invitation", "in-real-life": "/my/experiences",
   "one-year": null,

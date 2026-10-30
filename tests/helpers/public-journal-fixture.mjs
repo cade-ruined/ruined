@@ -15,7 +15,7 @@ export async function load(path, dependencies = {}) {
   }, loaded, loaded.exports);
   return loaded.exports;
 }
-export async function publicJournalFixture(t, { applyPrivacy = true, applyTimelinePosts = true, meaningMigration = true } = {}) {
+export async function publicJournalFixture(t, { applyPrivacy = true, applyTimelinePosts = true, meaningMigration = true, publicReflectionMigration = true } = {}) {
   const base = await timelineFixture(t, { visibilityMigration: false }), db = base.db;
   await db.exec(`
     alter table ruined_members add column membership_activated_at timestamptz default '2020-01-01';
@@ -31,13 +31,15 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   await db.exec(await source("db/migrations/20260919210000_member_profile_card_sync.sql"));
   const privacyMigration = await source("db/migrations/20260928010000_member_journal_visibility.sql");
   const timelinePostsMigration = await source("db/migrations/20261001120000_public_timeline_posts.sql");
+  const migrateReflections = async () => {
+    await db.exec(await source("db/migrations/20261008200000_foundations_timeline_meaning.sql"));
+    await db.exec(await source("db/migrations/20261029160000_foundations_timeline_reflections.sql"));
+    if (publicReflectionMigration) await db.exec(await source("db/migrations/20261030120000_public_timeline_reflections.sql"));
+  };
   const migratePrivacy = async () => {
     await db.exec(privacyMigration);
     if (applyTimelinePosts) await db.exec(timelinePostsMigration);
-    if (meaningMigration) {
-      await db.exec(await source("db/migrations/20261008200000_foundations_timeline_meaning.sql"));
-      await db.exec(await source("db/migrations/20261029160000_foundations_timeline_reflections.sql"));
-    }
+    if (meaningMigration) await migrateReflections();
   };
   if (applyPrivacy) await migratePrivacy();
   const token = "a".repeat(43), otherToken = "b".repeat(43);
@@ -86,5 +88,5 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   const visitor = await load("src/lib/membership/public-journal-repository.ts", { ...shared, "./public-card-model": cardModel });
   const enable = (enabled = true, member = timelineIds.member) => db.query("update member_public_cards set public_enabled=$1,version=version+1 where member_id=$2", [enabled,member]);
   return { ...base, model, cardModel, cardRepository, journal, visitor, token, otherToken, blobs, downloads, enable,
-    migratePrivacy, migrateTimelinePosts: () => db.exec(timelinePostsMigration), setStorageHook: hook => { storageHook = hook; }, setAfterQuery: hook => { afterQuery = hook; } };
+    migratePrivacy, migrateReflections, migrateTimelinePosts: () => db.exec(timelinePostsMigration), setStorageHook: hook => { storageHook = hook; }, setAfterQuery: hook => { afterQuery = hook; } };
 }

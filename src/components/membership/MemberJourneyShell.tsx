@@ -34,7 +34,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   const [systemDark, setSystemDark] = useState(false);
   const threshold = registrationOnly || pathname === "/access" || ["/my/access", "/my/confirmed", "/my/join"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
   const focused = !registrationOnly && pathname.startsWith("/my/foundations/experience");
-  const timelineWorksheet = pathname === "/my/foundations/timeline/part-1";
+  const timelineWorksheet = pathname === "/my/timeline" || pathname.startsWith("/my/timeline/") || pathname === "/my/foundations/timeline/part-1";
   const cardRoom = !registrationOnly && (pathname === "/my/card" || pathname === "/my/invitation");
   const membershipEntry = pathname === "/my/join";
   const hasNavigation = !threshold && !focused;

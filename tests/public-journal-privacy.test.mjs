@@ -19,6 +19,7 @@ test("visibility migration leaves legacy content, revisions and history untouche
   assert.deepEqual((await f.db.query("select to_jsonb(e)-'visibility' entry from member_journal_entries e order by id")).rows,before);
   assert.deepEqual((await f.db.query("select to_jsonb(v)-'visibility' entry from member_journal_entry_versions v order by id")).rows,history);
   assert.equal((await f.db.query("select count(*)::int n from member_journal_entries where visibility<>'private'")).rows[0].n,0);
+  await f.migrateReflections();
   const entry = await f.journal.createJournalEntry(timelineIds.auth,draft());
   assert.equal(entry.visibility,"private");
   await f.enable();

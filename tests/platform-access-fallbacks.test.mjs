@@ -40,11 +40,14 @@ test("permission and connection fallbacks use distinct plain-language copy", asy
 test("every member page context handles denied before its unavailable fallback", async () => {
   const modernPages = await contextPages("app/my", "getMembershipPageContext");
   const legacyPages = await contextPages("app/my", "getMemberPageContext(");
-  const pages = [...modernPages, ...legacyPages];
+  const sharedTimeline = {
+    entry: "GuidedTimelinePage.tsx",
+    contents: await readFile(new URL("../src/components/membership/GuidedTimelinePage.tsx", import.meta.url), "utf8"),
+  };
+  const pages = [...modernPages, ...legacyPages, sharedTimeline];
 
-  assert.equal(modernPages.length, 19);
+  assert.equal(modernPages.length, 17);
   assert.ok(modernPages.some(page => page.entry === "badges/page.tsx"));
-  assert.ok(modernPages.some(page => page.entry === "foundations/timeline/part-1/page.tsx"));
   assert.ok(modernPages.some(page => page.entry === "activate/page.tsx"));
   assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
@@ -52,9 +55,9 @@ test("every member page context handles denied before its unavailable fallback",
     const deniedFallback = contents.indexOf('reason="member_access"');
     assert.ok(denied >= 0, `${entry} must recognize an authenticated non-member`);
     assert.ok(deniedFallback > denied, `${entry} must show the member permission fallback`);
-    if (entry === "foundations/timeline/part-1/page.tsx") {
-      assert.match(contents, /getSupportAccessUrl\("\/my\/foundations\/timeline\/part-1"\)/);
-      assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\(ACCESS_URL\)/);
+    if (entry === "GuidedTimelinePage.tsx") {
+      assert.match(contents, /getSupportAccessUrl\(startNew \? "\/my\/timeline\/new" : "\/my\/timeline"\)/);
+      assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\(accessHref\)/);
     } else {
       assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\("\/my\/access"\)/);
     }
@@ -85,18 +88,18 @@ test("every operator page context uses operator permission copy for denied accou
 });
 
 
-test("the private Foundations Timeline enforces member authentication, launch, and exercise access before reading entries", async () => {
-  const timeline = await readFile(new URL("../app/my/foundations/timeline/page.tsx", import.meta.url), "utf8");
+test("the guided Timeline enforces authentication and profile access before owner-scoped reads", async () => {
+  const timeline = await readFile(new URL("../src/components/membership/GuidedTimelinePage.tsx", import.meta.url), "utf8");
   assert.match(timeline, /getMembershipPageContext\(/);
-  assert.match(timeline, /if \(context\.state === "signed_out"\) redirect\("\/my\/access"\)/);
+  assert.match(timeline, /if \(context\.state === "signed_out"\) redirect\(accessHref\)/);
   assert.match(timeline, /if \(context\.state === "denied"\) return <PlatformUnavailable reason="member_access"/);
-  assert.match(timeline, /if \(!await isFoundationsAvailableToMember\(context\.state === "authenticated" \? context\.viewer\?\.authUserId : null\)\) redirect\("\/my\/foundations"\)/);
-  assert.match(timeline, /if \(!writable && !memberCan\(access, "foundations\.revisit"\)\) return <MemberAccessNotice/);
-  assert.match(timeline, /await getMemberTimeline\(context\.viewer\.authUserId\)/);
-  assert.match(timeline, /<RuinedTimeline initialTimeline=\{timeline\} writable=\{writable\}/);
-  assert.doesNotMatch(timeline, /redirect\("\/my#timeline"\)|<MemberJournal/);
-  const privateRead = timeline.indexOf("await getMemberTimeline(");
-  for (const guard of ['context.state === "signed_out"', 'context.state === "denied"', '!await isFoundationsAvailableToMember(', '!memberCan(access, "foundations.revisit")', '!context.viewer']) {
-    assert.ok(timeline.indexOf(guard) >= 0 && timeline.indexOf(guard) < privateRead, `${guard} must precede the private Timeline read`);
+  assert.match(timeline, /if \(!memberCan\(access, "profile\.read"\)\) return <MemberAccessNotice/);
+  assert.match(timeline, /await getJournal\(context\.viewer\.authUserId/);
+  assert.match(timeline, /await getJournalEntry\(context\.viewer\.authUserId, moment\)/);
+  assert.match(timeline, /<GuidedTimeline key=\{key\} initialJournal=\{journal\} ownerId=\{context\.viewer\.authUserId\}/);
+  assert.doesNotMatch(timeline, /isFoundationsAvailableToMember|foundations\.revisit|foundations\.write|<MemberJournal/);
+  const privateRead = timeline.indexOf("await getJournal(");
+  for (const guard of ['context.state === "signed_out"', 'context.state === "denied"', '!memberCan(access, "profile.read")', '!context.viewer']) {
+    assert.ok(timeline.indexOf(guard) >= 0 && timeline.indexOf(guard) < privateRead, `${guard} must precede the owner Timeline read`);
   }
 });

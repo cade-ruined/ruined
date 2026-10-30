@@ -28,6 +28,7 @@ test("reflection migration is additive, retains original entries/history and kee
     }
     assert.equal((await f.db.query("select relrowsecurity enabled from pg_class where oid=$1::regclass", [table])).rows[0].enabled, true);
   }
+  await f.db.exec(await source("db/migrations/20261030120000_public_timeline_reflections.sql"));
   const saved = (await f.repository.getMemberTimeline(ids.auth)).entries[0];
   assert.equal(saved.meaning, "Original meaning");
   for (const field of Object.keys(fields)) assert.equal(saved[field], null);
