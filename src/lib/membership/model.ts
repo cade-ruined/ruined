@@ -448,6 +448,9 @@ export type MemberTimelineEntry = {
   details: string | null;
   /** Private Foundations reflection; never part of the public Journal projection. */
   meaning?: string | null;
+  belief?: string | null;
+  presentImpact?: string | null;
+  perspective?: string | null;
   id: string;
   month?: number | null;
   position: number;

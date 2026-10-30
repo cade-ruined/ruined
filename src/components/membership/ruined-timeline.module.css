@@ -1606,19 +1606,37 @@ select.formControl option {
   font-size: 16px;
 }
 .filterSummary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 1rem; font-size: 0.8rem; color: var(--timeline-muted); }
-.yearGroup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; padding: 1.25rem 0 1.75rem; border-bottom: 1px solid var(--timeline-rule); }
-.yearHeading { margin: 0; color: var(--timeline-muted); font-family: var(--font-header); font-size: 1rem; font-weight: 500; line-height: 1.6; }
+.yearGroup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; padding: 1.25rem 0; }
+.yearHeading { margin: 0; color: var(--timeline-muted); font-family: var(--font-header); font-size: 1.15rem; font-weight: 500; line-height: 1.6; letter-spacing: -.04em; }
 .moments { list-style: none; padding: 0; margin: 0; min-width: 0; }
 .moment { position: relative; min-width: 0; padding: 0.25rem 0; transition: background-color 180ms ease; }
-.moment + .moment { margin-top: 0.5rem; }
+.moment + .moment { margin-top: 1rem; }
 .moment[data-recent] { background: var(--timeline-panel); }
-.momentStory { min-width: 0; }
-.momentStory summary { display: grid; grid-template-columns: minmax(0, 1fr) 24px; column-gap: 0.65rem; align-items: baseline; min-height: 44px; padding: 0.5rem 0; list-style: none; cursor: pointer; }
+.momentStory { min-width: 0; background: var(--timeline-panel); border: 1px solid var(--timeline-rule); }
+.momentStory summary { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: .45rem 1rem; align-items: baseline; min-height: 44px; padding: clamp(1rem, 2.5vw, 1.75rem); list-style: none; cursor: pointer; }
 .momentStory summary::-webkit-details-marker { display: none; }
 .momentDate { grid-column: 1; color: var(--timeline-muted); font-size: 0.7rem; line-height: 1.5; }
-.momentTitle { grid-column: 1; font-size: clamp(1.1rem, 2vw, 1.35rem); line-height: 1.5; overflow-wrap: anywhere; }
-.momentToggle { grid-column: 2; grid-row: 1 / 3; align-self: center; justify-self: center; color: var(--timeline-muted); font-size: 1.4rem; transition: transform 180ms ease; }
+.momentTitle { grid-column: 1; font-family: var(--font-display); font-size: clamp(1.7rem, 3vw, 2.4rem); letter-spacing: -.025em; line-height: 1.15; overflow-wrap: anywhere; }
+.momentPreview { grid-column: 1; color: var(--timeline-muted); max-width: 65ch; font-size: .9rem; line-height: 1.65; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.storyCue { grid-column: 1; color: var(--timeline-muted); margin-top: .6rem; font-size: .68rem; line-height: 1.6; }
+.momentToggle { grid-column: 2; grid-row: 1 / 5; align-self: center; justify-self: center; color: var(--timeline-ink); font-size: 1.4rem; transition: transform 180ms ease; }
 .momentStory[open] .momentToggle { transform: rotate(45deg); }
+.momentStory[open] :is(.momentPreview, .storyCue) { display: none; }
+.momentStory[open] summary { border-bottom: 1px solid var(--timeline-rule); }
+.storyBody { padding: clamp(1rem, 2.5vw, 1.75rem); }
+.storyBody h3 { margin: 0 0 .7rem; font: 600 .68rem/1.5 var(--font-body); letter-spacing: .07em; text-transform: uppercase; }
+.storyBody p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; font-size: .95rem; }
+.storyEvent { max-width: 70ch; margin-bottom: 1.6rem; }
+.reflectionGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; background: var(--timeline-rule); border: 1px solid var(--timeline-rule); }
+.reflectionBlock, .perspectiveBlock { min-width: 0; padding: clamp(1rem, 2.5vw, 1.75rem); background: var(--timeline-ground); }
+.reflectionBlock[data-present] { background: var(--timeline-panel); grid-column: 1 / -1; }
+.perspectiveBlock { background: var(--member-blue); color: var(--color-faded); }
+.perspectiveBlock p { font-family: var(--font-display); font-size: clamp(1.35rem, 2vw, 1.7rem); line-height: 1.5; }
+.storyActions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.5rem; margin-top: 1.25rem; }
+.root .exploreMoment { display: inline-flex; align-items: center; justify-content: space-between; gap: 1.5rem; min-height: 44px; color: var(--timeline-ink); font-size: .85rem; text-decoration: underline; text-underline-offset: .3em; }
+.root .guidedButton { display: inline-flex; align-items: center; justify-content: space-between; gap: 2rem; padding: .9rem 1.3rem; min-height: 48px; background: var(--member-yellow); color: var(--color-faded); text-decoration: none; border: 1px solid var(--color-faded); box-shadow: 3px 3px 0 var(--color-faded); font-size: .9rem; font-weight: 600; }
+.root :is(.guidedButton, .exploreMoment):focus-visible { outline: 2px solid var(--timeline-ink); outline-offset: 5px; }
+.root .guidedButton:hover { background: var(--member-blue); }
 .momentDetails, .momentEmpty { margin: 0.75rem 0 0.5rem; max-width: 65ch; font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere; white-space: pre-wrap; }
 .momentEmpty { color: var(--timeline-muted); font-size: 0.85rem; }
 .momentEdit { color: var(--timeline-muted); padding-right: 1rem; }
@@ -1652,6 +1670,8 @@ select.formControl option {
   .yearHeading { padding-top: 0.7rem; }
   .readingFilters { grid-template-columns: minmax(0, 1fr) 8rem 10rem; }
   .searchField { grid-column: auto; }
+  .reflectionGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .perspectiveBlock { grid-column: 1 / -1; }
 }
 @media (min-width: 1100px) {
   .readingLayout[data-editing] { grid-template-columns: minmax(0, 1fr) 340px; gap: 2.5rem; }

@@ -217,3 +217,21 @@ test("the timeline retains its private member API and existing downloadable expo
   assert.doesNotMatch(component, /localStorage|sessionStorage|<iframe/i);
   assert.match(page, /<RuinedTimeline initialTimeline=\{timeline\}/);
 });
+
+test("guided answers survive model conversion, remain searchable, and mark drafts dirty independently", () => {
+  const values = { meaning: "The old story", belief: "A belief", presentImpact: "A pattern today", perspective: "Another possibility" };
+  const moment = entry("reflective", 2020, 1, values);
+  const stored = { ...moment, id: "stored" };
+  const drafts = fromMemberTimelineEntries([stored]);
+  const form = formForTimelineEntry(drafts[0]!);
+  for (const field of ["meaning", "belief", "presentImpact", "perspective"] as const) {
+    assert.equal(form[field], values[field]);
+    assert.equal(timelineFormIsDirty({ ...form, [field]: "Changed" }, form), true);
+    assert.equal(filterTimelineEntries(drafts, values[field], "", "oldest").length, 1);
+  }
+  assert.deepEqual(toTimelineSaveEntries(drafts)[0], { id: "stored", year: 2020, month: null, title: "reflective", details: null, ...values });
+  const older = entry("older", 2010, 1);
+  for (const field of ["meaning", "belief", "presentImpact", "perspective"] as const) {
+    assert.equal(Object.hasOwn(toTimelineSaveEntries([older])[0]!, field), false);
+  }
+});

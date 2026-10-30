@@ -215,3 +215,19 @@ test("Timeline owner headers block stale-account reads, saves, deletion and Foun
   }
   assert.deepEqual(f.calls, [["complete", "verified-account", "timeline"], ["read", "verified-account"], ["complete", "verified-account", "timeline"], ["read", "verified-account"]]);
 });
+
+test("guided reflection fields accept omission and explicit clearing, while rejecting invalid or oversized answers", async () => {
+  for (const field of ["belief", "presentImpact", "perspective"]) {
+    for (const value of [undefined, null, "", "A private answer.\nAnother line.", "x".repeat(4000)]) {
+      const f = fixture();
+      const entry = { id: null, title: "An experience", year: 2020, details: null, ...(value === undefined ? {} : { [field]: value }) };
+      assert.equal((await f.POST(request({ action: "upsert", entry, expectedRevision: "5" }))).status, 200);
+      assert.deepEqual(f.calls, [["upsert", "verified-account", entry, "5"]]);
+    }
+    for (const value of [42, {}, [], "x".repeat(4001)]) {
+      const f = fixture();
+      assert.equal((await f.POST(request({ action: "upsert", entry: { id: null, title: "An experience", year: 2020, details: null, [field]: value }, expectedRevision: "5" }))).status, 400);
+      assert.deepEqual(f.calls, []);
+    }
+  }
+});

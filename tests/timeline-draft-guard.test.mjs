@@ -360,3 +360,22 @@ test("custom internal navigation waits for the UI confirmation and keeps the sco
   assert.equal(unload.prevented, true);
   view.unmount();
 });
+
+test("every guided answer stays recoverable and protects a new edit after clearing a previous checkpoint", () => {
+  const { timelineFormIsDirty } = load("src/components/membership/timeline-model.ts", {});
+  for (const field of ["belief", "presentImpact", "perspective"]) {
+    const baseline = { ...draft, [field]: "" }, form = { ...baseline, [field]: "Private reflection." };
+    const view = fixture(state({ form, baseline, dirty: timelineFormIsDirty(form, baseline) }));
+    const actions = view.render();
+    assert.equal(view.store.read().draft.form[field], form[field]);
+    actions.clearDraft();
+    view.render(state({ form: { ...form }, baseline }));
+    assert.equal(view.store.read(), null);
+    view.render(state({ form: { ...form, [field]: "Changed reflection." }, baseline }));
+    assert.equal(view.store.read().draft.form[field], "Changed reflection.");
+    view.unmount();
+    const returned = fixture(state({ dirty: false, form: empty }), view.store);
+    assert.equal(returned.render().recoveryDraft.form[field], "Changed reflection.");
+    returned.unmount();
+  }
+});

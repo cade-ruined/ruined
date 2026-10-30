@@ -34,7 +34,10 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   const migratePrivacy = async () => {
     await db.exec(privacyMigration);
     if (applyTimelinePosts) await db.exec(timelinePostsMigration);
-    if (meaningMigration) await db.exec(await source("db/migrations/20261008200000_foundations_timeline_meaning.sql"));
+    if (meaningMigration) {
+      await db.exec(await source("db/migrations/20261008200000_foundations_timeline_meaning.sql"));
+      await db.exec(await source("db/migrations/20261029160000_foundations_timeline_reflections.sql"));
+    }
   };
   if (applyPrivacy) await migratePrivacy();
   const token = "a".repeat(43), otherToken = "b".repeat(43);

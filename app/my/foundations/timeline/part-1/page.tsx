@@ -11,12 +11,17 @@ import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_IDENTITY, PREVIEW_MEMBER_TIMELINE } from "@/lib/membership/preview";
 import { getMemberIdentity, getMemberTimeline } from "@/lib/membership/repository";
 
-export const metadata: Metadata = { title: "Ruined Timeline — Part I | Foundations" };
+export const metadata: Metadata = { title: "Explore a moment | Foundations timeline" };
 export const dynamic = "force-dynamic";
 
 const ACCESS_URL = getSupportAccessUrl("/my/foundations/timeline/part-1");
 
-export default async function FoundationsTimelinePartOnePage() {
+export default async function FoundationsTimelinePartOnePage({ searchParams }: {
+  searchParams: Promise<{ moment?: string; new?: string }>;
+}) {
+  const query = await searchParams;
+  const selection = { initialEntryId: query.moment, startNew: query.new === "1" };
+  const selectionKey = selection.startNew ? "new" : selection.initialEntryId ?? "overview";
   const context = await getMembershipPageContext(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Foundations timeline Part I");
   if (context.state === "signed_out") redirect(ACCESS_URL);
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
@@ -27,14 +32,14 @@ export default async function FoundationsTimelinePartOnePage() {
   if (!writable && !memberCan(access, "foundations.revisit")) return <MemberAccessNotice access={access} />;
 
   if (context.state === "preview") {
-    return <FoundationsTimelineWorksheet initialTimeline={PREVIEW_MEMBER_TIMELINE} preview writable={false} />;
+    return <FoundationsTimelineWorksheet key={selectionKey} initialTimeline={PREVIEW_MEMBER_TIMELINE} preview writable={false} {...selection} />;
   }
   if (!context.viewer) return <PlatformUnavailable accessHref={ACCESS_URL} />;
 
   try {
     const timeline = await getMemberTimeline(context.viewer.authUserId);
     return timeline
-      ? <FoundationsTimelineWorksheet initialTimeline={timeline} writable={writable} ownerId={context.viewer.authUserId} />
+      ? <FoundationsTimelineWorksheet key={selectionKey} initialTimeline={timeline} writable={writable} ownerId={context.viewer.authUserId} {...selection} />
       : <PlatformUnavailable accessHref={ACCESS_URL} />;
   } catch (error) {
     console.error("Private Foundations Part I timeline could not be loaded", {

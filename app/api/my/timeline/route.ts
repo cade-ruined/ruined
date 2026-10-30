@@ -35,7 +35,13 @@ function isTimelineEntry(value: unknown): value is MemberTimelineInput[number] {
     (candidate.details === null || typeof candidate.details === "string") &&
     (candidate.meaning === undefined || candidate.meaning === null
       || (typeof candidate.meaning === "string" && candidate.meaning.trim().length <= 4000)) &&
-    Object.keys(candidate).every((key) => ["details", "id", "meaning", "month", "title", "year"].includes(key))
+    (candidate.belief === undefined || candidate.belief === null
+      || (typeof candidate.belief === "string" && candidate.belief.trim().length <= 4000)) &&
+    (candidate.presentImpact === undefined || candidate.presentImpact === null
+      || (typeof candidate.presentImpact === "string" && candidate.presentImpact.trim().length <= 4000)) &&
+    (candidate.perspective === undefined || candidate.perspective === null
+      || (typeof candidate.perspective === "string" && candidate.perspective.trim().length <= 4000)) &&
+    Object.keys(candidate).every((key) => ["belief", "details", "id", "meaning", "month", "perspective", "presentImpact", "title", "year"].includes(key))
   );
 }
 
