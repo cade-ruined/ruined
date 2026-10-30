@@ -46,7 +46,13 @@ test("every member page context handles denied before its unavailable fallback",
   };
   const pages = [...modernPages, ...legacyPages, sharedTimeline];
 
-  assert.equal(modernPages.length, 17);
+  // The legacy Foundations experience now redirects to the separately gated
+  // document reader; it no longer loads a member page context of its own.
+  assert.equal(modernPages.length, 16);
+  assert.ok(modernPages.some(page => page.entry === "foundations/page.tsx"));
+  assert.ok(!modernPages.some(page => page.entry === "foundations/experience/page.tsx"));
+  const legacyFoundations = await readFile(new URL("../app/my/foundations/experience/page.tsx", import.meta.url), "utf8");
+  assert.match(legacyFoundations, /redirect\("\/my\/foundations\/deck"\)/);
   assert.ok(modernPages.some(page => page.entry === "badges/page.tsx"));
   assert.ok(modernPages.some(page => page.entry === "activate/page.tsx"));
   assert.equal(legacyPages.length, 1);

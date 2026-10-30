@@ -9,6 +9,7 @@ import Image from "next/image";
 import { TIMELINE_MONTHS, formatTimelineDate, timelineFormIsDirty, type TimelineFormValue } from "./timeline-model";
 import useTimelineDraftGuard from "./useTimelineDraftGuard";
 import { copyPublicTimelineMedia, type PublicTimelineMediaDraft } from "./MemberTimelineDraftState";
+import TimelineGraphics from "./TimelineGraphics";
 import styles from "./guided-timeline.module.css";
 
 const EMPTY = { year: "", month: "", title: "", details: "", meaning: "", belief: "", presentImpact: "", perspective: "" };
@@ -416,6 +417,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       <div><Link className={styles.back} href="/my#timeline"><Arrow back /> My profile</Link><h1>Timeline</h1></div>
       <div className={styles.headerActions}>{initialJournal.publicUrl ? <Link href={initialJournal.publicUrl} target="_blank" rel="noreferrer">View profile ↗</Link> : null}<details className={styles.options}><summary aria-label="Timeline options">···</summary><div><button onClick={downloadDraft}>Download draft</button><button disabled={pending} onClick={() => void loadLatest()}>Load latest moments</button></div></details></div>
     </header>
+    <TimelineGraphics ownerId={ownerId} preview={preview} entries={timeline.entries.map(entry => entry.journal)} revision={timeline.revision} />
     {preview ? <p className={styles.previewNote}>Try posting here. This preview isn’t saved to an account.</p> : null}
     {recoveryDraft ? <aside className={styles.recovery}><div><h2>Pick up where you left off.</h2><p>Your unfinished post is here.</p></div><button onClick={restore}>Restore draft</button><button onClick={dismissRecovery}>Discard recovered draft</button></aside> : null}
     {missingRequested ? <section className={styles.unavailable} aria-label="Timeline moment unavailable"><h2>This moment isn’t available.</h2><p>It may have been removed. Your other posts are below.</p>{allowEdit ? <button type="button" onClick={() => open()}>Start a new post <Arrow /></button> : null}</section> : null}

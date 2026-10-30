@@ -200,7 +200,7 @@ test("legacy timeline tools retain their private API and export pipeline while t
   assert.match(persistence, /fetch\("\/api\/my\/timeline"/);
   assert.match(component, /<TimelineExportStudio entries=\{sortedEntries\} examples=\{examples\}/);
   assert.doesNotMatch(component, /InkRoadTimeline|GENERATED VIEW|living timeline/);
-  assert.match(exportStudio, /Photo generator/);
+  assert.match(exportStudio, /Timeline graphics/);
   assert.match(exportStudio, /role="radiogroup"/);
   assert.match(exportStudio, /onKeyDown=\{\(event\) => moveBetweenFormats\(event, index\)\}/);
   assert.match(exportStudio, /tabIndex=\{selected \? 0 : -1\}/);

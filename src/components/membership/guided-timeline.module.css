@@ -2,8 +2,8 @@
 :global([data-member-theme="ink"]) .experience { --writing-paper: #151614; }
 .experience *, .experience *::before, .experience *::after { box-sizing: border-box; }
 .experience [hidden] { display: none !important; }
-.experience button { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; background: transparent; border: 0; border-radius: 0; color: inherit; cursor: pointer; font: 500 13px/1.4 var(--font-body); text-align: left; }
-.experience button:disabled { opacity: .45; cursor: default; }
+.experience button:where(:not([data-timeline-graphics] *)) { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; background: transparent; border: 0; border-radius: 0; color: inherit; cursor: pointer; font: 500 13px/1.4 var(--font-body); text-align: left; }
+.experience button:where(:not([data-timeline-graphics] *)):disabled { opacity: .45; cursor: default; }
 .experience :is(input,textarea,select,button,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .experience :is(input,textarea,select) { min-width: 0; border: 1px solid var(--member-rule); border-radius: 0; background: var(--field); color: var(--ink); font: 400 16px/1.6 var(--font-body); padding: 10px 12px; }
 .experience :is(input,textarea)::placeholder { color: var(--muted); opacity: 1; }
