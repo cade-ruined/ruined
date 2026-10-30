@@ -46,7 +46,7 @@ function fixture({ state = "authenticated", launched = true, writable = true, re
       getMemberTimeline: async (id) => { reads.push(["timeline", id]); if (failure) throw Error("PRIVATE content"); return timeline; },
     },
   }, logs);
-  return { page: page.default, reads, logs };
+  return { page: (query = {}) => page.default({ searchParams: Promise.resolve(query) }), reads, logs };
 }
 
 test("Part I keeps its destination through sign-in and never loads private moments for an absent identity", async () => {
@@ -72,16 +72,27 @@ test("Part I preserves launch and read/write membership gates before reading the
     const f = fixture({ writable });
     const tree = await f.page();
     assert.equal(tree.type, Worksheet);
-    assert.deepEqual(tree.props, { initialTimeline: timeline, writable, ownerId: viewer.authUserId });
+    assert.deepEqual(tree.props, { initialTimeline: timeline, writable, ownerId: viewer.authUserId, initialEntryId: undefined, startNew: false });
     assert.deepEqual(f.reads, [["availability", viewer.authUserId], ["timeline", viewer.authUserId]]);
   }
 });
 
 test("Part I preview stays read-only and a data failure reveals no journal content", async () => {
   const preview = fixture({ state: "preview" });
-  assert.deepEqual((await preview.page()).props, { initialTimeline: previewTimeline, preview: true, writable: false });
+  assert.deepEqual((await preview.page()).props, { initialTimeline: previewTimeline, preview: true, writable: false, initialEntryId: undefined, startNew: false });
   assert.deepEqual(preview.reads, [["availability", null]]);
   const failed = fixture({ failure: true });
   assert.equal((await failed.page()).type, Unavailable);
   assert.doesNotMatch(JSON.stringify(failed.logs), /PRIVATE/);
+});
+
+test("Part I forwards moment selection and resets the worksheet when opening a new story", async () => {
+  const f = fixture();
+  const selected = await f.page({ moment: "saved-moment" });
+  assert.equal(selected.props.initialEntryId, "saved-moment");
+  assert.equal(selected.props.startNew, false);
+  assert.equal(selected.key, "saved-moment");
+  const fresh = await f.page({ new: "1" });
+  assert.equal(fresh.props.startNew, true);
+  assert.equal(fresh.key, "new");
 });

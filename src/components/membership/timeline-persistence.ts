@@ -22,12 +22,18 @@ function singleMutation(entries: TimelineSaveEntry[], current: MemberTimelineSna
       id: entry.id, year: entry.year, title: entry.title.trim(), details: entry.details?.trim() || null,
       ...(entry.month === undefined ? {} : { month: entry.month }),
       ...(entry.meaning === undefined ? {} : { meaning: entry.meaning?.trim() || null }),
+      ...(entry.belief === undefined ? {} : { belief: entry.belief?.trim() || null }),
+      ...(entry.presentImpact === undefined ? {} : { presentImpact: entry.presentImpact?.trim() || null }),
+      ...(entry.perspective === undefined ? {} : { perspective: entry.perspective?.trim() || null }),
     };
     if (entry.id === null) { changes.push({ action: "upsert", entry: payload }); continue; }
     const saved = existing.get(entry.id);
     if (!saved || seen.has(entry.id)) throw new TimelineConflictError("Load the latest saved events before saving this moment.");
     seen.add(entry.id);
     if ((entry.meaning !== undefined && (entry.meaning?.trim() || null) !== (saved.meaning?.trim() || null))
+      || (entry.belief !== undefined && (entry.belief?.trim() || null) !== (saved.belief?.trim() || null))
+      || (entry.presentImpact !== undefined && (entry.presentImpact?.trim() || null) !== (saved.presentImpact?.trim() || null))
+      || (entry.perspective !== undefined && (entry.perspective?.trim() || null) !== (saved.perspective?.trim() || null))
       || entry.year !== saved.year || (entry.month !== undefined && entry.month !== (saved.month ?? null))
       || entry.title.trim() !== saved.title.trim() || (entry.details?.trim() || null) !== (saved.details?.trim() || null)) {
       changes.push({ action: "upsert", entry: payload });

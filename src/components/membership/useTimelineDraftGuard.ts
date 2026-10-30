@@ -21,7 +21,10 @@ function checkpoint(state: DraftState): TimelineDraftCheckpoint {
 }
 
 function sameForm(left: TimelineFormValue, right: TimelineFormValue) {
-  return (left.meaning ?? "") === (right.meaning ?? "") && left.year === right.year && left.month === right.month && left.title === right.title && left.details === right.details;
+  return (left.meaning ?? "") === (right.meaning ?? "")
+    && (left.belief ?? "") === (right.belief ?? "")
+    && (left.presentImpact ?? "") === (right.presentImpact ?? "")
+    && (left.perspective ?? "") === (right.perspective ?? "") && left.year === right.year && left.month === right.month && left.title === right.title && left.details === right.details;
 }
 
 function sameDraft(left: DraftState | null, right: DraftState) {

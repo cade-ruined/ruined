@@ -156,3 +156,24 @@ test("Foundations owner identity accompanies reload and completion too", async (
   await adapter.load(current); await adapter.complete(current);
   for (const call of f.calls) assert.equal(call[1].headers["x-ruined-session-owner"], "verified-owner");
 });
+
+test("guided answer-only changes persist one moment, while old drafts preserve omitted answers", async () => {
+  for (const field of ["belief", "presentImpact", "perspective"]) {
+    const original = { ...entry, id: "same-id", position: 1, [field]: "The original answer." };
+    const snapshot = { ...current, entries: [original] };
+    const f = fixture([Response.json({ timeline: snapshot }), Response.json({ timeline: snapshot })]);
+    const adapter = f.createTimelinePersistenceAdapter({ preview: false, writable: true });
+    await adapter.save([{ ...original, [field]: "  A new answer.  " }], snapshot);
+    assert.deepEqual(JSON.parse(f.calls[0][1].body), { action: "upsert", expectedRevision: "12", entry: { ...entry, id: "same-id", [field]: "A new answer." } });
+    await adapter.save([{ ...original, [field]: "" }], snapshot);
+    assert.equal(JSON.parse(f.calls[1][1].body).entry[field], null);
+    const oldClient = { ...original }; delete oldClient[field];
+    assert.equal(await adapter.save([oldClient], snapshot), snapshot);
+    assert.equal(f.calls.length, 2);
+    const preview = fixture();
+    const previewAdapter = preview.createTimelinePersistenceAdapter({ preview: true, writable: false });
+    const updated = await previewAdapter.save([{ ...original, [field]: "Preview answer" }], snapshot);
+    assert.equal(updated.entries[0][field], "Preview answer");
+    assert.equal(preview.calls.length, 0);
+  }
+});

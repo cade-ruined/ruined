@@ -70,7 +70,7 @@ function fixture({ entries = remembered, writable = true, preview = false, save,
   const props = { writable, preview, initialTimeline: snapshot(entries) };
   const render = () => { cursor = 0; const tree = loaded.exports.default(props); effects.splice(0).forEach(effect => effect()); return tree; };
   const change = (name, value) => control(render(), name).props.onChange({ target: { value } });
-  const add = () => button(render(), "+ Add moment").props.onClick();
+  const add = () => button(render(), "Quick note").props.onClick();
   const submit = (another = false) => form(render()).props.onSubmit({ preventDefault() {}, nativeEvent: { submitter: { getAttribute: name => name === "data-add-another" && another ? "true" : null } } });
   return { render, change, add, submit, calls, guardStates, cleared: () => cleared, unmount: () => { for (const slot of slots) slot?.cleanup?.(); } };
 }
@@ -81,7 +81,7 @@ test("timeline opens for reading with native expandable stories, accessible chro
   assert.equal(text(nodes(tree).find(node => node.type === "h1")), "Foundations timeline");
   assert.match(text(tree), /Your private Foundations exercise/);
   assert.match(text(tree), /do not appear on your public Timeline unless you choose to share them from Journal/);
-  assert.equal(button(tree, "+ Add moment").props["aria-expanded"], false);
+  assert.equal(button(tree, "Quick note").props["aria-expanded"], false);
   const stories = nodes(tree).filter(node => node.type === "details");
   assert.equal(stories.length, 3);
   for (const story of stories) assert.equal(React.Children.toArray(story.props.children)[0].type, "summary");
@@ -99,11 +99,11 @@ test("a real empty timeline shows a truthful empty state and read-only timelines
   assert.equal(summaries(emptyTree).length, 0);
   assert.match(text(emptyTree), /Start with one moment/);
   assert.doesNotMatch(text(emptyTree), /Moved somewhere new|Finished school|EXAMPLE/);
-  assert.ok(button(emptyTree, "Add your first moment")); assert.equal(form(emptyTree), undefined);
+  assert.ok(nodes(emptyTree).find(node => node.type === "a" && /Add your first moment/.test(text(node)))); assert.equal(form(emptyTree), undefined);
   for (const entries of [[], remembered]) {
     const readonly = fixture({ entries, writable: false }), tree = readonly.render();
     assert.equal(form(tree), undefined);
-    assert.equal(nodes(tree).some(node => node.type === "button" && /Add moment|Add your first|^Edit$|Save|Remove|Complete Foundations/.test(text(node))), false);
+    assert.equal(nodes(tree).some(node => node.type === "button" && /Quick note|Add your first|^Edit details$|Save|Remove|Complete Foundations/.test(text(node))), false);
     assert.equal(readonly.guardStates.at(-1).enabled, false);
     assert.equal(readonly.calls.length, 0); readonly.unmount();
   }
@@ -119,7 +119,7 @@ test("quick capture opens explicitly with an optional labeled month and all twel
   const options = nodes(month).filter(node => node.type === "option");
   assert.deepEqual(options.map(node => String(node.props.value)), ["", ...Array.from({ length: 12 }, (_, i) => String(i + 1))]);
   assert.equal(text(options[0]), "Year only"); assert.equal(text(options[1]), "January"); assert.equal(text(options[12]), "December");
-  const trigger = button(tree, "Continue writing"); assert.equal(trigger.props["aria-expanded"], true);
+  const trigger = button(tree, "Continue quick note"); assert.equal(trigger.props["aria-expanded"], true);
   assert.ok(nodes(tree).some(node => node.props.id === trigger.props["aria-controls"]));
   assert.equal(ui.calls.length, 0); ui.unmount();
 });
@@ -150,7 +150,7 @@ test("a year-only save stays year-only and returns to reading after confirmed su
   const ui = fixture({ entries: [] }); ui.add(); ui.change("year", "2019"); ui.change("title", "A choice");
   await ui.submit(); const tree = ui.render();
   assert.equal(ui.calls[0].entries[0].month, null); assert.equal(form(tree), undefined);
-  assert.equal(button(tree, "+ Add moment").props["aria-expanded"], false);
+  assert.equal(button(tree, "Quick note").props["aria-expanded"], false);
   assert.equal(nodes(tree).find(node => node.type === "time").props.dateTime, "2019"); ui.unmount();
 });
 
@@ -204,7 +204,7 @@ test("restoring a stale or uncertain recovery requires loading saved moments bef
   const draft = { year: "2024", month: "6", title: "Recovered memory", details: "Keep this draft." };
   for (const state of [{ revision: "1", wasPending: false }, { revision: "2", wasPending: true }]) {
     const ui = fixture({ recoveryDraft: { form: draft, baseline: timelineModel.EMPTY_TIMELINE_FORM, editingEntryId: null, ...state } });
-    assert.equal(button(ui.render(), "+ Add moment").props.disabled, true);
+    assert.equal(button(ui.render(), "Quick note").props.disabled, true);
     button(ui.render(), "Restore draft").props.onClick(); let tree = ui.render();
     for (const [name, value] of Object.entries(draft)) assert.equal(control(tree, name).props.value, value);
     assert.ok(button(tree, "Load latest saved moments"));
@@ -219,24 +219,45 @@ test("restoring a stale or uncertain recovery requires loading saved moments bef
 });
 
 
-test("the full Timeline links to Part I and preserves its private meaning during ordinary edits", async () => {
+test("the story reader opens guided creation and preserves all private reflections during quick edits", async () => {
   const meaning = "I could begin again.";
-  const entries = remembered.map(entry => entry.id === "year-only" ? { ...entry, meaning } : entry);
+  const reflections = { meaning, belief: "I needed to do it alone.", presentImpact: "I wait too long to ask.", perspective: "Help is part of the work." };
+  const entries = remembered.map(entry => entry.id === "year-only" ? { ...entry, ...reflections } : entry);
   const ui = fixture({ entries });
   const tree = ui.render();
   const worksheetLink = nodes(tree).find(node => node.type === "a" && node.props.href === "/my/foundations/timeline/part-1");
   assert.ok(worksheetLink);
-  assert.match(text(worksheetLink), /Foundations 01 worksheet/);
+  assert.match(text(worksheetLink), /Explore your story/);
+  assert.ok(nodes(tree).find(node => node.type === "a" && node.props.href === "/my/foundations/timeline/part-1?new=1"));
+  assert.ok(nodes(tree).find(node => node.type === "a" && node.props.href === "/my/foundations/timeline/part-1?moment=year-only"));
   assert.match(text(tree), /What I made it meanI could begin again/);
+  assert.match(text(tree), /What I started believingI needed to do it alone/);
+  assert.match(text(tree), /How it shows up nowI wait too long to ask/);
+  assert.match(text(tree), /What I can see nowHelp is part of the work/);
   nodes(tree).find(node => node.props["aria-label"] === "Edit A year remembered").props.onClick();
   ui.change("title", "A clearer title for the same moment");
   await ui.submit();
   assert.equal(ui.calls.length, 1);
-  assert.equal(ui.calls[0].entries.find(entry => entry.id === "year-only").meaning, meaning);
+  for (const [key, value] of Object.entries(reflections)) assert.equal(ui.calls[0].entries.find(entry => entry.id === "year-only")[key], value);
   assert.match(text(ui.render()), /What I made it meanI could begin again/);
+  assert.match(text(ui.render()), /What I can see nowHelp is part of the work/);
   ui.unmount();
   const readonly = fixture({ entries, writable: false });
   assert.match(text(readonly.render()), /What I made it meanI could begin again/);
   assert.equal(readonly.calls.length, 0);
   readonly.unmount();
+});
+
+test("quick edits keep an unchanged long Journal body and its private reflections", async () => {
+  const body = "A remembered detail. ".repeat(250);
+  const ui = fixture({ entries: [{ ...remembered[0], details: body, perspective: "A different view." }] });
+  nodes(ui.render()).find(node => node.props["aria-label"] === "Edit A year remembered").props.onClick();
+  assert.equal(control(ui.render(), "details").props.maxLength, body.length);
+  ui.change("title", "A clearer name");
+  await ui.submit();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].entries[0].details, body.trim());
+  assert.equal(ui.calls[0].entries[0].perspective, "A different view.");
+  assert.match(text(ui.render()), /What I can see nowA different view/);
+  ui.unmount();
 });

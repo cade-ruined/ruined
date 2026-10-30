@@ -33,7 +33,7 @@ export default async function MyTimelinePage() {
     // Its existing adapter keeps those moments in Journal without publishing.
     const timeline = await getMemberTimeline(context.viewer.authUserId);
     return timeline
-      ? <RuinedTimeline initialTimeline={timeline} writable={writable} />
+      ? <RuinedTimeline initialTimeline={timeline} writable={writable} ownerId={context.viewer.authUserId} />
       : <PlatformUnavailable accessHref="/my/access" />;
   } catch (error) {
     console.error("Private Foundations timeline could not be loaded", {

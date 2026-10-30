@@ -3380,6 +3380,9 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
   const rows = await sql<Array<{
     details: string | null;
     meaning: string | null;
+    belief: string | null;
+    present_impact: string | null;
+    perspective: string | null;
     entry_month: number | null;
     entry_year: number;
     id: string | null;
@@ -3394,7 +3397,9 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
     )
     select entry.id, entry.event_year as entry_year, entry.event_month as entry_month,
       coalesce(entry.title, case entry.kind when 'images' then 'A photograph' when 'video' then 'A video' else 'An untitled moment' end) as title,
-      entry.body as details, entry.foundations_meaning as meaning, entry.timeline_position as position,
+      entry.body as details, entry.foundations_meaning as meaning,
+      entry.foundations_belief as belief, entry.foundations_present_impact as present_impact,
+      entry.foundations_perspective as perspective, entry.timeline_position as position,
       timeline_revision.revision
     from timeline_revision
     left join member_journal_entries entry
@@ -3403,7 +3408,8 @@ async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, m
   `;
   return {
     entries: rows.flatMap((row) => row.id ? [{
-      details: row.details, meaning: row.meaning, id: row.id, position: row.position,
+      details: row.details, meaning: row.meaning, belief: row.belief, presentImpact: row.present_impact,
+      perspective: row.perspective, id: row.id, position: row.position,
       title: row.title, year: row.entry_year, month: row.entry_month,
     }] : []),
     revision: rows[0]?.revision ?? "0",
@@ -3433,6 +3439,9 @@ export type MemberTimelineInput = Array<{
   details: string | null;
   /** Omission preserves a stored reflection; null or an empty string clears it. */
   meaning?: string | null;
+  belief?: string | null;
+  presentImpact?: string | null;
+  perspective?: string | null;
   id: string | null;
   month?: number | null;
   title: string;
@@ -3471,7 +3480,28 @@ function validateTimelineInput(input: MemberTimelineInput) {
     if (meaning && meaning.length > 4000) {
       throw new MembershipInputError("Timeline meaning must be 4,000 characters or fewer.");
     }
-    return { details, meaning, id: entry.id, month: entry.month, position: index + 1, title, year: entry.year };
+    if (entry.belief !== undefined && entry.belief !== null && typeof entry.belief !== "string") {
+      throw new MembershipInputError("Timeline belief must be text.");
+    }
+    const belief = entry.belief === undefined ? undefined : entry.belief?.trim() || null;
+    if (belief && belief.length > 4000) {
+      throw new MembershipInputError("Timeline belief must be 4,000 characters or fewer.");
+    }
+    if (entry.presentImpact !== undefined && entry.presentImpact !== null && typeof entry.presentImpact !== "string") {
+      throw new MembershipInputError("Timeline present impact must be text.");
+    }
+    const presentImpact = entry.presentImpact === undefined ? undefined : entry.presentImpact?.trim() || null;
+    if (presentImpact && presentImpact.length > 4000) {
+      throw new MembershipInputError("Timeline present impact must be 4,000 characters or fewer.");
+    }
+    if (entry.perspective !== undefined && entry.perspective !== null && typeof entry.perspective !== "string") {
+      throw new MembershipInputError("Timeline perspective must be text.");
+    }
+    const perspective = entry.perspective === undefined ? undefined : entry.perspective?.trim() || null;
+    if (perspective && perspective.length > 4000) {
+      throw new MembershipInputError("Timeline perspective must be 4,000 characters or fewer.");
+    }
+    return { details, meaning, belief, presentImpact, perspective, id: entry.id, month: entry.month, position: index + 1, title, year: entry.year };
   });
 }
 
@@ -3510,17 +3540,20 @@ export async function requireLockedMemberWriteAccess(tx: postgres.TransactionSql
   return identityFromRow(row);
 }
 
-type LegacyJournalRow = { id:string; kind:string; title:string|null; body:string|null; foundations_meaning:string|null; event_year:number; event_month:number|null; event_day:number|null; timeline_position:number };
+type LegacyJournalRow = { id:string; kind:string; title:string|null; body:string|null; foundations_meaning:string|null; foundations_belief:string|null; foundations_present_impact:string|null; foundations_perspective:string|null; event_year:number; event_month:number|null; event_day:number|null; timeline_position:number };
 
 async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:MemberIdentity,entry:ReturnType<typeof validateTimelineInput>[number]) {
   if(entry.id) {
-    const [current]=await tx<LegacyJournalRow[]>`select id,kind,title,body,foundations_meaning,event_year,event_month,event_day,timeline_position from member_journal_entries
+    const [current]=await tx<LegacyJournalRow[]>`select id,kind,title,body,foundations_meaning,foundations_belief,foundations_present_impact,foundations_perspective,event_year,event_month,event_day,timeline_position from member_journal_entries
       where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and include_on_timeline and deleted_at is null and visibility = 'private' for update`;
     if(!current) throw new MembershipConflictError("A Timeline entry changed. Reload before saving again.");
     const displayTitle=current.title ?? (current.kind==='images' ? 'A photograph' : current.kind==='video' ? 'A video' : 'An untitled moment');
     const nextTitle=entry.title===displayTitle ? current.title : entry.title;
     const nextMonth=entry.month===undefined ? current.event_month : entry.month;
     const nextMeaning=entry.meaning===undefined ? current.foundations_meaning : entry.meaning;
+    const nextBelief=entry.belief===undefined ? current.foundations_belief : entry.belief;
+    const nextPresentImpact=entry.presentImpact===undefined ? current.foundations_present_impact : entry.presentImpact;
+    const nextPerspective=entry.perspective===undefined ? current.foundations_perspective : entry.perspective;
     // An unchanged legacy form may normalize whitespace before sending. Keep
     // the exact canonical body when only its separate meaning is being edited.
     const nextDetails=entry.details===(current.body?.trim()||null) ? current.body : entry.details;
@@ -3531,14 +3564,15 @@ async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:Memb
       || ((nextDetails?.length ?? 0)>4000 && nextDetails!==current.body)) {
       throw new MembershipConflictError("This moment has more detail in Journal. Open it there to edit without losing anything.");
     }
-    await tx`update member_journal_entries set event_year=${entry.year},event_month=${nextMonth},title=${nextTitle},body=${nextDetails},foundations_meaning=${nextMeaning},updated_by_auth_user_id=${identity.authUserId}::uuid
+    await tx`update member_journal_entries set event_year=${entry.year},event_month=${nextMonth},title=${nextTitle},body=${nextDetails},foundations_meaning=${nextMeaning},foundations_belief=${nextBelief},foundations_present_impact=${nextPresentImpact},foundations_perspective=${nextPerspective},updated_by_auth_user_id=${identity.authUserId}::uuid
       where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and deleted_at is null and include_on_timeline and visibility = 'private'
         and (event_year is distinct from ${entry.year} or event_month is distinct from ${nextMonth}::integer
-          or title is distinct from ${nextTitle} or body is distinct from ${nextDetails} or foundations_meaning is distinct from ${nextMeaning})`;
+          or title is distinct from ${nextTitle} or body is distinct from ${nextDetails} or foundations_meaning is distinct from ${nextMeaning}
+          or foundations_belief is distinct from ${nextBelief} or foundations_present_impact is distinct from ${nextPresentImpact} or foundations_perspective is distinct from ${nextPerspective})`;
     return entry.id;
   }
-  const [created]=await tx<{id:string}[]>`insert into member_journal_entries(member_id,kind,title,body,foundations_meaning,event_year,event_month,include_on_timeline,timeline_position,updated_by_auth_user_id)
-    select ${identity.memberId}::uuid,'text',${entry.title},${entry.details},${entry.meaning??null},${entry.year},${entry.month??null},true,
+  const [created]=await tx<{id:string}[]>`insert into member_journal_entries(member_id,kind,title,body,foundations_meaning,foundations_belief,foundations_present_impact,foundations_perspective,event_year,event_month,include_on_timeline,timeline_position,updated_by_auth_user_id)
+    select ${identity.memberId}::uuid,'text',${entry.title},${entry.details},${entry.meaning??null},${entry.belief??null},${entry.presentImpact??null},${entry.perspective??null},${entry.year},${entry.month??null},true,
       coalesce(max(timeline_position),0)+1,${identity.authUserId}::uuid from member_journal_entries where member_id=${identity.memberId}::uuid returning id`;
   return created!.id;
 }

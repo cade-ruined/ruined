@@ -59,10 +59,12 @@ export default function RuinedTimeline({
   initialTimeline,
   preview = false,
   writable,
+  ownerId,
 }: {
   initialTimeline: MemberTimelineSnapshot;
   preview?: boolean;
   writable: boolean;
+  ownerId?: string;
 }) {
   const hasMemberEntries = initialTimeline.entries.length > 0 && !preview;
   const initialEntries = hasMemberEntries
@@ -108,8 +110,8 @@ export default function RuinedTimeline({
   const years = [...new Set(entries.map(entry => entry.year))].sort((a, b) => b - a);
   const dirty = timelineFormIsDirty(form, baseline);
   const adapter = useMemo(
-    () => createTimelinePersistenceAdapter({ preview, writable }),
-    [preview, writable],
+    () => createTimelinePersistenceAdapter({ preview, writable, ownerId }),
+    [preview, writable, ownerId],
   );
   const sortedEntries = useMemo(() => sortTimelineEntries(entries), [entries]);
   const examples = mode === "examples";
@@ -124,6 +126,8 @@ export default function RuinedTimeline({
   });
   const needsReload = conflicted || uncertainSave;
   const canInteract = (writable || preview) && !needsReload && !recoveryDraft;
+  const existingDetails = entries.find(entry => entry.clientKey === editingKey)?.details ?? "";
+  const detailsLimit = Math.max(TIMELINE_LIMITS.details, existingDetails.length);
 
   function restoreDraft() {
     if (!recoveryDraft) return;
@@ -279,7 +283,7 @@ export default function RuinedTimeline({
         message: `Keep the title to ${TIMELINE_LIMITS.title} characters or fewer.`,
       };
     }
-    if (form.details.trim().length > TIMELINE_LIMITS.details) {
+    if (form.details.trim().length > TIMELINE_LIMITS.details && form.details.trim() !== existingDetails.trim()) {
       return {
         field: "details" as const,
         message: `Keep the details to ${TIMELINE_LIMITS.details} characters or fewer.`,
@@ -303,6 +307,9 @@ export default function RuinedTimeline({
         createdOrder: entry.position,
         details: entry.details ?? "",
         meaning: entry.meaning ?? null,
+        ...(entry.belief === undefined ? {} : { belief: entry.belief }),
+        ...(entry.presentImpact === undefined ? {} : { presentImpact: entry.presentImpact }),
+        ...(entry.perspective === undefined ? {} : { perspective: entry.perspective }),
         id: entry.id,
         month: entry.month ?? null,
         position: entry.position,
@@ -403,6 +410,9 @@ export default function RuinedTimeline({
       createdOrder: existing?.createdOrder ?? Date.now(),
       details: form.details.trim(),
       meaning: existing?.meaning ?? null,
+      ...(existing?.belief === undefined ? {} : { belief: existing.belief }),
+      ...(existing?.presentImpact === undefined ? {} : { presentImpact: existing.presentImpact }),
+      ...(existing?.perspective === undefined ? {} : { perspective: existing.perspective }),
       id: existing?.id ?? null,
       month: form.month === "" ? null : Number(form.month),
       position: existing?.position ?? entries.length + 1,
@@ -518,13 +528,14 @@ export default function RuinedTimeline({
           <p className={styles.readingMeta}>{summaryFor(sortedEntries, examples)}</p>
         </div>
         <div className={styles.readingActions}>
-          <Link className={styles.readingTextButton} href="/my/foundations/timeline/part-1" prefetch={false}>Foundations 01 worksheet <span aria-hidden="true">↗</span></Link>
-          {writable || preview ? <button aria-controls={editorId} aria-expanded={editorOpen} className={`${styles.button} ${styles.primaryButton}`} disabled={Boolean(pending) || needsReload || Boolean(recoveryDraft)} onClick={editorOpen ? focusYear : prepareNewEvent} ref={addRef} type="button">{editorOpen ? "Continue writing" : "+ Add moment"}</button> : null}
+          {writable || preview ? <Link className={styles.guidedButton} href="/my/foundations/timeline/part-1?new=1" prefetch={false}>Add a moment <span aria-hidden="true">↗</span></Link> : null}
+          <Link className={styles.readingTextButton} href="/my/foundations/timeline/part-1" prefetch={false}>Explore your story <span aria-hidden="true">↗</span></Link>
+          {writable || preview ? <button aria-controls={editorId} aria-expanded={editorOpen} className={styles.readingTextButton} disabled={Boolean(pending) || needsReload || Boolean(recoveryDraft)} onClick={editorOpen ? focusYear : prepareNewEvent} ref={addRef} type="button">{editorOpen ? "Continue quick note" : "Quick note"}</button> : null}
           {entries.length > 0 ? <button aria-controls={exportId} aria-expanded={exportOpen} className={styles.readingTextButton} onClick={() => setExportOpen(current => !current)} type="button">{exportOpen ? "Close export" : "Export timeline"} <span aria-hidden="true">↗</span></button> : null}
         </div>
       </header>
 
-      <p className={styles.readingNotice}>{examples ? "An example of the private Foundations exercise. " : "Your private Foundations exercise. "}These moments stay in your Journal. They do not appear on your public Timeline unless you choose to share them from Journal.</p>
+      <p className={styles.readingNotice}>{examples ? "An example of the private Foundations exercise. " : "Your private Foundations exercise. "}These moments stay in your Journal. They do not appear on your public Timeline unless you choose to share them from Journal. Your reflections stay private.</p>
       <p className={styles.readingSaveStatus} role="status">{status}</p>
       {error ? <p className={styles.error} id={errorId} role="alert">{error}</p> : null}
       {recoveryDraft ? <div className={styles.readingNotice} role="status">
@@ -554,18 +565,30 @@ export default function RuinedTimeline({
                     <summary data-index-key={entry.clientKey}>
                       <time className={styles.momentDate} dateTime={entry.month ? `${entry.year}-${String(entry.month).padStart(2, "0")}` : String(entry.year)} aria-label={formatTimelineDate(entry, true)}>{formatTimelineDate(entry)}</time>
                       <span className={styles.momentTitle}>{entry.title}</span>
+                      <span className={styles.momentPreview}>{entry.perspective || entry.details || "A moment worth keeping."}</span>
+                      <span className={styles.storyCue}>{entry.perspective?.trim() ? "A new perspective" : entry.meaning?.trim() || entry.belief?.trim() || entry.presentImpact?.trim() ? "Still unfolding" : "The beginning of a story"}<span aria-hidden="true"> · </span>Open story</span>
                       <span aria-hidden="true" className={styles.momentToggle}>+</span>
                     </summary>
-                    {entry.details ? <p className={styles.momentDetails}>{entry.details}</p> : <p className={styles.momentEmpty}>{examples ? "An example moment." : "A moment worth keeping."}</p>}
-                    {entry.meaning ? <p className={styles.momentDetails}><strong>What I made it mean</strong><br />{entry.meaning}</p> : null}
-                  {!examples && (writable || preview) ? <button aria-label={`Edit ${entry.title}`} className={styles.momentEdit} disabled={!canInteract || Boolean(pending)} onClick={() => beginEdit(entry)} type="button">Edit</button> : null}
+                    <div className={styles.storyBody}>
+                      {entry.details ? <div className={styles.storyEvent}><h3>What happened</h3><p>{entry.details}</p></div> : null}
+                      {entry.meaning || entry.belief || entry.presentImpact || entry.perspective ? <div className={styles.reflectionGrid}>
+                        {entry.meaning ? <div className={styles.reflectionBlock}><h3>What I made it mean</h3><p>{entry.meaning}</p></div> : null}
+                        {entry.belief ? <div className={styles.reflectionBlock}><h3>What I started believing</h3><p>{entry.belief}</p></div> : null}
+                        {entry.presentImpact ? <div className={styles.reflectionBlock} data-present><h3>How it shows up now</h3><p>{entry.presentImpact}</p></div> : null}
+                        {entry.perspective ? <div className={styles.perspectiveBlock}><h3>What I can see now</h3><p>{entry.perspective}</p></div> : null}
+                      </div> : <p className={styles.momentEmpty}>There may be more to this moment. Explore it when you’re ready.</p>}
+                      <div className={styles.storyActions}>
+                        <Link className={styles.exploreMoment} href={`/my/foundations/timeline/part-1?moment=${encodeURIComponent(entry.id ?? entry.clientKey)}`} prefetch={false}>{writable || preview ? "Explore this moment" : "Read this moment"}<span aria-hidden="true">↗</span></Link>
+                        {!examples && (writable || preview) ? <button aria-label={`Edit ${entry.title}`} className={styles.momentEdit} disabled={!canInteract || Boolean(pending)} onClick={() => beginEdit(entry)} type="button">Edit details</button> : null}
+                      </div>
+                    </div>
                   </details>
                 </li>)}
               </ol>
             </section>)}
           </div>
           {visibleEntries.length > visibleCount ? <button className={`${styles.button} ${styles.moreMoments}`} onClick={() => setVisibleCount(current => current + 40)} type="button">Show more moments <span>{Math.min(visibleCount, visibleEntries.length)} of {visibleEntries.length}</span></button> : null}
-          {!entries.length ? <div className={styles.readingEmpty}><p className={styles.emptyHand}>Your story starts anywhere.</p><h2>Start with one moment.</h2><p>A beginning, a change, a choice. Add what you remember.</p>{writable || preview ? <button className={`${styles.button} ${styles.primaryButton}`} disabled={Boolean(pending) || needsReload || Boolean(recoveryDraft)} onClick={prepareNewEvent} type="button">Add your first moment</button> : <p>No moments saved yet.</p>}</div> : !visibleEntries.length ? <p className={styles.noResults}>No moments match. Try another word or year.</p> : null}
+          {!entries.length ? <div className={styles.readingEmpty}><p className={styles.emptyHand}>Your story starts anywhere.</p><h2>Start with one moment.</h2><p>What happened. The story you carried. What you can see now.<br />Take it one question at a time.</p>{writable || preview ? <Link className={styles.guidedButton} href="/my/foundations/timeline/part-1?new=1" prefetch={false}>Add your first moment <span aria-hidden="true">↗</span></Link> : <p>No moments saved yet.</p>}</div> : !visibleEntries.length ? <p className={styles.noResults}>No moments match. Try another word or year.</p> : null}
           {undo ? <div className={styles.readingUndo}><span role="status">{undo.entry.title} removed.</span><button className={styles.readingTextButton} disabled={Boolean(pending)} onClick={undoDelete} type="button">Undo</button></div> : null}
         </section>
 
@@ -578,7 +601,7 @@ export default function RuinedTimeline({
             </div>
             <button className={styles.thisMonth} disabled={Boolean(pending)} onClick={useThisMonth} type="button">Use this month ↗</button>
             <div className={styles.field}><label className={styles.captureLabel} htmlFor={`${rawId}-title-field`}>Title {titleCountVisible ? <small>{form.title.length} / {TIMELINE_LIMITS.title}</small> : null}</label><input aria-describedby={errorField === "title" ? errorId : undefined} aria-invalid={errorField === "title" || undefined} autoComplete="off" className={styles.captureControl} enterKeyHint="next" id={`${rawId}-title-field`} maxLength={TIMELINE_LIMITS.title} name="title" onChange={event => { setForm(current => ({ ...current, title: event.target.value })); setError(null); setErrorField(null); }} placeholder="What happened?" readOnly={Boolean(pending) || (!writable && !preview)} ref={titleRef} required value={form.title}/></div>
-            <div className={styles.field}><label className={styles.captureLabel} htmlFor={`${rawId}-details`}>Details <small>Optional</small></label><textarea aria-describedby={errorField === "details" ? errorId : undefined} aria-invalid={errorField === "details" || undefined} className={styles.captureControl} id={`${rawId}-details`} maxLength={TIMELINE_LIMITS.details} name="details" onChange={event => { setForm(current => ({ ...current, details: event.target.value })); setError(null); setErrorField(null); }} placeholder="What do you want to remember?" readOnly={Boolean(pending) || (!writable && !preview)} rows={5} value={form.details}/>{detailsCountVisible ? <p className={styles.characterCount}>{form.details.length} / {TIMELINE_LIMITS.details}</p> : null}</div>
+            <div className={styles.field}><label className={styles.captureLabel} htmlFor={`${rawId}-details`}>Details <small>Optional</small></label><textarea aria-describedby={errorField === "details" ? errorId : undefined} aria-invalid={errorField === "details" || undefined} className={styles.captureControl} id={`${rawId}-details`} maxLength={detailsLimit} name="details" onChange={event => { setForm(current => ({ ...current, details: event.target.value })); setError(null); setErrorField(null); }} placeholder="What do you want to remember?" readOnly={Boolean(pending) || (!writable && !preview)} rows={5} value={form.details}/>{detailsCountVisible ? <p className={styles.characterCount}>{form.details.length} / {detailsLimit}</p> : null}</div>
             <div className={styles.captureActions}><button className={`${styles.button} ${styles.primaryButton}`} disabled={!canInteract || Boolean(pending)} type="submit">{pending === "save" ? "Saving…" : editingKey ? "Save changes" : "Save moment"}</button>{!editingKey ? <button className={styles.button} data-add-another="true" disabled={!canInteract || Boolean(pending)} type="submit">Save &amp; add another</button> : null}<button className={styles.readingTextButton} disabled={Boolean(pending)} onClick={cancelForm} type="button">Cancel</button>{editingKey ? <button className={`${styles.readingTextButton} ${styles.captureRemove}`} disabled={!canInteract || Boolean(pending)} onClick={removeEditingEvent} type="button">Remove moment</button> : null}</div>
           </form>
         </aside> : null}

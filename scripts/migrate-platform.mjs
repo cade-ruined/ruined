@@ -128,6 +128,7 @@ const migrations = [
   "../db/migrations/20261024183000_prepaid_provider_payment_ids.sql",
   "../db/migrations/20261026210000_foundations_first_call_badge.sql",
   "../db/migrations/20261026211000_member_welcome_state.sql",
+  "../db/migrations/20261029160000_foundations_timeline_reflections.sql",
 ];
 
 function migrationBody(migration, migrationName) {
