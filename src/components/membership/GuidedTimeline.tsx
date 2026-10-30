@@ -9,6 +9,7 @@ import Image from "next/image";
 import { TIMELINE_MONTHS, formatTimelineDate, timelineFormIsDirty, type TimelineFormValue } from "./timeline-model";
 import useTimelineDraftGuard from "./useTimelineDraftGuard";
 import { copyPublicTimelineMedia, type PublicTimelineMediaDraft } from "./MemberTimelineDraftState";
+import TimelineGraphics from "./TimelineGraphics";
 import styles from "./guided-timeline.module.css";
 
 const EMPTY = { year: "", month: "", title: "", details: "", meaning: "", belief: "", presentImpact: "", perspective: "" };
@@ -416,6 +417,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       <div><Link className={styles.back} href="/my#timeline"><Arrow back /> My profile</Link><h1>Timeline</h1></div>
       <div className={styles.headerActions}>{initialJournal.publicUrl ? <Link href={initialJournal.publicUrl} target="_blank" rel="noreferrer">View profile ↗</Link> : null}<details className={styles.options}><summary aria-label="Timeline options">···</summary><div><button onClick={downloadDraft}>Download draft</button><button disabled={pending} onClick={() => void loadLatest()}>Load latest moments</button></div></details></div>
     </header>
+    <TimelineGraphics ownerId={ownerId} preview={preview} entries={timeline.entries.map(entry => entry.journal)} revision={timeline.revision} />
     {preview ? <p className={styles.previewNote}>Try posting here. This preview isn’t saved to an account.</p> : null}
     {recoveryDraft ? <aside className={styles.recovery}><div><h2>Pick up where you left off.</h2><p>Your unfinished post is here.</p></div><button onClick={restore}>Restore draft</button><button onClick={dismissRecovery}>Discard recovered draft</button></aside> : null}
     {missingRequested ? <section className={styles.unavailable} aria-label="Timeline moment unavailable"><h2>This moment isn’t available.</h2><p>It may have been removed. Your other posts are below.</p>{allowEdit ? <button type="button" onClick={() => open()}>Start a new post <Arrow /></button> : null}</section> : null}
@@ -431,8 +433,11 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
         </details>
       </div>
       {titleOpen ? <label className={styles.titleField} htmlFor="timeline-event">Title <span>optional</span><input id="timeline-event" maxLength={200} disabled={frozen} value={form.title} onChange={event => change("title", event.target.value)} placeholder="Give this moment a name" /></label> : null}
-      <label className={styles.srOnly} htmlFor="timeline-details">What happened?</label>
-      <textarea className={styles.postInput} id="timeline-details" rows={4} maxLength={Math.max(JOURNAL_BODY_LENGTH, selected?.details?.length ?? 0)} disabled={frozen} value={form.details} onChange={event => change("details", event.target.value)} placeholder="What happened? Share a moment, a thought, or something you’re seeing differently." />
+      <div className={styles.writingArea}>
+        <label className={styles.writingLabel} htmlFor="timeline-details">What happened?</label>
+        <textarea className={styles.postInput} id="timeline-details" rows={4} maxLength={Math.max(JOURNAL_BODY_LENGTH, selected?.details?.length ?? 0)} disabled={frozen} value={form.details} onChange={event => change("details", event.target.value)} placeholder="Start typing here…" aria-describedby="timeline-writing-hint" />
+        <p className={styles.writingHint} id="timeline-writing-hint">A moment, a thought, or something you’re seeing differently.</p>
+      </div>
       {media.keptMedia.length + media.files.length ? <div className={styles.attachmentPreviews}>
         {media.keptMedia.map((item, index) => <figure key={item.id}>{media.kind === "video" ? <video src={item.url} controls playsInline preload="metadata" /> : <Image src={item.url} alt={`Attached photograph ${index + 1}`} width={600} height={450} unoptimized />}<button type="button" disabled={frozen} onClick={() => removeMedia(index, true)} aria-label={`Remove saved attachment ${index + 1}`}>Remove</button></figure>)}
         {media.files.map((file, index) => <figure key={`${file.name}-${index}`}>{fileUrls[index] ? media.kind === "video" ? <video src={fileUrls[index]} controls playsInline preload="metadata" /> : <Image src={fileUrls[index]} alt={`Selected photograph ${index + 1}`} width={600} height={450} unoptimized /> : null}<figcaption>{file.name}</figcaption><button type="button" disabled={frozen} onClick={() => removeMedia(index, false)} aria-label={`Remove selected attachment ${index + 1}`}>Remove</button></figure>)}

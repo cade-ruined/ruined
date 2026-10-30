@@ -228,7 +228,7 @@ export default function TimelineExportStudio({
       <div className={styles.exportHeading}>
         <div>
           <p className={styles.kicker}>IMAGE</p>
-          <h2 className={styles.uiHeading} id="timeline-export-title">Photo generator</h2>
+          <h2 className={styles.uiHeading} id="timeline-export-title">Timeline graphics</h2>
         </div>
         <p className={styles.exportCopy}>
           Choose a format, preview it, and download the finished image.

@@ -66,6 +66,7 @@ function fixture({ initialJournal = snapshot(), preview = false, ownerId = "owne
     if (name === "@/lib/membership/journal-model") return journalModel;
     if (name === "./MemberTimelineDraftState") return { copyPublicTimelineMedia: media => ({ ...media, keptMedia: media.keptMedia.map(item => ({ ...item })), files: [...media.files], uploadIds: media.uploadIds.map(pair => [...pair]) }) };
     if (name === "./timeline-model") return timelineModel;
+    if (name === "./TimelineGraphics") return { __esModule: true, default: "timeline-graphics" };
     if (name === "./useTimelineDraftGuard") return { __esModule: true, default: state => { guardStates.push(state); return { recoveryDraft, dismissRecovery() { recoveryDraft = null; }, clearDraft() { cleared++; } }; } };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, property) => property }) };
     throw Error(`Unexpected guided Timeline dependency ${name}`);

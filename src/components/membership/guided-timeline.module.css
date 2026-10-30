@@ -1,8 +1,9 @@
-.experience { --ink: var(--member-ink); --muted: var(--member-muted); --panel: var(--member-panel); --field: var(--member-soft); --accent: var(--member-accent); max-width: 760px; margin: 0 auto; padding: 0 0 28px; color: var(--ink); font-family: var(--font-body); }
+.experience { --ink: var(--member-ink); --muted: var(--member-muted); --panel: var(--member-panel); --field: var(--member-soft); --accent: var(--member-accent); --writing-paper: #f8f4ea; max-width: 760px; margin: 0 auto; padding: 0 0 28px; color: var(--ink); font-family: var(--font-body); }
+:global([data-member-theme="ink"]) .experience { --writing-paper: #151614; }
 .experience *, .experience *::before, .experience *::after { box-sizing: border-box; }
 .experience [hidden] { display: none !important; }
-.experience button { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; background: transparent; border: 0; border-radius: 0; color: inherit; cursor: pointer; font: 500 13px/1.4 var(--font-body); text-align: left; }
-.experience button:disabled { opacity: .45; cursor: default; }
+.experience button:where(:not([data-timeline-graphics] *)) { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 10px; background: transparent; border: 0; border-radius: 0; color: inherit; cursor: pointer; font: 500 13px/1.4 var(--font-body); text-align: left; }
+.experience button:where(:not([data-timeline-graphics] *)):disabled { opacity: .45; cursor: default; }
 .experience :is(input,textarea,select,button,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .experience :is(input,textarea,select) { min-width: 0; border: 1px solid var(--member-rule); border-radius: 0; background: var(--field); color: var(--ink); font: 400 16px/1.6 var(--font-body); padding: 10px 12px; }
 .experience :is(input,textarea)::placeholder { color: var(--muted); opacity: 1; }
@@ -22,14 +23,16 @@
 .options button { width: 100%; justify-content: flex-start; padding: 10px 12px; }
 .options button:hover:not(:disabled) { background: var(--field); }
 .previewNote { margin: 0 0 16px; font-size: 12px; line-height: 1.6; color: var(--muted); }
-.editor { min-width: 0; padding: 20px 24px 18px; border: 1px solid var(--member-rule); border-radius: 3px; background: var(--panel); box-shadow: 0 3px 18px #00000004; }
-.composerTop { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+.editor { min-width: 0; padding: 0 24px 18px; border: 1px solid color-mix(in srgb, var(--ink) 40%, var(--member-paper)); border-radius: 2px; background: color-mix(in srgb, var(--panel) 86%, transparent); backdrop-filter: blur(14px); box-shadow: 4px 4px 0 color-mix(in srgb, var(--ink) 20%, var(--member-paper)); }
+.composerTop { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin: 0 -24px; padding: 12px 24px; border-bottom: 1px solid #26262345; background: var(--member-blue); color: #262623; }
 .composerTop > strong { font-size: 14px; font-weight: 600; }
 .dateControl { position: relative; }
-.dateControl > summary { display: flex; align-items: center; gap: 9px; list-style: none; min-height: 38px; padding: 4px 0 4px 10px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.dateControl > summary { display: flex; align-items: center; gap: 9px; list-style: none; min-height: 44px; padding: 4px 10px; border: 1px solid #26262345; color: #262623; font-size: 12px; cursor: pointer; }
+.dateControl > summary:hover { background: #ffffff30; }
+.dateControl > summary:focus-visible { outline-color: #262623; }
 .dateControl > summary::-webkit-details-marker { display: none; }
 .dateControl > summary > span { font-size: 17px; }
-.datePanel { position: absolute; z-index: 4; top: 42px; right: 0; width: 286px; max-width: calc(100vw - 70px); padding: 18px; border: 1px solid var(--member-rule); background: var(--panel); box-shadow: 0 10px 30px #0002; }
+.datePanel { position: absolute; z-index: 4; top: 50px; right: 0; width: 286px; max-width: calc(100vw - 70px); padding: 18px; border: 1px solid var(--member-rule); background: var(--panel); color: var(--ink); box-shadow: 0 10px 30px #0002; }
 .dateHeading { font-size: 13px; font-weight: 600; }
 .datePanel > p { font-size: 12px; margin: 6px 0 16px; color: var(--muted); }
 .date { display: grid; grid-template-columns: minmax(65px,.75fr) minmax(0,1.25fr); gap: 10px; }
@@ -39,11 +42,16 @@
 .titleField { display: block; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
 .titleField span { margin-left: 4px; }
 .titleField input { display: block; margin-top: 6px; width: 100%; }
-.editor .postInput { margin-top: 13px; padding: 10px 0 16px; min-height: 150px; border: none; background: transparent; font-size: 18px; line-height: 1.65; }
-.editor .postInput:focus-visible { outline-offset: 5px; }
-.tools { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 20px; min-height: 44px; }
-.tools > button { padding-inline: 0; font-size: 12px; color: var(--muted); }
-.attachmentButton { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; font-weight: 500; color: var(--ink); cursor: pointer; }
+.writingArea { margin: 22px 0 16px; }
+.writingLabel { display: block; width: fit-content; margin: 0 0 10px; color: var(--ink); font: 400 30px/1.2 var(--font-handwritten); cursor: text; }
+.editor .postInput { display: block; margin: 0; padding: 16px 18px; min-height: 160px; border: 1px solid color-mix(in srgb, var(--ink) 58%, var(--member-paper)); background: var(--writing-paper); box-shadow: inset 0 2px 4px #00000007; font-size: 17px; line-height: 1.65; caret-color: var(--ink); transition: border-color 150ms ease, box-shadow 150ms ease; }
+.editor .postInput:hover:not(:disabled) { border-color: var(--ink); }
+.editor .postInput:focus { border-color: var(--ink); outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 3px 3px 0 var(--member-blue); }
+.writingHint { margin: 9px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; min-height: 44px; margin-bottom: 16px; }
+.tools > button, .attachmentButton { padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--ink) 30%, var(--member-paper)); background: var(--field); font-size: 12px; color: var(--ink); }
+.tools > button:hover:not(:disabled), .attachmentButton:hover:not([data-disabled="true"]) { background: var(--member-blue); border-color: var(--member-blue); color: #262623; }
+.attachmentButton { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 500; cursor: pointer; }
 .attachmentButton:focus-within { outline: 2px solid var(--accent); outline-offset: 4px; }
 .attachmentButton[data-disabled="true"] { opacity: .45; cursor: default; }
 .mediaHint { margin: 0; font-size: 11px; line-height: 1.6; color: var(--muted); }
@@ -57,6 +65,7 @@
 .deeper { margin-top: 10px; border-top: 1px solid var(--member-rule); }
 .deeper > summary { display: flex; justify-content: space-between; align-items: center; min-height: 48px; gap: 14px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 500; }
 .deeper > summary::-webkit-details-marker { display: none; }
+.deeper > summary:hover { color: var(--accent); }
 .deeper small { margin-left: 6px; font-size: 11px; font-weight: 400; color: var(--muted); }
 .disclosureMark { font-size: 20px; font-weight: 400; transition: transform 150ms ease; }
 .deeper[open] .disclosureMark { transform: rotate(45deg); }
@@ -68,7 +77,8 @@
 .publicLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
 .publicLabel svg { flex-shrink: 0; }
 .audienceDescription { margin-left: -4px; }
-.saveActions { display: flex; align-items: center; gap: 8px; }
+.saveActions { position: relative; display: flex; align-items: center; gap: 8px; }
+.saveActions .options { position: static; }
 .saveActions .options > div { top: auto; bottom: 46px; }
 .saveRow .save { min-width: 92px; padding: 12px 20px; color: #262623; background: var(--member-yellow); font-weight: 600; }
 .saveRow .save:hover:not(:disabled) { box-shadow: 2px 2px 0 var(--ink); }
@@ -144,8 +154,11 @@
   .header h1 { font-size: 28px; }
   .headerActions { gap: 5px; }
   .headerActions > a { font-size: 11px; }
-  .editor { padding: 14px 16px 14px; }
-  .editor .postInput { min-height: 146px; font-size: 17px; }
+  .editor { padding: 0 16px 14px; }
+  .composerTop { margin-inline: -16px; padding: 10px 16px; gap: 10px; }
+  .writingArea { margin-top: 18px; }
+  .writingLabel { font-size: 28px; }
+  .editor .postInput { min-height: 146px; padding: 13px 14px; font-size: 16px; }
   .audienceDescription { display: none; }
   .post { padding: 18px 16px; }
   .post > h2 { font-size: 24px; }
@@ -155,7 +168,7 @@
   .feed { margin-top: 23px; }
   .feedTop { margin-bottom: 16px; gap: 8px; }
   .experience .search { width: 140px; }
-  .tools { gap: 3px 16px; }
+  .tools { gap: 8px; }
   .saveRow .save { min-width: 84px; padding-inline: 16px; }
   .confirmation { padding: 24px; }
 }
