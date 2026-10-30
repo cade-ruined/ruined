@@ -22,6 +22,7 @@ const [
   shell,
   memberPage,
   experiencePage,
+  deckRoute,
   migration,
 ] = await Promise.all([
   source("app/api/my/foundations/route.ts"),
@@ -31,10 +32,11 @@ const [
   source("src/components/foundations/PresentationShell.tsx"),
   source("app/my/foundations/page.tsx"),
   source("app/my/foundations/experience/page.tsx"),
+  source("app/my/foundations/deck/route.ts"),
   source("db/migrations/20260825_membership_foundations_circle_gate.sql"),
 ]);
 
-test("Circle is a completion condition, not a condition for starting or progressing", () => {
+test("legacy completion still requires a Circle without making it a condition for starting or progressing", () => {
   const start = functionSource(
     repository,
     "export async function startMemberFoundations",
@@ -69,8 +71,6 @@ test("Circle is a completion condition, not a condition for starting or progress
     "lifecycle and both completion history events must share the durable completion time",
   );
 
-  assert.match(home, /Your Circle will be revealed at the final moment/);
-  assert.match(home, /disabled=\{pending\}/);
   assert.match(shell, /YOUR PLACE IS SAVED/);
   assert.match(shell, /Reveal my Circle/);
 });
@@ -119,7 +119,7 @@ test("Foundations history gives Postgres explicit JSON identifier types", () => 
   );
 });
 
-test("member journey saves only sequential moment position and cannot arrow past completion", () => {
+test("the retained legacy program still saves only sequential moment position and cannot arrow past completion", () => {
   assert.match(experience, /activeIndex !== state\.completedUnits \+ 1/);
   assert.match(experience, /FOUNDATION_MOMENTS\[activeIndex - 1\]/);
   assert.match(experience, /action: "progress", momentId: completedMoment\.id/);
@@ -135,22 +135,28 @@ test("member journey saves only sequential moment position and cannot arrow past
   assert.match(shell, /closingOverview \|\| Boolean\(member\)/);
 });
 
-test("reflection content remains ephemeral while resume position is persisted", () => {
-  assert.match(home, /Only your place in the path is saved/);
+test("legacy reflection content remains ephemeral and is never accepted by the completion API", () => {
   assert.match(shell, /YOUR WORDS STAY IN THIS MOMENT/);
   assert.doesNotMatch(experience, /responses|reflection|textarea|localStorage|sessionStorage/);
   assert.doesNotMatch(apiRoute, /responses|reflection|answer|fieldId/);
 });
 
-test("member Foundations pages keep paid access gates and preview writes disabled", () => {
-  for (const page of [memberPage, experiencePage]) {
-    assert.match(page, /context\.state === "preview"/);
-    assert.match(page, /!memberCan\(access, "foundations\.write"\)/);
-    assert.match(page, /return <MemberAccessNotice access=\{access\}/);
-    assert.match(page, /writable=\{false\}/);
-  }
-  assert.match(experiencePage, /!foundations\.enrollmentId/);
-  assert.match(experiencePage, /redirect\("\/my\/foundations"\)/);
+test("the member entry replaces the old presentation while the document route retains access gates", () => {
+  assert.match(home, /href="\/my\/foundations\/deck"/);
+  assert.doesNotMatch(home, /\/my\/foundations\/experience|\/api\/my\/foundations|initialState|completedUnits|Practice &|Circle will be revealed/);
+  assert.match(memberPage, /!memberCan\(access, "foundations\.write"\)/);
+  assert.match(memberPage, /return <MemberAccessNotice access=\{access\}/);
+  assert.match(memberPage, /isFoundationsAvailableToMember/);
+  assert.doesNotMatch(memberPage, /getMemberFoundationsState|getMemberFoundationRequirements|memberPreviewFoundations|writable=/);
+  assert.match(experiencePage, /redirect\("\/my\/foundations\/deck"\)/);
+  assert.doesNotMatch(experiencePage, /\bMemberFoundationsExperience\b|getMemberFoundationsState|getMemberFoundationRequirements/);
+  assert.match(deckRoute, /getMembershipPageContext/);
+  assert.match(deckRoute, /isFoundationsAvailableToMember/);
+  assert.match(deckRoute, /memberCan\(deriveMemberAccessPolicy\(context\.data\), "foundations\.write"\)/);
+  assert.doesNotMatch(deckRoute, /startMemberFoundations|recordMemberFoundationProgress|completeMemberFoundations/);
+});
+
+test("the existing saved program remains protected and is preserved independently of reading the replacement deck", () => {
 
   const readState = functionSource(
     repository,

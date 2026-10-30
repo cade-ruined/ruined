@@ -8,7 +8,6 @@ import { loadFoundationsAvailability } from "./helpers/foundations-availability-
 const require = createRequire(import.meta.url);
 const Preview = () => null;
 const Home = () => null;
-const Experience = () => null;
 const AccessNotice = () => null;
 const Unavailable = () => null;
 const component = (value) => ({ __esModule: true, default: value });
@@ -20,14 +19,12 @@ function fixture({ launched = false, state = "authenticated", eligible = false, 
     "next/navigation": { redirect: (href) => { throw new Error(`redirect:${href}`); } },
     "@/components/foundations/MemberFoundationsPreview": component(Preview),
     "@/components/foundations/MemberFoundationsHome": component(Home),
-    "@/components/foundations/MemberFoundationsExperience": component(Experience),
     "@/components/membership/MemberAccessNotice": component(AccessNotice),
     "@/components/platform/PlatformUnavailable": component(Unavailable),
     "@/lib/foundations/availability": loadFoundationsAvailability({ MEMBERSHIP_FOUNDATIONS_LAUNCHED: String(launched) }, {
       getOperatorRole: async id => { roleReads.push(id); return role; },
     }),
     "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: {}, PREVIEW_MEMBER_TIMELINE: { entries: [], revision: "0" } },
-    "@/lib/membership/preview-scenarios": { memberPreviewFoundations: () => ({ preview: true }) },
     "@/lib/membership/page-context": {
       getMembershipPageContext: async () => ({ state, data: ["signed_out", "denied", "unavailable"].includes(state) ? null : identity, viewer }),
     },
@@ -37,11 +34,11 @@ function fixture({ launched = false, state = "authenticated", eligible = false, 
     },
     "@/lib/membership/repository": {
       getMemberIdentity: async () => identity,
-      getMemberFoundationRequirements: async () => { calls.push("requirements"); return {}; },
+      getMemberFoundationRequirements: async () => { throw Error("The replacement deck must not depend on legacy requirements"); },
       getMemberTimeline: async (owner) => { calls.push(`private-timeline:${owner}`); return { entries: [{ title: "A private moment" }], revision: "1" }; },
     },
     "@/lib/foundations/repository": {
-      getMemberFoundationsState: async () => { calls.push("progress"); return { enrollmentId: "enrolled", status: "in_progress" }; },
+      getMemberFoundationsState: async () => { throw Error("The replacement deck must not depend on legacy progress"); },
     },
     "@/lib/sharing": { privateSharingMetadata: {} },
   };
@@ -74,30 +71,24 @@ test("before launch, membership status and a stale admin viewer role cannot bypa
     const f = fixture({ identity });
     assert.equal((await f.load(homePath)()).type, Preview);
     assert.deepEqual(f.calls, []);
-    await assert.rejects(f.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
-    assert.deepEqual(f.calls, []);
-    assert.deepEqual(f.roleReads, ["member", "member"]);
+    assert.deepEqual(f.roleReads, ["member"]);
   }
 });
 
-test("current Administrators enter Foundations and the experience before global launch", async () => {
-  for (const [path, expected] of [[homePath, Home], [experiencePath, Experience]]) {
-    const f = fixture({ role: "ops_admin", eligible: true, viewer: { authUserId: "member", roles: [] } });
-    const page = await f.load(path)();
-    assert.equal(page.type, expected);
-    assert.equal(page.props.writable, true);
-    assert.deepEqual(f.roleReads, ["member"]);
-    assert.deepEqual(f.calls, ["access", "progress", "requirements"]);
-  }
+test("current Administrators enter Foundations before global launch without loading the replaced program", async () => {
+  const f = fixture({ role: "ops_admin", eligible: true, viewer: { authUserId: "member", roles: [] } });
+  const page = await f.load(homePath)();
+  assert.equal(page.type, Home);
+  assert.deepEqual(page.props, {});
+  assert.deepEqual(f.roleReads, ["member"]);
+  assert.deepEqual(f.calls, ["access"]);
 });
 
 test("prelaunch Administrator access never bypasses existing member eligibility", async () => {
-  for (const path of [homePath, experiencePath]) {
-    const f = fixture({ role: "ops_admin" });
-    assert.equal((await f.load(path)()).type, AccessNotice);
-    assert.deepEqual(f.calls, ["access"]);
-    assert.deepEqual(f.roleReads, ["member"]);
-  }
+  const f = fixture({ role: "ops_admin" });
+  assert.equal((await f.load(homePath)()).type, AccessNotice);
+  assert.deepEqual(f.calls, ["access"]);
+  assert.deepEqual(f.roleReads, ["member"]);
   for (const role of ["guide", "circle_leader"]) {
     const f = fixture({ role, eligible: true });
     assert.equal((await f.load(homePath)()).type, Preview);
@@ -108,24 +99,31 @@ test("prelaunch Administrator access never bypasses existing member eligibility"
 test("a local preview also requires an explicit launch flag before it exposes the experience", async () => {
   const closed = fixture({ state: "preview", role: "ops_admin" });
   assert.equal((await closed.load(homePath)()).type, Preview);
-  await assert.rejects(closed.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
   assert.deepEqual(closed.calls, []);
   assert.deepEqual(closed.roleReads, [], "preview data must never qualify for the Administrator exception");
   const open = fixture({ state: "preview", launched: true, eligible: true });
-  for (const path of [homePath, experiencePath]) {
-    assert.equal((await open.load(path)()).props.writable, false);
-  }
+  const page = await open.load(homePath)();
+  assert.equal(page.type, Home);
+  assert.deepEqual(page.props, {}, "The replacement has no writable legacy program mode");
+  assert.deepEqual(open.calls, ["access"]);
 });
 
 test("the launch preview preserves authentication and denied-account boundaries", async () => {
-  for (const path of [homePath, experiencePath]) {
-    const signedOut = fixture({ state: "signed_out" });
-    await assert.rejects(signedOut.load(path)(), /^Error: redirect:\/my\/access$/);
-    for (const state of ["denied", "unavailable"]) {
-      const f = fixture({ state });
-      assert.equal((await f.load(path)()).type, Unavailable);
-      assert.deepEqual(f.calls, []);
-    }
+  const signedOut = fixture({ state: "signed_out" });
+  await assert.rejects(signedOut.load(homePath)(), /^Error: redirect:\/my\/access$/);
+  for (const state of ["denied", "unavailable"]) {
+    const f = fixture({ state });
+    assert.equal((await f.load(homePath)()).type, Unavailable);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test("the replaced experience URL always forwards to the separately gated deck without reading legacy progress", async () => {
+  for (const launched of [false, true]) for (const state of ["authenticated", "signed_out", "denied", "unavailable", "preview"]) {
+    const f = fixture({ launched, state });
+    await assert.rejects(async () => f.load(experiencePath)(), /^Error: redirect:\/my\/foundations\/deck$/);
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.roleReads, []);
   }
 });
 
@@ -138,17 +136,15 @@ test("legacy Foundations Timeline links always forward to the profile Timeline w
   }
 });
 
-test("launching Foundations retains membership eligibility and loads saved progress for eligible members", async () => {
-  for (const [path, expected] of [[homePath, Home], [experiencePath, Experience]]) {
-    const denied = fixture({ launched: true });
-    assert.equal((await denied.load(path)()).type, AccessNotice);
-    assert.deepEqual(denied.calls, ["access"]);
-    const open = fixture({ launched: true, eligible: true });
-    const page = await open.load(path)();
-    assert.equal(page.type, expected);
-    assert.equal(page.props.writable, true);
-    assert.deepEqual(open.calls, ["access", "progress", "requirements"]);
-  }
+test("launching the replacement Foundations retains membership eligibility and does not load the old program", async () => {
+  const denied = fixture({ launched: true });
+  assert.equal((await denied.load(homePath)()).type, AccessNotice);
+  assert.deepEqual(denied.calls, ["access"]);
+  const open = fixture({ launched: true, eligible: true });
+  const page = await open.load(homePath)();
+  assert.equal(page.type, Home);
+  assert.deepEqual(page.props, {});
+  assert.deepEqual(open.calls, ["access"]);
 });
 
 test("the old public presentation URL routes through the member launch and access gates", () => {

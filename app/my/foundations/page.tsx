@@ -4,11 +4,9 @@ import MemberFoundationsHome from "@/components/foundations/MemberFoundationsHom
 import MemberFoundationsPreview from "@/components/foundations/MemberFoundationsPreview";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { PREVIEW_MEMBER_IDENTITY } from "@/lib/membership/preview";
-import { memberPreviewFoundations } from "@/lib/membership/preview-scenarios";
 import MemberAccessNotice from "@/components/membership/MemberAccessNotice";
-import { getMemberFoundationsState } from "@/lib/foundations/repository";
 import { isFoundationsAvailableToMember } from "@/lib/foundations/availability";
-import { getMemberFoundationRequirements, getMemberIdentity } from "@/lib/membership/repository";
+import { getMemberIdentity } from "@/lib/membership/repository";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 
@@ -23,33 +21,9 @@ export default async function MyFoundationsPage() {
   const access = deriveMemberAccessPolicy(context.data);
   if (!memberCan(access, "foundations.write")) return <MemberAccessNotice access={access} />;
 
-  if (context.state === "preview") {
-    return (
-      <MemberFoundationsHome
-        initialState={memberPreviewFoundations(context.data)}
-        writable={false}
-      />
-    );
-  }
-
-  if (!context.data || !context.viewer) {
+  if (context.state === "authenticated" && !context.viewer) {
     return <PlatformUnavailable accessHref="/my/access" />;
   }
 
-  try {
-    const [foundations, requirements] = await Promise.all([
-      getMemberFoundationsState(context.viewer.authUserId),
-      getMemberFoundationRequirements(context.viewer.authUserId),
-    ]);
-    return foundations ? (
-      <MemberFoundationsHome initialState={{ ...foundations, requirements }} writable />
-    ) : (
-      <PlatformUnavailable accessHref="/my/access" />
-    );
-  } catch (error) {
-    console.error("Member Foundations could not be loaded", {
-      errorType: error instanceof Error ? error.name : "UnknownError",
-    });
-    return <PlatformUnavailable accessHref="/my/access" />;
-  }
+  return <MemberFoundationsHome />;
 }

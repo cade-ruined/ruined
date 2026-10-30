@@ -102,11 +102,11 @@ test("Circle identity is visible by default while email and phone remain explici
   assert.doesNotMatch(profileApi, /accountability_partner/);
 });
 
-test("Future Letter navigation waits for the durable marker and never submits its text", () => {
+test("the replacement presentation no longer loads legacy requirements while existing Future Letter writes stay private", () => {
   for (const page of [foundationsMemberPage, foundationsExperiencePage]) {
-    assert.match(page, /getMemberFoundationRequirements/);
-    assert.match(page, /\.\.\.foundations, requirements/);
+    assert.doesNotMatch(page, /getMemberFoundationRequirements|getMemberFoundationsState/);
   }
+  assert.match(foundationsExperiencePage, /redirect\("\/my\/foundations\/deck"\)/);
 
   assert.match(foundationsExperience, /action: "complete_requirement"/);
   assert.match(foundationsExperience, /requirement: "future_letter"/);

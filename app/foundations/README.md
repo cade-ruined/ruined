@@ -1,81 +1,49 @@
 # Ruined Foundations
 
-`/my/foundations` shows the couch preview until the server-only
-`MEMBERSHIP_FOUNDATIONS_LAUNCHED=true` release flag is explicitly enabled,
-except for members with current Administrator (`ops_admin`) access.
-The exception checks the active account and unrevoked role in the database;
-client roles, founder status, and local preview scenarios cannot grant access.
-It applies to the home, experience, private timeline, and saved-progress actions.
-Profile activation, member eligibility, ordered progress, and completion
-requirements still apply to administrators.
+The member Foundations experience is the approved **Foundations 01** interactive
+deck (23 slides, published version 29, October 29, 2026).
 
-The flag defaults to closed in all environments, independently of membership
-payments. Other members cannot start, record progress, or complete a Future
-Letter before launch; `/my/foundations/experience` returns to the preview.
-The old `/foundations` URL redirects through the same member access and release
-gates. Journal remains available independently of the Foundations release.
+- `/my/foundations` is the member entry page.
+- `/my/foundations/deck` serves the full-page presentation.
+- `/my/foundations/experience` redirects old bookmarks to the replacement deck.
+- `/foundations` continues to route through the member entry and its access gates.
 
-When launched, eligible members can open the 22-moment, full-screen presentation.
-It uses native scroll/swipe snapping, presenter controls, chapter navigation,
-keyboard shortcuts, editable in-memory reflections, and reduced-motion
-alternatives. Reflection writing is never persisted or transmitted.
+The previous 22-moment presentation and its practice/completion controls are no
+longer offered in the member experience. Existing enrollment and completion
+records remain intact. Reading or finishing this deck does not complete all four
+Foundations sessions or write to the legacy progress API.
 
-## Editing content
+## Access
 
-All presentation copy and structure lives in:
+`MEMBERSHIP_FOUNDATIONS_LAUNCHED=true` opens Foundations to eligible members.
+Before launch, only members with current Administrator (`ops_admin`) access can
+open it. Profile activation and membership eligibility still apply.
 
-- `src/data/foundations.ts`
+The standalone HTML route runs its own visibility, session, registration, launch,
+and membership checks because route handlers do not use the member React layout.
+It returns a private, non-cacheable document. No framing permissions are relaxed.
 
-Edit the four entries in `FOUNDATION_SESSIONS` to replace founder copy,
-teaching statements, reflections, DNA cards, Path descriptions, artifacts, and
-the future-self letter prompts. `FOUNDATION_MOMENTS` controls the ordered
-22-moment presentation sequence.
+## Approved source
 
-## Replacing placeholder visuals
+- Original HTML: `src/data/foundations-deck/index.html`
+- Original assets: `public/membership/foundations/deck-v29/`
+- Source version, publication URL, commit, and file hashes:
+  `src/data/foundations-deck/provenance.json`
+- Member-only navigation and resume adapters: `member.js` and `member.css` in the
+  versioned asset directory.
 
-Founder artifact compositions live in:
+Keep approved presentation files unchanged when updating the member adapter.
+Future deck replacements should import the verified published source and record
+its provenance. The standalone HTML is included explicitly in Next's production
+function tracing.
 
-- `src/components/foundations/FounderArtifact.tsx`
-- `src/components/foundations/artifact.module.css`
+## Member controls and privacy
 
-Each composition is locally generated with CSS so it can later be replaced by
-real scans or photography without changing the presentation shell. Replace the
-artboard content with a local `next/image` asset while preserving its accessible
-label and aspect ratio.
+The deck includes its slide index, arrow navigation, motion preference, slide
+text, interactive scenes, and fullscreen control. A My Foundations link returns
+to the member area. Presenter tools and cross-tab synchronization are disabled.
 
-## Colors and timing
-
-Route-scoped palette variables and presentation layout live at the top of:
-
-- `src/components/foundations/foundations.module.css`
-
-The global palette begins with `--black`, `--faded-black`, `--bone`, `--paper`,
-`--tan`, `--muted-blue`, `--white`, and `--danger`. Shared reveal timing is set
-by `revealTransition` near the top of
-`src/components/foundations/PresentationShell.tsx`. The opening slash delay is
-controlled in the entry moment’s Motion transition.
-
-## Controls
-
-- `ArrowRight`: next moment
-- `ArrowLeft`: previous moment
-- `Space`: enter or advance
-- `Escape`: open the chapter overview
-- Scroll or swipe: native moment navigation
-
-Shortcuts pause while focus is inside form controls. Presenter controls appear
-at the bottom-right on hover, focus, or touch and include previous, next,
-chapter overview, grain, sound label, restart, and fullscreen.
-
-## Reusable components
-
-- `PresentationShell` — navigation, state, and the ordered moment renderer
-- `ChapterOverview` — accessible chapter dialog and chapter jumps
-- `ProgressPath` — four-chapter progress rail
-- `PresenterControls` — live-call control dock
-- `FounderArtifact` — replaceable founder artifact compositions
-- `ReflectionPrompt` — editable in-memory reflection surface
-- `PhilosophyNoise` — noise-to-CHOICE signature transition
-- `WordSequence` — ordered philosophy word treatment
-- `RuinedMarkBuilder` — four-piece assembling mark
-- `FilmGrain`, `SlashTransition`, and `CursorParallax` — shared motion language
+Only the last slide number is saved, in tab-local session storage scoped to the
+member and deck version. Answers are never saved or submitted by this reader.
+Member Timeline and Journal remain separate features with their existing privacy
+rules.
