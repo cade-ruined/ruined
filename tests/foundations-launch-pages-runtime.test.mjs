@@ -9,7 +9,6 @@ const require = createRequire(import.meta.url);
 const Preview = () => null;
 const Home = () => null;
 const Experience = () => null;
-const Timeline = () => null;
 const AccessNotice = () => null;
 const Unavailable = () => null;
 const component = (value) => ({ __esModule: true, default: value });
@@ -22,7 +21,6 @@ function fixture({ launched = false, state = "authenticated", eligible = false, 
     "@/components/foundations/MemberFoundationsPreview": component(Preview),
     "@/components/foundations/MemberFoundationsHome": component(Home),
     "@/components/foundations/MemberFoundationsExperience": component(Experience),
-    "@/components/membership/RuinedTimeline": component(Timeline),
     "@/components/membership/MemberAccessNotice": component(AccessNotice),
     "@/components/platform/PlatformUnavailable": component(Unavailable),
     "@/lib/foundations/availability": loadFoundationsAvailability({ MEMBERSHIP_FOUNDATIONS_LAUNCHED: String(launched) }, {
@@ -77,25 +75,24 @@ test("before launch, membership status and a stale admin viewer role cannot bypa
     assert.equal((await f.load(homePath)()).type, Preview);
     assert.deepEqual(f.calls, []);
     await assert.rejects(f.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
-    await assert.rejects(f.load(timelinePath)(), /^Error: redirect:\/my\/foundations$/);
     assert.deepEqual(f.calls, []);
-    assert.deepEqual(f.roleReads, ["member", "member", "member"]);
+    assert.deepEqual(f.roleReads, ["member", "member"]);
   }
 });
 
-test("current Administrators enter Foundations, the experience, and their private Timeline before global launch", async () => {
-  for (const [path, expected] of [[homePath, Home], [experiencePath, Experience], [timelinePath, Timeline]]) {
+test("current Administrators enter Foundations and the experience before global launch", async () => {
+  for (const [path, expected] of [[homePath, Home], [experiencePath, Experience]]) {
     const f = fixture({ role: "ops_admin", eligible: true, viewer: { authUserId: "member", roles: [] } });
     const page = await f.load(path)();
     assert.equal(page.type, expected);
     assert.equal(page.props.writable, true);
     assert.deepEqual(f.roleReads, ["member"]);
-    assert.deepEqual(f.calls, path === timelinePath ? ["access", "private-timeline:member"] : ["access", "progress", "requirements"]);
+    assert.deepEqual(f.calls, ["access", "progress", "requirements"]);
   }
 });
 
 test("prelaunch Administrator access never bypasses existing member eligibility", async () => {
-  for (const path of [homePath, experiencePath, timelinePath]) {
+  for (const path of [homePath, experiencePath]) {
     const f = fixture({ role: "ops_admin" });
     assert.equal((await f.load(path)()).type, AccessNotice);
     assert.deepEqual(f.calls, ["access"]);
@@ -112,17 +109,16 @@ test("a local preview also requires an explicit launch flag before it exposes th
   const closed = fixture({ state: "preview", role: "ops_admin" });
   assert.equal((await closed.load(homePath)()).type, Preview);
   await assert.rejects(closed.load(experiencePath)(), /^Error: redirect:\/my\/foundations$/);
-  await assert.rejects(closed.load(timelinePath)(), /^Error: redirect:\/my\/foundations$/);
   assert.deepEqual(closed.calls, []);
   assert.deepEqual(closed.roleReads, [], "preview data must never qualify for the Administrator exception");
   const open = fixture({ state: "preview", launched: true, eligible: true });
-  for (const path of [homePath, experiencePath, timelinePath]) {
+  for (const path of [homePath, experiencePath]) {
     assert.equal((await open.load(path)()).props.writable, false);
   }
 });
 
 test("the launch preview preserves authentication and denied-account boundaries", async () => {
-  for (const path of [homePath, experiencePath, timelinePath]) {
+  for (const path of [homePath, experiencePath]) {
     const signedOut = fixture({ state: "signed_out" });
     await assert.rejects(signedOut.load(path)(), /^Error: redirect:\/my\/access$/);
     for (const state of ["denied", "unavailable"]) {
@@ -133,23 +129,13 @@ test("the launch preview preserves authentication and denied-account boundaries"
   }
 });
 
-test("Foundations timeline retains private exercise completion without opening the public Timeline", async () => {
-  const denied = fixture({ launched: true });
-  assert.equal((await denied.load(timelinePath)()).type, AccessNotice);
-  assert.deepEqual(denied.calls, ["access"]);
-
-  const open = fixture({ launched: true, eligible: true });
-  const page = await open.load(timelinePath)();
-  assert.equal(page.type, Timeline);
-  assert.equal(page.props.writable, true);
-  assert.deepEqual(page.props.initialTimeline.entries, [{ title: "A private moment" }]);
-  assert.deepEqual(open.calls, ["access", "private-timeline:member"]);
-
-  const readonly = fixture({ launched: true, revisit: true });
-  const revisitPage = await readonly.load(timelinePath)();
-  assert.equal(revisitPage.type, Timeline);
-  assert.equal(revisitPage.props.writable, false);
-  assert.deepEqual(readonly.calls, ["access", "private-timeline:member"]);
+test("legacy Foundations Timeline links always forward to the profile Timeline without reading entries", () => {
+  for (const launched of [false, true]) for (const state of ["authenticated", "signed_out", "denied", "unavailable", "preview"]) {
+    const f = fixture({ launched, state });
+    assert.throws(f.load(timelinePath), /^Error: redirect:\/my\/timeline$/);
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.roleReads, []);
+  }
 });
 
 test("launching Foundations retains membership eligibility and loads saved progress for eligible members", async () => {

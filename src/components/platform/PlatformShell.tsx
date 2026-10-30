@@ -392,7 +392,7 @@ export default function PlatformShell({
   const memberSettings = member && (pathname === "/my/account" || pathname === "/my/profile");
   const foundations = member && isMemberFoundations(pathname);
   const foundationsExperience = pathname.startsWith("/my/foundations/experience");
-  const timeline = member && (pathname === "/my/foundations/timeline" || pathname.startsWith("/my/foundations/timeline/"));
+  const timeline = member && (pathname === "/my/timeline" || pathname.startsWith("/my/timeline/") || pathname === "/my/foundations/timeline" || pathname.startsWith("/my/foundations/timeline/"));
   const paperSurface = memberHome || memberCircle || memberExperiences || memberLearning || memberSupport || memberSettings || timeline;
   const paperClass = timeline
     ? "member-timeline-paper"

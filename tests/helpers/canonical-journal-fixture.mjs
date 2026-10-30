@@ -32,7 +32,7 @@ async function loadTypescript(path, dependencies = {}) {
   return cjsModule.exports;
 }
 
-export async function timelineFixture(t, { monthMigration = true, visibilityMigration = true, meaningMigration = true, reflectionMigration = true } = {}) {
+export async function timelineFixture(t, { monthMigration = true, visibilityMigration = true, meaningMigration = true, reflectionMigration = true, publicReflectionMigration = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   // Only the driver's actual Parameter/JSON serializers are used. No driver
@@ -82,7 +82,10 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
       await db.exec(await source("db/migrations/20261001120000_public_timeline_posts.sql"));
       if (meaningMigration) {
         await db.exec(await source("db/migrations/20261008200000_foundations_timeline_meaning.sql"));
-        if (reflectionMigration) await db.exec(await source("db/migrations/20261029160000_foundations_timeline_reflections.sql"));
+        if (reflectionMigration) {
+          await db.exec(await source("db/migrations/20261029160000_foundations_timeline_reflections.sql"));
+          if (publicReflectionMigration) await db.exec(await source("db/migrations/20261030120000_public_timeline_reflections.sql"));
+        }
       }
     }
   }

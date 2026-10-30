@@ -4,7 +4,7 @@ export const MEMBER_DESTINATIONS = [
   { href: "/my/card", label: "My Card", group: "Your record", keywords: "public share flip portrait card download identity" },
   { href: "/my/invitation", label: "My Invitation", group: "Your record", keywords: "invite invitation referral people joined share" },
   { href: "/my/artifacts", label: "Artifacts", group: "Your record", keywords: "awards earned coin collection fulfillment tracking" },
-  { href: "/my/foundations/timeline", label: "Foundations timeline", group: "Your membership", keywords: "private exercise life story journey export carousel" },
+  { href: "/my/timeline", label: "Timeline", group: "Your record", keywords: "public moments story reflections draft" },
   { href: "/my/circle", label: "Circle", group: "Your membership", keywords: "people shaper chat google meet group" },
   { href: "/my/experiences", label: "Calendar", group: "Your membership", keywords: "events experiences calendar meetings calls rsvp attend" },
   { href: "/my/foundations", label: "Foundations", group: "Your membership", keywords: "start progress course reflection" },
@@ -34,6 +34,6 @@ export const MEMBER_PRIMARY_DESTINATIONS = [
 ] as const;
 
 export function currentMemberPrimaryDestination(pathname: string): string | undefined {
-  if (pathname === "/my/card" || pathname === "/my/invitation" || pathname === "/my/badges") return "/my";
+  if (pathname === "/my/card" || pathname === "/my/invitation" || pathname === "/my/badges" || pathname === "/my/timeline" || pathname.startsWith("/my/timeline/")) return "/my";
   return MEMBER_PRIMARY_DESTINATIONS.find(({ href }) => pathname === href || (href !== "/my" && pathname.startsWith(`${href}/`)))?.href;
 }

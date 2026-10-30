@@ -3,96 +3,82 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
-
 const require = createRequire(import.meta.url);
 function load(path, dependencies = {}, logs = []) {
   const compiled = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText;
-  const cjsModule = { exports: {} };
+  const runtime = { exports: {} };
   new Function("require", "module", "exports", "console", compiled)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime") return require(name);
-    throw Error(`Unexpected Part I page dependency: ${name}`);
-  }, cjsModule, cjsModule.exports, { error: (...args) => logs.push(args) });
-  return cjsModule.exports;
+    throw Error(`Unexpected Timeline page dependency: ${name}`);
+  }, runtime, runtime.exports, { error: (...args) => logs.push(args) });
+  return runtime.exports;
 }
-
-const Worksheet = () => null;
-const Unavailable = () => null;
-const AccessNotice = () => null;
+const redirect = href => { throw Object.assign(Error("Redirect"), { href }); };
+const Editor = () => null, Unavailable = () => null, AccessNotice = () => null;
+class JournalError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const viewer = { authUserId: "11111111-1111-4111-8111-111111111111" };
-const timeline = { entries: [], revision: "timeline-r1" };
-const previewTimeline = { entries: [], revision: "preview" };
-const accessUrl = "/access?returnTo=%2Fmy%2Ffoundations%2Ftimeline%2Fpart-1";
-
-function fixture({ state = "authenticated", launched = true, writable = true, revisit = true, failure = false } = {}) {
+const snapshot = { entries: [], writable: true, mediaReady: true, hasMore: false };
+function fixture({ state = "authenticated", readable = true, failure = false, selected = null } = {}) {
   const reads = [], logs = [];
-  const page = load("app/my/foundations/timeline/part-1/page.tsx", {
-    "next/navigation": { redirect: (href) => { throw Object.assign(Error("Redirect"), { href }); } },
-    "@/components/membership/FoundationsTimelineWorksheet": Worksheet,
-    "@/components/membership/MemberAccessNotice": AccessNotice,
+  const page = load("src/components/membership/GuidedTimelinePage.tsx", {
+    "next/navigation": { redirect }, "./GuidedTimeline": Editor, "./MemberAccessNotice": AccessNotice,
     "@/components/platform/PlatformUnavailable": Unavailable,
     "@/lib/auth/support-return": load("src/lib/auth/support-return.ts"),
-    "@/lib/foundations/availability": { isFoundationsAvailableToMember: async (id) => { reads.push(["availability", id]); return launched; } },
-    "@/lib/membership/access-policy": {
-      deriveMemberAccessPolicy: () => ({ active: writable }),
-      memberCan: (_access, action) => action === "foundations.write" ? writable : revisit,
+    "@/lib/membership/access-policy": { deriveMemberAccessPolicy: () => ({}), memberCan: () => readable },
+    "@/lib/membership/page-context": { getMembershipPageContext: async () => ({ state, data: ["authenticated", "preview"].includes(state) ? {} : null, viewer: state === "authenticated" ? viewer : null }) },
+    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: {} },
+    "@/lib/membership/repository": { getMemberIdentity: () => null },
+    "@/lib/membership/guided-timeline-preview": { GUIDED_TIMELINE_PREVIEW: snapshot },
+    "@/lib/membership/journal-model": { JournalError },
+    "@/lib/membership/journal-repository": {
+      getJournal: async (...args) => { reads.push(["list", ...args]); if (failure) throw Error("PRIVATE ENTRY CONTENT"); return { ...snapshot, entries: [] }; },
+      getJournalEntry: async (...args) => { reads.push(["entry", ...args]); if (!selected) throw new JournalError(404, "Not found"); return selected; },
     },
-    "@/lib/membership/page-context": { getMembershipPageContext: async () => ({ state, data: ["authenticated", "preview"].includes(state) ? { member: true } : null, viewer: state === "authenticated" ? viewer : null }) },
-    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: {}, PREVIEW_MEMBER_TIMELINE: previewTimeline },
-    "@/lib/membership/repository": {
-      getMemberIdentity: () => null,
-      getMemberTimeline: async (id) => { reads.push(["timeline", id]); if (failure) throw Error("PRIVATE content"); return timeline; },
-    },
-  }, logs);
-  return { page: (query = {}) => page.default({ searchParams: Promise.resolve(query) }), reads, logs };
+  }, logs).default;
+  return { page, reads, logs };
 }
 
-test("Part I keeps its destination through sign-in and never loads private moments for an absent identity", async () => {
-  const signedOut = fixture({ state: "signed_out" });
-  await assert.rejects(signedOut.page(), { href: accessUrl });
-  assert.deepEqual(signedOut.reads, []);
+test("Foundations links resolve to the same public Timeline editor and preserve the chosen moment", async () => {
+  const page = load("app/my/foundations/timeline/part-1/page.tsx", { "next/navigation": { redirect } }).default;
+  await assert.rejects(page({ searchParams: Promise.resolve({}) }), { href: "/my/timeline" });
+  await assert.rejects(page({ searchParams: Promise.resolve({ new: "1" }) }), { href: "/my/timeline/new" });
+  await assert.rejects(page({ searchParams: Promise.resolve({ moment: "entry-id" }) }), { href: "/my/timeline?moment=entry-id" });
+  const overview = load("app/my/foundations/timeline/page.tsx", { "next/navigation": { redirect } }).default;
+  assert.throws(overview, { href: "/my/timeline" });
+});
+
+test("public Timeline authoring keeps sign-in destination and rejects unavailable identities before reads", async () => {
+  const f = fixture({ state: "signed_out" });
+  await assert.rejects(f.page({ startNew: true }), { href: "/access?returnTo=%2Fmy%2Ftimeline%2Fnew" });
+  assert.deepEqual(f.reads, []);
   for (const state of ["denied", "unavailable"]) {
-    const f = fixture({ state });
-    const tree = await f.page();
-    assert.equal(tree.type, Unavailable);
-    assert.deepEqual(f.reads, []);
+    const f = fixture({ state }); assert.equal((await f.page({})).type, Unavailable); assert.deepEqual(f.reads, []);
   }
+  const denied = fixture({ readable: false });
+  assert.equal((await denied.page({})).type, AccessNotice); assert.deepEqual(denied.reads, []);
 });
 
-test("Part I preserves launch and read/write membership gates before reading the Timeline", async () => {
-  const closed = fixture({ launched: false });
-  await assert.rejects(closed.page(), { href: "/my/foundations" });
-  assert.deepEqual(closed.reads, [["availability", viewer.authUserId]]);
-  const denied = fixture({ writable: false, revisit: false });
-  assert.equal((await denied.page()).type, AccessNotice);
-  assert.deepEqual(denied.reads, [["availability", viewer.authUserId]]);
-  for (const writable of [false, true]) {
-    const f = fixture({ writable });
-    const tree = await f.page();
-    assert.equal(tree.type, Worksheet);
-    assert.deepEqual(tree.props, { initialTimeline: timeline, writable, ownerId: viewer.authUserId, initialEntryId: undefined, startNew: false });
-    assert.deepEqual(f.reads, [["availability", viewer.authUserId], ["timeline", viewer.authUserId]]);
-  }
+test("Timeline authoring uses profile access and owner-scoped Journal persistence", async () => {
+  const f = fixture(); const tree = await f.page({ startNew: true });
+  assert.equal(tree.type, Editor); assert.equal(tree.props.ownerId, viewer.authUserId); assert.equal(tree.props.startNew, true);
+  assert.deepEqual(f.reads, [["list", viewer.authUserId, null, false, { view: "timeline", order: "newest" }]]);
 });
 
-test("Part I preview stays read-only and a data failure reveals no journal content", async () => {
-  const preview = fixture({ state: "preview" });
-  assert.deepEqual((await preview.page()).props, { initialTimeline: previewTimeline, preview: true, writable: false, initialEntryId: undefined, startNew: false });
-  assert.deepEqual(preview.reads, [["availability", null]]);
-  const failed = fixture({ failure: true });
-  assert.equal((await failed.page()).type, Unavailable);
-  assert.doesNotMatch(JSON.stringify(failed.logs), /PRIVATE/);
+test("a selected moment beyond the first page is resolved for the owner without substituting a missing entry", async () => {
+  const entry = { id: "selected", includeOnTimeline: true, visibility: "private" };
+  const f = fixture({ selected: entry }); const tree = await f.page({ moment: entry.id });
+  assert.deepEqual(tree.props.initialJournal.entries, [entry]); assert.equal(tree.props.initialEntryId, entry.id);
+  assert.deepEqual(f.reads.at(-1), ["entry", viewer.authUserId, entry.id]);
+  const missing = await fixture().page({ moment: "missing" });
+  assert.deepEqual(missing.props.initialJournal.entries, []); assert.equal(missing.props.initialEntryId, "missing");
 });
 
-test("Part I forwards moment selection and resets the worksheet when opening a new story", async () => {
-  const f = fixture();
-  const selected = await f.page({ moment: "saved-moment" });
-  assert.equal(selected.props.initialEntryId, "saved-moment");
-  assert.equal(selected.props.startNew, false);
-  assert.equal(selected.key, "saved-moment");
-  const fresh = await f.page({ new: "1" });
-  assert.equal(fresh.props.startNew, true);
-  assert.equal(fresh.key, "new");
+test("Timeline preview is isolated and failures never log private entry content", async () => {
+  const preview = fixture({ state: "preview" }); const tree = await preview.page({});
+  assert.equal(tree.props.preview, true); assert.deepEqual(preview.reads, []);
+  const failed = fixture({ failure: true }); assert.equal((await failed.page({})).type, Unavailable);
+  assert.doesNotMatch(JSON.stringify(failed.logs), /PRIVATE ENTRY CONTENT/);
 });

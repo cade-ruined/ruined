@@ -2,16 +2,18 @@ import "server-only";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { getPublicMemberProfileScope } from "./public-card-repository";
 import { journalStore } from "./journal-storage";
-import { JournalError, JOURNAL_UUID, journalFilePolicy, type JournalKind } from "./journal-model";
+import { JournalError, JOURNAL_UUID, journalFilePolicy, type JournalKind, type TimelineReflection } from "./journal-model";
 import { MEMBER_PROFILE_IDENTIFIER } from "./public-card-model";
 
-/** Explicit visitor projection: no dates from Timeline, saved flags, versions, or owner identity. */
+/** Explicit visitor projection: only reviewed story dates/answers, never legacy private reflections or owner state. */
 export type PublicJournalEntry = {
   id: string; kind: JournalKind; title: string | null; body: string | null; createdAt: string;
   media: { url: string; mimeType: string }[];
+  timelineReflection?: TimelineReflection;
+  eventYear?: number | null; eventMonth?: number | null; eventDay?: number | null;
 };
 export type PublicJournalPage = { entries: PublicJournalEntry[]; hasMore: boolean; nextCursor: string | null };
-type EntryRow = { id: string; kind: JournalKind; title: string | null; body: string | null; created_at: Date | string; current_version: number };
+type EntryRow = { id: string; kind: JournalKind; title: string | null; body: string | null; created_at: Date | string; current_version: number; timeline_reflection:TimelineReflection|null; event_year:number|null; event_month:number|null; event_day:number|null };
 type MediaRow = { id: string; entry_id: string; mime_type: string };
 
 export async function getPublicJournal(token: string, cursor: string | null = null): Promise<PublicJournalPage | null> {
@@ -24,7 +26,11 @@ export async function getPublicJournal(token: string, cursor: string | null = nu
   // public consent, and an old public entry without Timeline inclusion is hidden.
   // Cursor identity is derived solely from this member's current public collection.
   const rows = await sql<EntryRow[]>`
-    select id, kind, title, body, created_at, current_version from member_journal_entries
+    select id, kind, title, body, created_at, current_version, timeline_reflection,
+      case when timeline_reflection is not null then event_year end as event_year,
+      case when timeline_reflection is not null then event_month end as event_month,
+      case when timeline_reflection is not null then event_day end as event_day
+    from member_journal_entries
     where member_id = ${scope.memberId}::uuid and visibility = 'public' and include_on_timeline and deleted_at is null
       and (${cursor === null} or (created_at, id) < (
         select created_at, id from member_journal_entries where id = ${cursor}::uuid
@@ -55,6 +61,7 @@ export async function getPublicJournal(token: string, cursor: string | null = nu
   return {
     entries: page.map(row => ({
       id: row.id, kind: row.kind, title: row.title, body: row.body, createdAt: new Date(row.created_at).toISOString(),
+      ...(row.timeline_reflection ? {timelineReflection:row.timeline_reflection,eventYear:row.event_year,eventMonth:row.event_month,eventDay:row.event_day} : {}),
       media: media.filter(item => item.entry_id === row.id).map(item => ({
         url: `/api/cards/${token}/journal/media/${item.id}`, mimeType: item.mime_type,
       })),

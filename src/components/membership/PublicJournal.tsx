@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { memberTier } from "@/lib/membership/member-number";
 import MemberBadges from "./MemberBadges";
+import TimelineStoryContent from "./TimelineStoryContent";
 import type { MemberBadge } from "@/lib/membership/badge-model";
 import profileStyles from "../platform/MemberProfile.module.css";
 import journeyStyles from "./MemberJourneyShell.module.css";
@@ -69,9 +70,10 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
             {unavailable ? <p className={styles.status}>This profile is unavailable.</p> : <>
               {!loading && !error && entries.length === 0 && <div className={journalStyles.empty}><h3>No Timeline posts yet.</h3><p>Shared thoughts, photographs, and moments will appear here.</p></div>}
               {!!entries.length && <div className={journalStyles.feed}>{entries.map(entry => <article className={journalStyles.feedPost} key={entry.id}>
-                <div className={journalStyles.feedMeta}><time dateTime={entry.createdAt}>{new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(entry.createdAt))}</time></div>
+                <div className={journalStyles.feedMeta}><time dateTime={entry.createdAt}>{new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(new Date(entry.createdAt))}</time>{entry.timelineReflection && entry.eventYear ? <span>Remembering {entry.eventMonth ? `${new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(entry.eventYear, entry.eventMonth - 1, 1)))} ` : ""}{entry.eventDay ? `${entry.eventDay}, ` : ""}{entry.eventYear}</span> : null}</div>
                 {entry.title && <h3 className={journalStyles.feedTitle}>{entry.title}</h3>}
                 {entry.body && <p className={journalStyles.feedBody}>{entry.body}</p>}
+                <TimelineStoryContent reflection={entry.timelineReflection} />
                 {!!entry.media.length && <div className={styles.media}>{entry.media.map((media, index) => media.mimeType.startsWith("video/")
                   ? <video key={media.url} src={media.url} controls playsInline preload="metadata" aria-label={`${entry.title || "Timeline moment"} — video ${index + 1}`} />
                   : <Image key={media.url} src={media.url} alt={`${entry.title || "Timeline moment"} — photograph ${index + 1}`} width={960} height={720} style={{ width: "100%", height: "auto" }} unoptimized />)}</div>}

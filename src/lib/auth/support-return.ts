@@ -6,12 +6,12 @@ export function getMemberReturnTo(value: unknown): string | null {
   return typeof value === "string" && MEMBER_RETURN_PATHS.has(value) ? value : null;
 }
 
-const FOUNDATIONS_TIMELINE_RETURN = "/my/foundations/timeline/part-1";
+const TIMELINE_RETURN_PATHS = new Set(["/my/foundations/timeline/part-1", "/my/timeline", "/my/timeline/new"]);
 
 /** A navigation hint only. Each supported destination still authorizes every request. */
 export function getSupportReturnTo(value: unknown): string | null {
   if (typeof value !== "string" || value !== value.trim()) return null;
-  if (value === FOUNDATIONS_TIMELINE_RETURN) return value;
+  if (TIMELINE_RETURN_PATHS.has(value)) return value;
   if (!SUPPORT_RETURN_PATTERN.test(value)) return null;
   return value.toLowerCase();
 }

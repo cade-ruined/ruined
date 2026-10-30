@@ -21,6 +21,7 @@ test("meaning migration preserves every existing event/history field and leaves 
   assert.deepEqual((await f.db.query("select to_jsonb(e)-'foundations_meaning' row from member_journal_entries e order by id")).rows, rows);
   assert.deepEqual((await f.db.query("select to_jsonb(v)-'foundations_meaning' row from member_journal_entry_versions v order by id")).rows, history);
   await f.db.exec(await source("db/migrations/20261029160000_foundations_timeline_reflections.sql"));
+  await f.db.exec(await source("db/migrations/20261030120000_public_timeline_reflections.sql"));
   assert.equal((await f.repository.getMemberTimeline(ids.auth)).entries[0].meaning, null);
   for (const role of ["anon", "authenticated"]) {
     for (const table of ["member_journal_entries", "member_journal_entry_versions"]) {

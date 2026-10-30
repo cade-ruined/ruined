@@ -153,6 +153,7 @@
 
 /* The profile Timeline reads as a continuous feed; its audience stays explicit. */
 .feed { max-width:720px; margin-inline:auto; border-top:1px solid var(--member-rule); }
+.storyPerspective { display:block; margin-top:20px; padding:14px 18px; border-left:3px solid var(--member-yellow,#ffce32); font:24px/1.4 var(--font-display); color:var(--member-ink); overflow-wrap:anywhere; }
 .feedPost { padding:28px 0; border-bottom:1px solid var(--member-rule); }
 .feedOpen { display:block; width:100%; text-align:left; }
 .feedMeta { display:flex; flex-wrap:wrap; gap:6px 18px; color:var(--member-muted); font-size:11px; line-height:1.7; margin-bottom:14px; }

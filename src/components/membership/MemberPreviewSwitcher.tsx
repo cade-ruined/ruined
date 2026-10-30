@@ -34,7 +34,7 @@ export default function MemberPreviewSwitcher({ scenario }: { scenario: MemberPr
     {error ? <span role="alert">{error}</span> : null}
     <span className="text-xs opacity-60">Example snapshot: Aug 27, 2026 · changes are not saved</span>
   </form>;
-  return pathname === "/my/foundations/timeline/part-1" ? <details className="mb-3 text-[var(--member-muted)]">
+  return pathname === "/my/timeline" || pathname.startsWith("/my/timeline/") || pathname === "/my/foundations/timeline/part-1" ? <details className="mb-3 text-[var(--member-muted)]">
     <summary className="min-h-11 cursor-pointer py-3 text-xs">Preview account · {scenario === "complimentary" ? "Complimentary member" : labels[scenario]}</summary>
     {form}
   </details> : form;

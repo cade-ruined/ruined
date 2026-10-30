@@ -1,0 +1,11 @@
+.reflections { display:grid; gap:10px; margin-top:24px; }
+.reflection { padding:20px 24px; border:1px solid var(--member-rule); background:color-mix(in srgb,#a7c5d8 12%,transparent); }
+.reflection[data-tone="belief"] { background:color-mix(in srgb,#ae98b5 13%,transparent); }
+.reflection[data-tone="presentImpact"] { background:color-mix(in srgb,#a4b799 13%,transparent); }
+.reflection[data-tone="perspective"] { background:color-mix(in srgb,#ffce32 13%,transparent); border-left:3px solid var(--member-yellow,#ffce32); }
+.reflection header { display:flex; gap:16px; align-items:baseline; margin-bottom:10px; }
+.reflection header>span { color:var(--member-muted); font:10px var(--font-body); }
+.reflection h4 { margin:0; color:var(--member-muted); font:500 11px/1.5 var(--font-body); text-transform:uppercase; letter-spacing:.08em; }
+.reflection p { margin:0; color:var(--member-ink); font:400 15px/1.8 var(--font-body); white-space:pre-wrap; overflow-wrap:anywhere; }
+.reflection[data-tone="perspective"] p { font-family:var(--font-display); font-size:24px; line-height:1.4; }
+@media(max-width:600px) { .reflection { padding:16px; } .reflection p { font-size:14px; } .reflection[data-tone="perspective"] p { font-size:22px; } }

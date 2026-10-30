@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   JOURNAL_BODY_LENGTH, JOURNAL_MAX_IMAGES, JOURNAL_MEDIA_ACCEPT, journalFilePolicy,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/membership/journal-model";
 import { TIMELINE_MONTHS, type TimelineDraftEntry } from "./timeline-model";
 import TimelineExportStudio from "./TimelineExportStudio";
+import TimelineStoryContent from "./TimelineStoryContent";
 import useJournalDraftGuard from "./useJournalDraftGuard";
 import type { JournalDraft } from "./MemberJournalDraftState";
 import styles from "./MemberJournal.module.css";
@@ -83,6 +85,7 @@ function Dialog({ open, onClose, title, children }: { open: boolean; onClose: ()
 
 export default function MemberJournal({ preview, writable, view = "journal", initialMode = "all", onModeChange, renderLayout, sharingEnabled = false, privateComposeRequest = 0, previewEmpty = false }: { preview: boolean; writable: boolean; sharingEnabled?: boolean; view?: "journal" | "saved"; initialMode?: ReadingMode; onModeChange?: (mode: ReadingMode) => void; renderLayout?: (content: ReactNode, addEntryAction: ReactNode) => ReactNode; privateComposeRequest?: number; previewEmpty?: boolean }) {
   const sharing = sharingEnabled;
+  const router = useRouter();
   const journalApi = "/api/my/journal";
   const timelineApi = "/api/my/timeline";
   const [mode, setMode] = useState<ReadingMode>(initialMode);
@@ -185,12 +188,14 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   }
   function startEntry(destination: "private" | "public") {
     if (!writable || pending || recoveryDraft) return;
-    installDraft({ ...blankDraft(), draftId: crypto.randomUUID(), visibility: destination, includeOnTimeline: destination === "public" });
+    if (destination === "public") { setNewEntryOpen(false); router.push("/my/timeline/new"); return; }
+    installDraft({ ...blankDraft(), draftId: crypto.randomUUID(), visibility: "private", includeOnTimeline: false });
     setNewEntryOpen(false); setComposer(true);
   }
   function editEntry(entry: JournalEntry) {
     if (!writable || pending || recoveryDraft) return;
     if ((dirty || draft.attempted) && draft.editingId !== entry.id) { setNotice("Finish or discard your current draft before editing another entry."); setSelected(null); setComposer(true); return; }
+    if (entry.timelineReflection || entry.legacyTimelineReflection) { setSelected(null); router.push(`/my/timeline?moment=${encodeURIComponent(entry.id)}`); return; }
     if (!dirty && !draft.attempted) installDraft(draftFor(entry));
     setSelected(null); setComposer(true);
   }
@@ -356,7 +361,8 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
         {entry.title ? <span className={styles.feedTitle}>{entry.title}</span> : null}
         {entry.body ? <span className={styles.feedBody}>{entry.body}</span> : null}
         {entry.kind === "images" && entry.media[0] ? <span className={styles.feedImage}><Image src={entry.media[0].url} alt="" width={900} height={675} sizes="(max-width: 700px) 100vw, 680px" unoptimized/>{entry.media.length > 1 ? <span className={styles.imageCount}>1 / {entry.media.length}</span> : null}</span> : entry.kind === "video" ? <span className={styles.storyVideo} aria-hidden="true">▷ <span>Play video</span></span> : null}
-        <span className={styles.feedOpenLabel}>Open post <span aria-hidden="true">↗</span></span>
+        {entry.timelineReflection?.perspective ? <span className={styles.storyPerspective}>{entry.timelineReflection.perspective}</span> : null}
+        <span className={styles.feedOpenLabel}>{entry.timelineReflection ? "Read the story" : "Open post"} <span aria-hidden="true">↗</span></span>
       </button>
     </article>;
     return <article className={timelineView ? styles.storyMoment : styles.storyCard} key={entry.id}>
@@ -393,7 +399,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       <p className={styles.subtitle}>Choose where it belongs.</p>
       <div className={styles.destinationChoices}>
         <button type="button" onClick={() => startEntry("private")} aria-label="Journal (Private)"><span>Journal <small>Private</small></span><p>A thought, a photograph, a moment. Just for you.</p><span aria-hidden="true">↗</span></button>
-        <button type="button" onClick={() => startEntry("public")} aria-label="Timeline (Public)"><span>Timeline <small>Public</small></span><p>Share a post on your profile.</p><span aria-hidden="true">↗</span></button>
+        <button type="button" onClick={() => startEntry("public")} aria-label="Timeline (Public)"><span>Timeline <small>Public</small></span><p>Six questions. A moment in perspective. Share your story.</p><span aria-hidden="true">↗</span></button>
       </div>
     </Dialog>
     <Dialog open={composer} onClose={() => setComposer(false)} title={sharing ? (draft.editingId ? "Edit your " : "New ") + (isPublicTimeline(draft) ? "Timeline post." : "Journal entry.") : draft.editingId ? "Edit your entry." : "Leave something here."}>
@@ -426,6 +432,8 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       {selected.kind === "video" && selected.media[0] ? <video className={styles.video} key={selected.id} src={selected.media[0].url} controls playsInline preload="metadata" onError={() => setMediaError("This video could not be played. Try reopening the entry.")}/> : null}
       {mediaError ? <p className={styles.draftError} role="alert">{mediaError}</p> : null}
       {selected.body ? <p className={styles.detailBody}>{selected.body}</p> : null}
+      <TimelineStoryContent reflection={selected.timelineReflection} />
+      {selected.legacyTimelineReflection ? <p className={styles.privacyHint}>This moment has private reflection answers. Open the guided editor to review them before publishing.</p> : null}
       {writable ? <footer className={styles.storyEntryActions}><button className="member-button" type="button" disabled={pending} onClick={() => editEntry(selected)}>Edit entry</button><button className={styles.quiet} type="button" disabled={pending} onClick={() => void deleteEntry(selected)}>Delete entry</button></footer> : null}
     </> : null}</Dialog>
   </section>;

@@ -5,12 +5,12 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { getMemberIdentity, requireLockedMemberWriteAccess, MembershipAccessDeniedError } from "@/lib/membership/repository";
 import type { MemberIdentity } from "./model";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
-import { JournalError, journalFilePolicy, validateJournalInput, validateJournalVersion, type JournalCreateInput, type JournalEditInput, type JournalEntry, type JournalSnapshot, type JournalListOptions, JOURNAL_UUID } from "./journal-model";
+import { JournalError, journalFilePolicy, validateJournalInput, validateJournalVersion, type JournalCreateInput, type JournalEditInput, type JournalEntry, type JournalSnapshot, type JournalListOptions, type TimelineReflection, JOURNAL_UUID } from "./journal-model";
 import { getOwnMemberProfilePublicScope } from "./public-card-repository";
 import { journalStore, journalStorageConfigured, validateJournalMedia } from "./journal-storage";
 
 type Sql = ReturnType<typeof getApplicationDatabase> | postgres.TransactionSql;
-type EntryRow = { visibility:"private"|"public"; id:string; kind:JournalEntry["kind"]; title:string|null; body:string|null; created_at:Date|string; saved:boolean; event_year:number|null; event_month:number|null; event_day:number|null; include_on_timeline:boolean; current_version:number; deleted_at:Date|null; timeline_position:number|null };
+type EntryRow = { visibility:"private"|"public"; id:string; kind:JournalEntry["kind"]; title:string|null; body:string|null; created_at:Date|string; saved:boolean; event_year:number|null; event_month:number|null; event_day:number|null; include_on_timeline:boolean; current_version:number; deleted_at:Date|null; timeline_position:number|null; timeline_reflection?:TimelineReflection|null; foundations_meaning?:string|null; foundations_belief?:string|null; foundations_present_impact?:string|null; foundations_perspective?:string|null };
 type MediaRow = { id:string; entry_id:string|null; storage_path:string; mime_type:string; byte_size:number|string; verified_at:Date|null; state:string; created_at:Date|string; removed_at:Date|null };
 export async function journalOwner(authUserId:string, write=false) {
   const identity=await getMemberIdentity(authUserId);
@@ -25,11 +25,18 @@ async function lockJournal(tx:postgres.TransactionSql, identity:MemberIdentity) 
   catch(error) { if(error instanceof MembershipAccessDeniedError) throw new JournalError(403,"Your account cannot change this journal."); throw error; }
   await tx`select set_config('app.journal_actor_auth_user_id',${identity.authUserId},true)`;
 }
+function legacyTimelineReflection(row:EntryRow):TimelineReflection|undefined {
+  if(row.visibility!=="private" || !row.include_on_timeline) return undefined;
+  const reflection={meaning:row.foundations_meaning??null,belief:row.foundations_belief??null,presentImpact:row.foundations_present_impact??null,perspective:row.foundations_perspective??null};
+  return Object.values(reflection).some(value=>value?.trim()) ? reflection : undefined;
+}
 async function entriesWithMedia(memberId:string, rows:EntryRow[], sql:Sql=getApplicationDatabase()):Promise<JournalEntry[]> {
   if (!rows.length) return [];
   const media=await sql<MediaRow[]>`select id,entry_id,mime_type,byte_size from member_journal_media where member_id=${memberId}::uuid and entry_id in ${sql(rows.map(row=>row.id))} and state='ready' and removed_at is null order by position,id`;
   return rows.map(row=>({id:row.id,kind:row.kind,title:row.title,body:row.body,createdAt:new Date(row.created_at).toISOString(),saved:row.saved,
     eventYear:row.event_year,eventMonth:row.event_month,eventDay:row.event_day,includeOnTimeline:row.include_on_timeline,version:String(row.current_version),visibility:row.visibility,
+    ...(row.timeline_reflection ? {timelineReflection:row.timeline_reflection} : {}),
+    ...(legacyTimelineReflection(row) ? {legacyTimelineReflection:legacyTimelineReflection(row)} : {}),
     media:media.filter(item=>item.entry_id===row.id).map(item=>({id:item.id,mimeType:item.mime_type,size:Number(item.byte_size),url:`/api/my/journal/media/${item.id}`}))}));
 }
 export async function getJournalEntry(authUserId:string,id:string):Promise<JournalEntry> {
@@ -156,11 +163,16 @@ async function requireJournalPublication(memberId:string, input:JournalCreateInp
   // Publication depends on current member eligibility, never card sharing controls.
   if(!await ownPublicJournalUrl(memberId,tx)) throw new JournalError(403,"Your profile is not available for public Timeline posts.");
 }
+function sameTimelineReflection(left:TimelineReflection|null|undefined,right:TimelineReflection|null) {
+  if(!left || !right) return (left??null)===right;
+  return (["meaning","belief","presentImpact","perspective"] as const).every(field=>left[field]===right[field]);
+}
 function inputMatches(entry:JournalEntry,input:JournalCreateInput) {
   return entry.kind===input.kind && entry.title===(input.title||null) && entry.body===(input.body||null)
     && entry.eventYear===(input.eventYear??null) && entry.eventMonth===(input.eventMonth??null) && entry.eventDay===(input.eventDay??null)
     && entry.includeOnTimeline===(input.includeOnTimeline===true)
     && (input.visibility===undefined || entry.visibility===input.visibility)
+    && (input.timelineReflection===undefined || sameTimelineReflection(entry.timelineReflection,input.timelineReflection))
     && entry.media.map(file=>file.id).join(",")===input.mediaIds.join(",");
 }
 async function applyMedia(tx:postgres.TransactionSql, memberId:string,input:JournalCreateInput) {
@@ -194,9 +206,9 @@ export async function createJournalEntry(authUserId:string,value:JournalCreateIn
       throw new JournalError(409,"This entry has already changed. Load the latest version before saving.");
     }
     await requireJournalPublication(owner.id,input,tx);
-    await tx`insert into member_journal_entries(id,member_id,kind,title,body,event_year,event_month,event_day,include_on_timeline,timeline_position,updated_by_auth_user_id,visibility)
+    await tx`insert into member_journal_entries(id,member_id,kind,title,body,event_year,event_month,event_day,include_on_timeline,timeline_position,updated_by_auth_user_id,visibility,timeline_reflection)
       select ${input.id}::uuid,${owner.id}::uuid,${input.kind},${input.title||null},${input.body||null},${input.eventYear??null},${input.eventMonth??null},${input.eventDay??null},${input.includeOnTimeline===true},
-        case when ${input.includeOnTimeline===true} then coalesce(max(timeline_position),0)+1 else null end,${authUserId}::uuid,${input.visibility}
+        case when ${input.includeOnTimeline===true} then coalesce(max(timeline_position),0)+1 else null end,${authUserId}::uuid,${input.visibility},${input.timelineReflection ? tx.json(input.timelineReflection) : null}::jsonb
       from member_journal_entries where member_id=${owner.id}::uuid`;
     await applyMedia(tx,owner.id,input);
     return savedEntry(tx,owner.id,input.id);
@@ -215,10 +227,15 @@ export async function editJournalEntry(authUserId:string,id:string,value:Journal
     if(!row) throw new JournalError(404,"Entry not found.");
     const entry=await savedEntry(tx,owner.id,id);
     if(inputMatches(entry,input)) return entry;
+    if(row.visibility!=="public" && input.visibility==="public" && row.timeline_reflection && input.timelineReflection===undefined) {
+      throw new JournalError(409,"Open this Timeline story and review all of its answers before publishing.");
+    }
     if(row.visibility==="public" && input.visibility===undefined) throw new JournalError(409,"This entry is public. Open the current Journal editor to review its sharing choice before saving.");
     if(String(row.current_version)!==expectedVersion) throw new JournalError(409,"This entry changed in another window. Your draft is still here. Load the latest entry before saving.");
     await requireJournalPublication(owner.id,input,tx);
-    await tx`update member_journal_entries set visibility=${input.visibility??row.visibility},kind=${input.kind},title=${input.title||null},body=${input.body||null},
+    const nextReflection=input.timelineReflection===undefined ? row.timeline_reflection??null : input.timelineReflection;
+    if(nextReflection && (!input.eventYear || !input.title.trim())) throw new JournalError(400,"Add a year and title to this Timeline story.");
+    await tx`update member_journal_entries set visibility=${input.visibility??row.visibility},kind=${input.kind},title=${input.title||null},body=${input.body||null},timeline_reflection=${nextReflection ? tx.json(nextReflection) : null}::jsonb,
       event_year=${input.eventYear??null},event_month=${input.eventMonth??null},event_day=${input.eventDay??null},include_on_timeline=${input.includeOnTimeline===true},
       timeline_position=case when ${input.includeOnTimeline===true} and timeline_position is null
         then (select coalesce(max(other.timeline_position),0)+1 from member_journal_entries other where other.member_id=${owner.id}::uuid) else timeline_position end,

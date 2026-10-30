@@ -2991,7 +2991,8 @@ export async function getMemberFoundationRequirements(
         select count(*)::int
         from member_journal_entries timeline
         where timeline.member_id = ${identity.memberId}::uuid
-          and timeline.deleted_at is null and timeline.include_on_timeline and timeline.visibility = 'private'
+          and timeline.deleted_at is null and timeline.include_on_timeline
+          and (timeline.visibility = 'private' or (timeline.visibility = 'public' and timeline.timeline_reflection is not null))
       ) as entry_count,
       (
         select completed_at
@@ -3279,10 +3280,10 @@ export async function getMemberHome(
     };
   } else if (!requirements.timeline.completed) {
     nextAction = {
-      body: "Build your private Foundations timeline with the moments and details you choose to keep.",
-      href: "/my/foundations/timeline",
+      body: "Explore a moment through six questions. Review your story before publishing it to your public Timeline, or keep it as a private Journal draft.",
+      href: "/my/timeline",
       kind: "timeline",
-      title: "Build your Foundations timeline.",
+      title: "Add to your Timeline.",
     };
   } else if (identity.foundationsState !== "completed") {
     nextAction = {

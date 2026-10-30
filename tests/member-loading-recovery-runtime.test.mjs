@@ -217,75 +217,84 @@ test("getProducts passes an eight-second abort signal and falls back to an empty
 });
 
 
-function foundationsTimelineFixture({ state = "authenticated", launched = true, capabilities = ["foundations.write"], timeline = { entries: [], revision: "1" }, failRead = false } = {}) {
+function guidedTimelineFixture({ state = "authenticated", capabilities = ["profile.read"], journal = { entries: [], writable: true, mediaReady: true, hasMore: false }, failRead = false, viewer = state === "authenticated" ? { authUserId: "member-auth-id" } : null } = {}) {
   const calls = [];
   const identity = { memberId: "member-id" };
   const access = { capabilities };
-  const { default: Page } = loadModule("app/my/foundations/timeline/page.tsx", {
+  const { default: Page } = loadModule("src/components/membership/GuidedTimelinePage.tsx", {
     "next/navigation": { redirect: href => { throw Error(`redirect:${href}`); } },
-    "@/components/membership/MemberAccessNotice": component("member-access-notice"),
-    "@/components/membership/RuinedTimeline": component("private-timeline"),
+    "./MemberAccessNotice": component("member-access-notice"),
+    "./GuidedTimeline": component("guided-timeline"),
     "@/components/platform/PlatformUnavailable": component("platform-unavailable"),
-    "@/lib/foundations/availability": { isFoundationsAvailableToMember: async () => launched },
+    "@/lib/auth/support-return": loadModule("src/lib/auth/support-return.ts"),
     "@/lib/membership/access-policy": {
       deriveMemberAccessPolicy: value => { assert.equal(value, identity); return access; },
       memberCan: (policy, capability) => policy.capabilities.includes(capability),
     },
     "@/lib/membership/page-context": { getMembershipPageContext: async () => ({
       state, data: ["signed_out", "denied", "unavailable"].includes(state) ? null : identity,
-      viewer: state === "authenticated" ? { authUserId: "member-auth-id" } : null,
+      viewer,
     }) },
-    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: identity, PREVIEW_MEMBER_TIMELINE: { entries: [], revision: "0" } },
-    "@/lib/membership/repository": {
-      getMemberIdentity: async () => identity,
-      getMemberTimeline: async authUserId => {
-        calls.push(authUserId);
-        if (failRead) throw new Error("Private Timeline read unavailable");
-        return timeline;
+    "@/lib/membership/preview": { PREVIEW_MEMBER_IDENTITY: identity },
+    "@/lib/membership/repository": { getMemberIdentity: async () => identity },
+    "@/lib/membership/guided-timeline-preview": { GUIDED_TIMELINE_PREVIEW: { entries: [], writable: false, mediaReady: true, hasMore: false } },
+    "@/lib/membership/journal-model": { JournalError: class extends Error {} },
+    "@/lib/membership/journal-repository": {
+      getJournal: async (...args) => {
+        calls.push(args);
+        if (failRead) throw new Error("Owner Timeline read unavailable");
+        return journal;
       },
     },
   }, { console: { error: () => {} } });
   return { calls, Page };
 }
 
-test("private Foundations Timeline links load only the authorized member's entries after launch", async () => {
-  const timeline = { entries: [{ title: "Private milestone" }], revision: "1" };
-  const f = foundationsTimelineFixture({ timeline });
-  const page = await f.Page();
-  assert.equal(page.type, "private-timeline");
-  assert.equal(page.props.initialTimeline, timeline);
-  assert.equal(page.props.writable, true);
-  assert.deepEqual(f.calls, ["member-auth-id"]);
-  const readonly = foundationsTimelineFixture({ capabilities: ["foundations.revisit"] });
-  assert.equal((await readonly.Page()).props.writable, false);
-  assert.deepEqual(readonly.calls, ["member-auth-id"]);
+test("guided Timeline reads only the authorized member's entries using profile access and preserves write policy", async () => {
+  for (const writable of [true, false]) {
+    const journal = { entries: [{ title: "An unpublished moment", visibility: "private" }], writable, mediaReady: true, hasMore: false };
+    const f = guidedTimelineFixture({ journal });
+    const page = await f.Page({});
+    assert.equal(page.type, "guided-timeline");
+    assert.equal(page.props.initialJournal, journal);
+    assert.equal(page.props.ownerId, "member-auth-id");
+    assert.equal(page.props.initialJournal.writable, writable);
+    assert.deepEqual(f.calls, [["member-auth-id", null, false, { view: "timeline", order: "newest" }]]);
+  }
 });
 
-test("Foundation Timeline authentication, launch, and access failures never load private entries", async () => {
-  const signedOut = foundationsTimelineFixture({ state: "signed_out" });
-  await assert.rejects(signedOut.Page(), /^Error: redirect:\/my\/access$/);
+test("guided Timeline authentication and profile-access failures never load member entries", async () => {
+  const signedOut = guidedTimelineFixture({ state: "signed_out" });
+  await assert.rejects(signedOut.Page({}), /^Error: redirect:\/access\?returnTo=%2Fmy%2Ftimeline$/);
   assert.deepEqual(signedOut.calls, []);
-  const closed = foundationsTimelineFixture({ launched: false });
-  await assert.rejects(closed.Page(), /^Error: redirect:\/my\/foundations$/);
-  assert.deepEqual(closed.calls, []);
   for (const state of ["denied", "unavailable"]) {
-    const f = foundationsTimelineFixture({ state });
-    const page = await f.Page();
+    const f = guidedTimelineFixture({ state });
+    const page = await f.Page({});
     assert.equal(page.type, "platform-unavailable");
     if (state === "denied") assert.equal(page.props.reason, "member_access");
     assert.deepEqual(f.calls, []);
   }
-  const ineligible = foundationsTimelineFixture({ capabilities: [] });
-  assert.equal((await ineligible.Page()).type, "member-access-notice");
+  const ineligible = guidedTimelineFixture({ capabilities: ["foundations.write"] });
+  assert.equal((await ineligible.Page({})).type, "member-access-notice");
   assert.deepEqual(ineligible.calls, []);
+  const missingViewer = guidedTimelineFixture({ viewer: null });
+  assert.equal((await missingViewer.Page({})).type, "platform-unavailable");
+  assert.deepEqual(missingViewer.calls, []);
 });
 
-test("an unavailable private Foundations Timeline renders the connection fallback without exposing entries", async () => {
-  for (const options of [{ timeline: null }, { failRead: true }]) {
-    const f = foundationsTimelineFixture(options);
-    const page = await f.Page();
-    assert.equal(page.type, "platform-unavailable");
-    assert.equal(page.props.initialTimeline, undefined);
-    assert.deepEqual(f.calls, ["member-auth-id"]);
-  }
+test("an unavailable guided Timeline renders a recoverable connection fallback without exposing entries", async () => {
+  const f = guidedTimelineFixture({ failRead: true });
+  const page = await f.Page({});
+  assert.equal(page.type, "platform-unavailable");
+  assert.equal(page.props.initialJournal, undefined);
+  assert.equal(page.props.accessHref, "/access?returnTo=%2Fmy%2Ftimeline");
+  assert.deepEqual(f.calls, [["member-auth-id", null, false, { view: "timeline", order: "newest" }]]);
+});
+
+test("guided Timeline preview has no member identity or persistence reads", async () => {
+  const f = guidedTimelineFixture({ state: "preview" });
+  const page = await f.Page({ startNew: true });
+  assert.equal(page.type, "guided-timeline"); assert.equal(page.props.preview, true);
+  assert.equal(page.props.ownerId, undefined); assert.equal(page.props.initialJournal.writable, false);
+  assert.deepEqual(f.calls, []);
 });

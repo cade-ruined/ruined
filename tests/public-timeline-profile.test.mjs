@@ -176,7 +176,9 @@ test("profile media without card activation still requires public Timeline conse
 const Image = ({ src, alt }) => React.createElement("img", { src, alt });
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const css = new Proxy({}, { get: (_, key) => key });
+const TimelineStoryContent = load("src/components/membership/TimelineStoryContent.tsx", { "./TimelineStoryContent.module.css": css }).default;
 const dependencies = { "next/image": Image, "next/link": Link, "@/lib/membership/member-number": load("src/lib/membership/member-number.ts"),
+  "./TimelineStoryContent": TimelineStoryContent,
   "./MemberBadges": ({ badges }) => React.createElement("div", { "data-public-badges": true }, badges.map(badge => React.createElement("span", { key: badge.key }, badge.label))),
   "../platform/MemberProfile.module.css": css, "./MemberJourneyShell.module.css": css, "./MemberJournal.module.css": css, "./PublicJournal.module.css": css };
 
@@ -191,6 +193,29 @@ test("visitor profile displays full name, tag, bio, join number and tier above T
   assert.match(html, /polaroid-frame\.png/);
   assert.match(html, /I Was Here/);
   assert.doesNotMatch(html, /mailto:|Message|>Journal<\/h2>|Member card|Edit profile|My Invitation|New \+/);
+});
+
+test("visitor Timeline displays all six supplied story answers and never legacy private reflection", () => {
+  const Component = load("src/components/membership/PublicJournal.tsx", dependencies).default;
+  const timelineReflection = { meaning: "I thought I had to do everything alone.", belief: "Asking meant I was failing.", presentImpact: "I kept my questions to myself.", perspective: "I can let people help." };
+  const html = renderToStaticMarkup(React.createElement(Component, { token, identity: profile, previewEntries: [{
+    id: randomUUID(), kind: "text", title: "The first move", body: "I moved to a new city.", createdAt: "2026-10-30T12:00:00Z", media: [],
+    eventYear: 2018, eventMonth: 4, eventDay: 12, timelineReflection,
+    legacyTimelineReflection: { meaning: "SECRET LEGACY MEANING", belief: "SECRET LEGACY BELIEF", presentImpact: "SECRET LEGACY PATTERN", perspective: "SECRET LEGACY PERSPECTIVE" },
+  }] }));
+  for (const expected of ["Remembering April 12, 2018", "The first move", "I moved to a new city.", ...Object.values(timelineReflection), "What I made it mean", "What I started believing", "How it shows up now", "What I can see now"]) {
+    assert.ok(html.includes(expected), `Expected public story answer or label: ${expected}`);
+  }
+  assert.doesNotMatch(html, /SECRET LEGACY|private reflection answers|Edit entry/);
+});
+
+test("the shared story renderer omits missing answers and never creates placeholder reflections", () => {
+  for (const reflection of [undefined, null, {}, { meaning: " ", belief: "\n", presentImpact: "", perspective: "\t" }]) {
+    assert.equal(renderToStaticMarkup(React.createElement(TimelineStoryContent, { reflection })), "");
+  }
+  const html = renderToStaticMarkup(React.createElement(TimelineStoryContent, { reflection: { meaning: "One supplied answer.", perspective: "  " } }));
+  assert.match(html, /What I made it mean/); assert.match(html, /One supplied answer\./);
+  assert.doesNotMatch(html, /What I started believing|How it shows up now|What I can see now|Still open|Not answered/);
 });
 
 test("visitor identity disappears when the feed reports unavailable membership", async () => {
@@ -229,6 +254,7 @@ test("public card links to the profile and visitor route passes only fixed publi
     "next/navigation": { notFound }, "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
     "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => ({ profile }) },
+    "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
     "@/components/membership/PublicJournal": Timeline,
   });
   const rendered = await route.default({ params: Promise.resolve({ token }) });
