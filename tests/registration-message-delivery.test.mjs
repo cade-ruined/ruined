@@ -251,7 +251,7 @@ test("profile release protects live text in Gmail without recoloring screenshots
     for(const child of node.childNodes??[])visit(child,chain);
   }
   visit(parse(html));
-  assert.equal(images,5);
+  assert.equal(images,8);
   assert.equal(buttons,2);
   assert.ok(protectedText>20);
   assert.match(html,/linear-gradient\(#10100f,#10100f\)/);
