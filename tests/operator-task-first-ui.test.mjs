@@ -267,6 +267,7 @@ test("member record action anchors have visible authorized destinations and neve
     "@/components/platform/OperatorMemberDeleteAction": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberPaymentMethod": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberCheckout": { __esModule: true, default: component },
+    "@/components/platform/OperatorSavedMemberPayment": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberSetup": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberCheckpoints": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberReferrals": { __esModule: true, default: Referrals },
