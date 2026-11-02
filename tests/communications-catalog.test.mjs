@@ -13,7 +13,7 @@ function load(name) {
   }, mod, mod.exports);
   return mod.exports;
 }
-const { COMMUNICATION_CHANNELS, COMMUNICATION_BUCKETS, buildCommunicationsCatalog: build, readCommunicationNavigation: read, writeCommunicationNavigation: write } = load("communications-catalog");
+const { COMMUNICATION_CHANNELS, COMMUNICATION_BUCKETS, buildCommunicationsCatalog: build, getManualCommunicationCatalog, readCommunicationNavigation: read, writeCommunicationNavigation: write } = load("communications-catalog");
 
 const overview = patch => ({ events: [], sequences: [], plans: [], templates: [], inactive: [], warnings: [], managedElsewhere: [],
   configuration: { enabled: true, ready: true, activatedAt: "2026-10-19T16:00:00Z" }, setupRequired: false, ...patch });
@@ -136,6 +136,7 @@ test("held protocols stay out of the reusable template library while approved ma
   assert.ok(held.every(item => item.channel === "emails" && item.statusLabel === "Held"
     && item.action.href === `/ops/work?filter=held_email#held-email-${encodeURIComponent(item.id)}` && !item.action.selection));
   const manual = rows.filter(item => item.status === "manual");
+  assert.deepEqual(getManualCommunicationCatalog(), manual, "the independent text workspace retains the same manual-copy catalog");
   assert.equal(manual.length, 6);
   assert.ok(manual.every(item => item.action.href.startsWith("/ops/messages?mode=emails&manualTemplate=")));
   assert.ok(manual.every(item => !/missed|incomplete|future event/i.test(item.title)));
