@@ -66,7 +66,7 @@ function fixture(path, props = {}, options = {}) {
     "@/lib/store/catalog": { catalogNotice: () => ({}) },
     "@/lib/store/catalog-filters": catalogFilters,
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
-    "@/lib/marketing/meta": { trackMetaProductView() {}, trackMetaAddToCart(product, variant, quantity) { metaAdds.push({ product, variant, quantity }); }, checkoutVisitorConsent: () => undefined, checkoutWithAttribution: value => value },
+    "@/lib/marketing/meta": { trackMetaProductView() {}, trackMetaAddToCart(product, variant, quantity) { metaAdds.push({ product, variant, quantity }); }, checkoutAttribution: () => options.attribution?.() ?? null, checkoutVisitorConsent: () => options.consent?.(), checkoutWithAttribution: value => value },
     "@/lib/analytics/shopify": { shopifyAnalyticsTrackingHeaders: () => allowed ? { "X-Shopify-UniqueToken": "unique", "X-Shopify-VisitToken": "visit" } : {} },
     "@/lib/analytics/storefront": { configureCatalogAnalytics: () => {}, catalogAnalyticsSelection: ({category, collection, fit}) => `category=${category}|collection=${collection || "all"}|fit=${fit}`, trackStoreEvent(name, properties) { if (!allowed) return false; events.push({ name, properties }); return true; }, flushStoreCart: () => options.flush?.() ?? Promise.resolve() },
     "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Shipping" },
@@ -473,4 +473,48 @@ test("modal views and purchases identify their presentation without changing var
   assert.equal(purchase.named("store_add_to_bag")[0].properties.quantity, 1);
   assert.equal(purchase.metaAdds.length, 1);
   detail.cleanup(); purchase.cleanup();
+});
+
+test("checkout reconciles withdrawn consent and removes attribution before any redirect", async () => {
+  const visit = { at: new Date().toISOString(), source: "ig", medium: "paid_social", campaignId: "123", adsetId: "456", adId: "789", landingPath: "/store/hoodie" };
+  const history = { version: 1, first: visit, latest: visit };
+  let allowed = true, responses = 0;
+  const view = fixture("src/components/store/BagPageClient.tsx", { products: [product] }, {
+    consent: () => ({ marketing: allowed, analytics: allowed }), attribution: () => allowed ? history : null,
+    response: () => {
+      if (++responses === 1) allowed = false; // Visitor rejects during the first in-flight response.
+      return { ok: true, json: async () => ({ checkoutUrl: "https://checkout.example.test/secret-checkout" }) };
+    },
+  });
+  await view.button("Secure checkout").props.onClick();
+  const requests = view.calls.filter(call => call.url);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0].body.attribution, history);
+  assert.deepEqual(requests[0].body.visitorConsent, { marketing: true, analytics: true });
+  assert.equal(requests[1].body.attribution, null);
+  assert.deepEqual(requests[1].body.visitorConsent, { marketing: false, analytics: false });
+  assert.deepEqual(requests[1].body.lines, requests[0].body.lines);
+  assert.equal(view.calls.filter(call => call.redirect).length, 1);
+  assert.ok(view.calls.at(-1).redirect);
+  assert.equal(view.named("store_checkout_clicked").length, 1);
+  assert.equal(view.named("store_checkout_redirected").length, 1);
+  assert.doesNotMatch(JSON.stringify(view.events), /campaignId|adsetId|adId|landingPath|secret-checkout/);
+  view.cleanup();
+});
+
+test("repeated consent changes stop checkout safely instead of redirecting with stale permissions", async () => {
+  let allowed = true;
+  const view = fixture("src/components/store/BagPageClient.tsx", { products: [product] }, {
+    consent: () => ({ marketing: allowed, analytics: allowed }),
+    response: () => {
+      allowed = !allowed;
+      return { ok: true, json: async () => ({ checkoutUrl: "https://checkout.example.test/secret-checkout" }) };
+    },
+  });
+  await view.button("Secure checkout").props.onClick();
+  assert.equal(view.calls.filter(call => call.url).length, 3);
+  assert.equal(view.calls.filter(call => call.redirect).length, 0);
+  assert.equal(view.named("store_checkout_failed").length, 1);
+  assert.equal(view.button("Secure checkout").props.disabled, false);
+  view.cleanup();
 });

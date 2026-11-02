@@ -3,7 +3,7 @@
 import { inject, pageview, track, type BeforeSendEvent } from "@vercel/analytics";
 import { readBag, isShopifyVariantId } from "@/components/store/bag-store";
 import { analyticsConsentAllowed, isConsentUpdatePending, isMarketingPage } from "@/lib/marketing/consent";
-import { checkoutVisitorConsent, hasLocalMarketingVeto } from "@/lib/marketing/meta";
+import { checkoutAttribution, checkoutVisitorConsent, hasLocalMarketingVeto } from "@/lib/marketing/meta";
 import { configureShopifyAnalytics, shopifyAnalyticsTrackingHeaders, trackShopifyAddToCart,
   trackShopifyPageView, trackShopifyProductView, type ShopifyAnalyticsConfig, type ShopifyAnalyticsItem } from "./shopify";
 
@@ -239,7 +239,7 @@ function queueCartSync(item?: ShopifyAnalyticsItem) {
         response = await fetch("/api/store/cart", {
           method: "POST", credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
           headers: { "Content-Type": "application/json", ...shopifyAnalyticsTrackingHeaders() },
-          body: JSON.stringify({ lines, visitorConsent: checkoutVisitorConsent() }),
+          body: JSON.stringify({ lines, visitorConsent: checkoutVisitorConsent(), attribution: checkoutAttribution() }),
         });
       } catch (error) {
         // Consent/navigation cancellation is not a shopping failure. A timeout

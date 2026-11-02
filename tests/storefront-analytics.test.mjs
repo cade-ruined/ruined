@@ -45,7 +45,7 @@ function fixture(options = {}) {
     "@vercel/analytics": sdk,
     "@/components/store/bag-store": { readBag: () => lines, isShopifyVariantId: value => /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(value) },
     "@/lib/marketing/consent": consent,
-    "@/lib/marketing/meta": { hasLocalMarketingVeto: () => veto, checkoutVisitorConsent: () => ({ analytics: choice === "yes", marketing: choice === "yes" }) },
+    "@/lib/marketing/meta": { hasLocalMarketingVeto: () => veto, checkoutAttribution: () => options.attribution?.() ?? null, checkoutVisitorConsent: () => ({ analytics: choice === "yes", marketing: choice === "yes" }) },
     "./shopify": bridge,
   }, { window, document, Date: { now: () => now }, fetch: async (url, init) => {
     const request = { url, init, body: JSON.parse(init.body) };
@@ -510,4 +510,16 @@ test("browse attribution expires and keeps a bounded recent set", () => {
   view.setNow(1000 + 30 * 60 * 1000);
   view.analytics.trackStoreEvent("store_product_opened", { ...product, product_handle: "product-50" });
   assert.equal(stages(view).filter(event => event.stage === "product_opened").length, 1, "thirty-minute contexts expire");
+});
+
+test("consented background cart synchronization carries the paid context without copying it into analytics events", async () => {
+  const visit = { at: new Date().toISOString(), source: "ig", medium: "paid_social", campaignId: "123", adsetId: "456", adId: "789", landingPath: "/store/byob-tank" };
+  const history = { version: 1, first: visit, latest: visit };
+  const view = fixture({ attribution: () => history });
+  view.configure(); view.analytics.trackStoreEvent("store_add_to_bag", product);
+  await view.analytics.flushStoreCart();
+  assert.equal(view.calls.requests.length, 1);
+  assert.deepEqual(view.calls.requests[0].body.attribution, history);
+  assert.deepEqual(view.calls.requests[0].body.visitorConsent, { analytics: true, marketing: true });
+  assert.doesNotMatch(JSON.stringify(view.calls.events), /campaignId|adsetId|adId|landingPath/);
 });

@@ -3,7 +3,7 @@
 import { shopifyAnalyticsTrackingHeaders } from "@/lib/analytics/shopify";
 import { flushStoreCart, trackStoreEvent } from "@/lib/analytics/storefront";
 import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
-import { checkoutVisitorConsent, checkoutWithAttribution } from "@/lib/marketing/meta";
+import { checkoutAttribution, checkoutVisitorConsent, checkoutWithAttribution } from "@/lib/marketing/meta";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -182,22 +182,26 @@ export default function BagPageClient({
     let errorCategory: "network" | "checkout_unavailable" | "invalid_response" | "redirect_failed" = "network";
     try {
       await flushStoreCart();
-      const response = await fetch("/api/store/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...shopifyAnalyticsTrackingHeaders() },
-        body: JSON.stringify({
-          visitorConsent: checkoutVisitorConsent(),
-          lines: displayItems.map((item) => ({
-            variantId: item.variantId,
-            quantity: item.quantity,
-          })),
-        }),
-      });
-      errorCategory = response.ok ? "invalid_response" : "checkout_unavailable";
-      const payload = (await response.json()) as { checkoutUrl?: string; error?: string };
-      if (!response.ok || !payload.checkoutUrl) {
-        throw new Error(payload.error || "Checkout is temporarily unavailable.");
+      const context = () => ({ visitorConsent: checkoutVisitorConsent(), attribution: checkoutAttribution() });
+      let payload: { checkoutUrl?: string; error?: string } | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const preferences = context();
+        const response = await fetch("/api/store/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...shopifyAnalyticsTrackingHeaders() },
+          body: JSON.stringify({ ...preferences,
+            lines: displayItems.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
+          }),
+        });
+        errorCategory = response.ok ? "invalid_response" : "checkout_unavailable";
+        payload = (await response.json()) as { checkoutUrl?: string; error?: string };
+        if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || "Checkout is temporarily unavailable.");
+        // A visitor can withdraw permission while Shopify is saving the cart.
+        // Reconcile the new choice before redirecting to its existing checkout.
+        if (JSON.stringify(preferences) === JSON.stringify(context())) break;
+        if (attempt === 2) throw new Error("Your cookie preferences changed. Please try checkout again.");
       }
+      if (!payload?.checkoutUrl) throw new Error("Checkout is temporarily unavailable.");
       errorCategory = "redirect_failed";
       window.location.assign(checkoutWithAttribution(payload.checkoutUrl));
       trackStoreEvent("store_checkout_redirected", checkoutProperties);

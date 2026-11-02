@@ -2,6 +2,7 @@ import "server-only";
 import { isSameOriginRequest } from "@/lib/request-origin";
 import { getProducts, getShopifyStorefrontClient, resolvePublicCheckoutUrl, type CheckoutLine } from "@/lib/shopify";
 import { validVisitorConsent, type VisitorConsent } from "@/lib/marketing/consent";
+import { paidAttributionAttributes, replaceAttributionAttributes } from "@/lib/marketing/attribution";
 
 const MAX_BODY_BYTES = 16384;
 const MAX_LINES = 25;
@@ -9,7 +10,7 @@ const MAX_QUANTITY = 20;
 const VARIANT_ID = /^gid:\/\/shopify\/ProductVariant\/\d+$/;
 const ALLOWED_LINE_FIELDS = new Set(["variantId", "quantity"]);
 const SHOPIFY_COOKIES = new Set(["_shopify_essential", "_shopify_analytics", "_shopify_marketing", "_tracking_consent", "_shopify_y", "_shopify_s"]);
-const CART_FIELDS = `id checkoutUrl lines(first: 250) {
+const CART_FIELDS = `id checkoutUrl attributes { key value } lines(first: 250) {
   nodes { id quantity attributes { key value } merchandise { ... on ProductVariant { id } } }
   pageInfo { hasNextPage }
 }`;
@@ -17,8 +18,10 @@ const CART_QUERY = `query RuinedCart($id: ID!, $visitorConsent: VisitorConsent) 
   cart(id: $id) { ${CART_FIELDS} }
 }`;
 const MUTATIONS = {
-  cartCreate: `mutation RuinedCartCreate($lines: [CartLineInput!]!, $visitorConsent: VisitorConsent) @inContext(visitorConsent: $visitorConsent) {
-    cartCreate(input: { lines: $lines })`,
+  cartCreate: `mutation RuinedCartCreate($lines: [CartLineInput!]!, $attributes: [AttributeInput!]!, $visitorConsent: VisitorConsent) @inContext(visitorConsent: $visitorConsent) {
+    cartCreate(input: { lines: $lines, attributes: $attributes })`,
+  cartAttributesUpdate: `mutation RuinedCartAttributes($cartId: ID!, $attributes: [AttributeInput!]!, $visitorConsent: VisitorConsent) @inContext(visitorConsent: $visitorConsent) {
+    cartAttributesUpdate(cartId: $cartId, attributes: $attributes)`,
   cartLinesAdd: `mutation RuinedCartAdd($cartId: ID!, $lines: [CartLineInput!]!, $visitorConsent: VisitorConsent) @inContext(visitorConsent: $visitorConsent) {
     cartLinesAdd(cartId: $cartId, lines: $lines)`,
   cartLinesUpdate: `mutation RuinedCartUpdate($cartId: ID!, $lines: [CartLineUpdateInput!]!, $visitorConsent: VisitorConsent) @inContext(visitorConsent: $visitorConsent) {
@@ -28,8 +31,8 @@ const MUTATIONS = {
 };
 type Attribute = { key: string; value: string };
 type CartLine = { id: string; quantity: number; attributes: Attribute[]; merchandise: { id: string } };
-type Cart = { id: string; checkoutUrl: string; lines: { nodes: CartLine[]; pageInfo: { hasNextPage: boolean } } };
-type RequestBody = { lines?: unknown; visitorConsent?: unknown };
+type Cart = { id: string; checkoutUrl: string; attributes: Attribute[]; lines: { nodes: CartLine[]; pageInfo: { hasNextPage: boolean } } };
+type RequestBody = { lines?: unknown; visitorConsent?: unknown; attribution?: unknown };
 
 function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -94,6 +97,8 @@ function attributesKey(attributes: Attribute[]): string {
 }
 function readCart(value: unknown): Cart {
   if (!record(value) || !cartIdentity(value.id) || typeof value.checkoutUrl !== "string" || !record(value.lines)
+    || !Array.isArray(value.attributes) || value.attributes.length > 250
+    || !value.attributes.every(attribute => record(attribute) && typeof attribute.key === "string" && typeof attribute.value === "string")
     || !Array.isArray(value.lines.nodes) || value.lines.nodes.length > 250 || !record(value.lines.pageInfo)
     || value.lines.pageInfo.hasNextPage !== false) throw new Error("Invalid cart");
   const ids = new Set<string>();
@@ -128,7 +133,7 @@ function storefrontHeaders(request: Request, consent: VisitorConsent | undefined
   return headers;
 }
 
-async function synchronizeCart(request: Request, lines: CheckoutLine[], visitorConsent: VisitorConsent | undefined) {
+async function synchronizeCart(request: Request, lines: CheckoutLine[], visitorConsent: VisitorConsent | undefined, attribution: unknown) {
   const client = getShopifyStorefrontClient();
   if (!client) throw new Error("Shopify unavailable");
   const headers = storefrontHeaders(request, visitorConsent);
@@ -166,8 +171,12 @@ async function synchronizeCart(request: Request, lines: CheckoutLine[], visitorC
   }
   const id = savedCartId(request);
   let cart = id ? await query(id) : null;
+  // Revalidate at the server boundary, including age and current consent. A
+  // denied/unknown choice removes our previous attributes on reconciliation.
+  const managedAttributes = paidAttributionAttributes(attribution, visitorConsent);
   if (!cart) {
-    cart = await mutate("cartCreate", { lines: lines.map(({ variantId, quantity, attributes }) => ({ merchandiseId: variantId, quantity, attributes: attributes ?? [] })) });
+    cart = await mutate("cartCreate", { attributes: managedAttributes,
+      lines: lines.map(({ variantId, quantity, attributes }) => ({ merchandiseId: variantId, quantity, attributes: attributes ?? [] })) });
   } else {
     const desired = new Map(lines.map((line) => [line.variantId, line]));
     const existing = new Map<string, CartLine>();
@@ -199,10 +208,18 @@ async function synchronizeCart(request: Request, lines: CheckoutLine[], visitorC
     if (add.length) cart = await mutate("cartLinesAdd", { cartId, lines: add });
     if (cart.id !== cartId) throw new Error("Cart changed");
   }
+  const expectedAttributes = replaceAttributionAttributes(cart.attributes, managedAttributes);
+  if (expectedAttributes.length > 250) throw new Error("Cart has too many attributes");
+  if (attributesKey(cart.attributes) !== attributesKey(expectedAttributes)) {
+    const cartId = cart.id;
+    cart = await mutate("cartAttributesUpdate", { cartId, attributes: expectedAttributes });
+    if (cart.id !== cartId) throw new Error("Cart changed");
+  }
   // Re-read even after a successful mutation: Shopify can adjust quantities or
   // another tab can change this cart. Never report an unverified add/checkout.
   const verified = await query(cart.id);
-  if (!verified || verified.lines.nodes.length !== lines.length) throw new Error("Cart changed");
+  if (!verified || verified.lines.nodes.length !== lines.length
+    || attributesKey(verified.attributes) !== attributesKey(expectedAttributes)) throw new Error("Cart changed");
   const desired = new Map(lines.map((line) => [line.variantId, line]));
   for (const line of verified.lines.nodes) {
     const expected = desired.get(line.merchandise.id);
@@ -226,7 +243,7 @@ export async function handleShopifyCartRequest(request: Request, { checkout }: {
   let body: RequestBody;
   try {
     const value = await boundedBody(request);
-    if (!record(value) || Object.keys(value).some((key) => !["lines", "visitorConsent"].includes(key)) || !validVisitorConsent(value.visitorConsent)) throw new Error("Invalid body");
+    if (!record(value) || Object.keys(value).some((key) => !["lines", "visitorConsent", "attribution"].includes(key)) || !validVisitorConsent(value.visitorConsent)) throw new Error("Invalid body");
     body = value;
   } catch { return error(400, "The bag or checkout preferences could not be read."); }
   const requested = requestedLines(body.lines, checkout);
@@ -248,7 +265,7 @@ export async function handleShopifyCartRequest(request: Request, { checkout }: {
     const consent = request.headers.get("sec-gpc") === "1"
       ? { ...(body.visitorConsent as VisitorConsent | undefined), analytics: false, marketing: false, saleOfData: false }
       : body.visitorConsent as VisitorConsent | undefined;
-    const result = await synchronizeCart(request, lines, consent);
+    const result = await synchronizeCart(request, lines, consent, body.attribution);
     const headers = new Headers({ "Cache-Control": "no-store" });
     for (const cookie of result.responseCookies) headers.append("Set-Cookie", cookie);
     headers.append("Set-Cookie", `${cookieName()}=${encodeURIComponent(result.identity.full)}; Path=/; Max-Age=259200; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);

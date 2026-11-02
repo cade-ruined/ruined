@@ -78,7 +78,7 @@ export default function MarketingConsent({ config, metaEnabled = true }: { confi
       window.dispatchEvent(new Event(MARKETING_CONSENT_EVENT));
     };
     const show = () => { setOpen(true); };
-    const leave = () => { setConsentUpdatePending(true); configureMetaTracking(false); revokeMetaTracking(); };
+    const leave = () => { setConsentUpdatePending(true); configureMetaTracking(false); revokeMetaTracking({ forgetAttribution: false }); };
     const restore = (event: PageTransitionEvent) => {
       // A checkout can change consent while this document is in the back/forward
       // cache. Reload to let Shopify read its current cookies, never replay Allow.
@@ -95,7 +95,7 @@ export default function MarketingConsent({ config, metaEnabled = true }: { confi
     return () => {
       active = false;
       configureMetaTracking(false);
-      revokeMetaTracking();
+      revokeMetaTracking({ forgetAttribution: false });
       window.removeEventListener(MARKETING_PREFERENCES_EVENT, show);
       window.removeEventListener("pagehide", leave);
       window.removeEventListener("pageshow", restore);
@@ -105,7 +105,7 @@ export default function MarketingConsent({ config, metaEnabled = true }: { confi
   }, [config, metaEnabled]);
 
   useEffect(() => {
-    if (!isMarketingPage(pathname)) revokeMetaTracking();
+    if (!isMarketingPage(pathname)) revokeMetaTracking({ forgetAttribution: false });
     else if (ready && !pending.current && !failed.current) {
       grantMetaTracking();
       trackMetaPageView();
