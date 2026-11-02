@@ -10,7 +10,7 @@ import { PREVIEW_OPS_WORK_QUEUE } from "@/lib/platform/ops-preview";
 export const metadata: Metadata = { title: "Operator work" };
 export const dynamic = "force-dynamic";
 
-export default async function OperationsWorkPage({ searchParams }: { searchParams?: Promise<{ view?: string | string[] }> } = {}) {
+export default async function OperationsWorkPage({ searchParams }: { searchParams?: Promise<{ view?: string | string[] }> }) {
   const context = await getOperatorPageContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
