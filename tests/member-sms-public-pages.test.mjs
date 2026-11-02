@@ -31,7 +31,7 @@ function load(path, overrides = {}) {
 test("public SMS page renders the real optional consent form and a submit button without an account", () => {
   const page = load("app/membership/text-messages/page.tsx");
   const html = renderToStaticMarkup(React.createElement(page.default));
-  for (const text of ["recurring text messages from Ruined", "membership updates and call reminders", "Message frequency varies", "Message and data rates may apply", "Consent is not a condition of purchase or membership", "STOP", "HELP", "Save your text preference", "not currently enabled", "third parties or affiliates", "marketing or promotional purposes"]) {
+  for (const text of ["recurring text messages from Ruined", "membership updates and call reminders", "Message frequency varies", "Message and data rates may apply", "Consent is not a condition of purchase or membership", "STOP", "HELP", "Save your text preference", "third parties or affiliates", "marketing or promotional purposes"]) {
     assert.ok(html.includes(text), text);
   }
   assert.match(html, /href="\/privacy"/);

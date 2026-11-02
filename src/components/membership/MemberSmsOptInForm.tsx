@@ -97,7 +97,7 @@ export default function MemberSmsOptInForm() {
       setPhone(payload.phone ?? normalized);
       setSms(false);
       setSaved(payload.sms
-        ? "Your text-message consent is saved. Delivery is not currently enabled; membership texts can begin once the program is available."
+        ? "Your text-message consent is saved. Reply STOP to unsubscribe or HELP for help."
         : "Your preference is saved. You are not enrolled in Ruined membership texts.");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Your text preference could not be saved. Please try again.");
