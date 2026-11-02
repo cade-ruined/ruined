@@ -199,7 +199,7 @@ test("task ownership is enforced transactionally against the complete shipped sc
     }
     await assert.rejects(f.change(id,"complete",1,guide.auth),code("forbidden"));
     await f.db.query("update platform_role_grants set revoked_at=statement_timestamp() where auth_user_id=$1",[revoked.auth]);
-    for (const action of ["claim","complete","unclaim","reopen"]) await assert.rejects(f.change(id,action,1,revoked.auth),code("forbidden"));
+    for (const action of ["claim","complete","unclaim","reopen","dismiss","restore"]) await assert.rejects(f.change(id,action,1,revoked.auth),code("forbidden"));
     const suspended = await f.operator("Suspended Operator",null);
     await f.db.query("update platform_users set status='suspended' where auth_user_id=$1",[suspended.auth]);
     await assert.rejects(f.change(id,"complete",1,suspended.auth),code("forbidden"));
@@ -247,5 +247,127 @@ test("task ownership is enforced transactionally against the complete shipped sc
     assert.equal(owners.get(preferredId),"Preferred"); assert.equal(owners.get(unassigned),null);
     await f.db.query("update user_profiles set display_name='   ' where auth_user_id=$1",[legacy.auth]);
     assert.equal((await f.repository.getOpsWorkQueue(f.first.auth)).items.find(item => item.workId===legacyId).claimedByName,"Short");
+  });
+});
+
+test("dismissal removes attention without completing or claiming the underlying task", async t => {
+  const f = await fixture(t);
+
+  await t.test("any active admin can dismiss and restore without changing ownership or blocking", async () => {
+    for (const [status, owner] of [["open",null],["in_progress",f.second.auth],["blocked",f.second.auth]]) {
+      const id = await f.task({ status,owner });
+      const dismissed = await f.change(id,"dismiss",1);
+      assert.equal(dismissed.state,status);
+      assert.equal(dismissed.version,2);
+      const hidden = await f.state(id);
+      assert.ok(hidden.dismissed_at);
+      assert.equal(hidden.dismissed_by_auth_user_id,f.first.auth);
+      assert.equal(hidden.status,status);
+      assert.equal(hidden.assigned_to_auth_user_id,owner);
+      assert.equal(hidden.completed_at,null);
+      assert.equal(hidden.blocked_reason,status === "blocked" ? "Billing opening pending" : null);
+      for (const action of ["claim","complete","unclaim","dismiss"]) {
+        await assert.rejects(f.change(id,action,2,owner ?? f.first.auth),code("conflict"));
+      }
+      await assert.rejects(f.change(id,"restore",1),code("conflict"));
+      await f.change(id,"restore",2,f.second.auth);
+      const restored = await f.state(id);
+      assert.equal(restored.dismissed_at,null);
+      assert.equal(restored.dismissed_by_auth_user_id,null);
+      assert.equal(restored.status,status);
+      assert.equal(restored.assigned_to_auth_user_id,owner);
+      assert.equal(restored.version,3);
+      await assert.rejects(f.change(id,"restore",3),code("conflict"));
+      const events = await f.rows("select evidence->>'action' as action,previous_status,next_status from operator_task_events where operator_task_id=$1 order by occurred_at,id",[id]);
+      assert.deepEqual(new Set(events.map(event => event.action)),new Set(["dismiss","restore"]));
+      assert.ok(events.every(event => event.previous_status === status && event.next_status === status));
+      const audits = await f.rows("select action from operator_audit_events where subject_id=$1",[id]);
+      assert.deepEqual(new Set(audits.map(event => event.action)),new Set(["task.dismiss","task.restore"]));
+    }
+  });
+
+  await t.test("active work, dashboard attention, and member counts exclude dismissed tasks", async () => {
+    const member = crypto.randomUUID();
+    await f.db.query("insert into ruined_members(id,email,email_normalized) values($1,'dismissal@example.test','dismissal@example.test')",[member]);
+    await f.db.query("insert into member_lifecycle(member_id) values($1)",[member]);
+    const id = await f.task({member});
+    await f.db.query("update operator_tasks set priority='urgent',due_at=statement_timestamp()-interval '1 year' where id=$1",[id]);
+    const before = await f.repository.getOpsMemberOperatingRecord(f.first.auth,member);
+    await f.change(id,"dismiss",1);
+    const active = await f.repository.getOpsWorkQueue(f.first.auth);
+    assert.equal(active.items.some(item => item.workId === id),false);
+    assert.equal(active.totals.dismissedTasks,1);
+    const dismissed = await f.repository.getOpsWorkQueue(f.first.auth,{view:"dismissed"});
+    assert.equal(dismissed.view,"dismissed");
+    assert.equal(dismissed.items.length,1);
+    assert.equal(dismissed.items[0].workId,id);
+    assert.ok(dismissed.items[0].dismissedAt);
+    assert.equal(dismissed.items[0].dismissedByName,"Alexandra Operator");
+    assert.equal(dismissed.items[0].claimedByName,null);
+    assert.equal(dismissed.items[0].version,2);
+    assert.equal(dismissed.totals.artifacts,0);
+    assert.equal(dismissed.totals.failures,0);
+    const overview = await f.repository.getOpsOverviewData(f.first.auth);
+    assert.equal(overview.priorityWork.some(item => item.workId === id),false);
+    const after = await f.repository.getOpsMemberOperatingRecord(f.first.auth,member);
+    assert.equal(after.header.openWorkCount,before.header.openWorkCount-1);
+    assert.ok(after.operational.tasks.find(item => item.taskId === id).dismissedAt);
+    const guide = await f.operator("Guide","Guide","guide");
+    assert.equal((await f.repository.getOpsWorkQueue(guide.auth,{view:"dismissed"})).items.length,0);
+    await assert.rejects(f.change(id,"restore",2,guide.auth),code("forbidden"));
+    await f.change(id,"restore",2);
+    assert.ok((await f.repository.getOpsWorkQueue(f.first.auth)).items.some(item => item.workId === id));
+  });
+
+  await t.test("resolved tasks cannot be dismissed or restored into false work", async () => {
+    for (const status of ["completed","cancelled"]) {
+      const id = await f.task();
+      await f.change(id,"dismiss",1);
+      await f.db.query("update operator_tasks set status=$2,completed_at=case when $2='completed' then statement_timestamp() else null end,version=version+1 where id=$1",[id,status]);
+      await assert.rejects(f.change(id,"restore",3),code("conflict"));
+      await assert.rejects(f.change(id,"dismiss",3),code("conflict"));
+      assert.equal((await f.repository.getOpsWorkQueue(f.first.auth,{view:"dismissed"})).items.some(item => item.workId === id),false);
+      assert.equal((await f.state(id)).status,status);
+      if (status === "completed") {
+        await f.change(id,"reopen",3);
+        const renewed = await f.state(id);
+        assert.equal(renewed.status,"open");
+        assert.equal(renewed.dismissed_at,null);
+        assert.equal(renewed.dismissed_by_auth_user_id,null);
+        assert.equal(renewed.completed_at,null);
+        assert.equal(renewed.assigned_to_auth_user_id,null);
+      }
+    }
+  });
+
+  await t.test("a failed event or audit rolls back dismissal atomically", async () => {
+    for (const table of ["operator_task_events","operator_audit_events"]) {
+      const id = await f.task();
+      await f.db.exec(`create function reject_fixture_dismissal() returns trigger language plpgsql as $$ begin raise exception 'history unavailable'; end $$;
+        create trigger reject_fixture_dismissal before insert on ${table} for each row execute function reject_fixture_dismissal();`);
+      try { await assert.rejects(f.change(id,"dismiss",1),/history unavailable/); }
+      finally { await f.db.exec(`drop trigger reject_fixture_dismissal on ${table}; drop function reject_fixture_dismissal();`); }
+      const current = await f.state(id);
+      assert.equal(current.dismissed_at,null);
+      assert.equal(current.dismissed_by_auth_user_id,null);
+      assert.equal(current.assigned_to_auth_user_id,null);
+      assert.equal(current.status,"open");
+      assert.equal(current.version,1);
+      assert.deepEqual(await f.rows("select * from operator_task_events where operator_task_id=$1",[id]),[]);
+    }
+  });
+
+  await t.test("all dismissed tasks remain reachable for restore beyond the active queue limit", async () => {
+    await f.db.query(`insert into operator_tasks(task_type,title,created_by_type,dismissed_at,dismissed_by_auth_user_id)
+      select 'member_follow_up','Dismissed fixture ' || n,'system',statement_timestamp()-n*interval '1 minute',$1
+      from generate_series(1,205) n`,[f.first.auth]);
+    const queue = await f.repository.getOpsWorkQueue(f.first.auth,{view:"dismissed"});
+    assert.equal(queue.items.length,205);
+    assert.equal(queue.totals.dismissedTasks,205);
+    assert.equal(queue.items[0].label,"Dismissed fixture 1");
+    const oldest = queue.items.find(item => item.label === "Dismissed fixture 205");
+    assert.ok(oldest);
+    await f.change(oldest.workId,"restore",oldest.version);
+    assert.equal((await f.state(oldest.workId)).dismissed_at,null);
   });
 });

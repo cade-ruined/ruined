@@ -8,6 +8,7 @@ import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
 const source = path => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const legacyMigrationPath = "db/migrations/20261005190000_registration_operator_work.sql";
 const migrationPath = "db/migrations/20261008100000_registration_checkpoint_work.sql";
+const dismissalMigrationPath = "db/migrations/20261102160000_operator_task_dismissal.sql";
 async function load(path, dependencies = {}) {
   const loaded = { exports: {} };
   new Function("require", "module", "exports", ts.transpileModule(await source(path), {
@@ -47,6 +48,7 @@ async function fixture(t) {
   await db.exec(await source(legacyMigrationPath));
   const migration = await source(migrationPath);
   await db.exec(migration);
+  await db.exec(await source(dismissalMigrationPath));
   const failures = { events: false };
   function sqlFor(engine) {
     const sql = async (parts, ...values) => {
@@ -261,6 +263,54 @@ test("a suppressed member can resume the same system-resolved task with ownershi
   await f.db.query("update member_lifecycle set account_state='active' where member_id=$1", [member.id]);
   assert.deepEqual(await f.reconcile(), { created: 0, updated: 1, resolved: 0 });
   const [restored] = await f.tasks(member.id); assert.equal(restored.id, task.id); assert.equal(restored.assigned_to_auth_user_id, member.auth); assert.equal(restored.status, "in_progress");
+});
+
+test("dismissed registration work stays hidden through refreshes and returns only for a renewed obligation", async t => {
+  const f = await fixture(t);
+  for (const resolution of ["completed", "cancelled"]) {
+    const member = await f.member(); await f.reconcile();
+    const [original] = await f.tasks(member.id);
+    await f.db.query(`update operator_tasks set dismissed_at=statement_timestamp(),dismissed_by_auth_user_id=$2,
+      assigned_to_auth_user_id=$2,status='in_progress',version=version+1 where id=$1`, [original.id, member.auth]);
+    await f.db.query(`insert into operator_task_events(operator_task_id,event_type,previous_status,next_status,actor_type,actor_auth_user_id,evidence)
+      values($1,'state_changed','in_progress','in_progress','operator',$2,'{"action":"dismiss"}')`, [original.id, member.auth]);
+    const dismissed = (await f.tasks(member.id)).find(task => task.id === original.id);
+
+    await f.reconcile();
+    await f.update(member, { paidCheckoutAvailable: false }); await f.reconcile();
+    let current = (await f.tasks(member.id)).find(task => task.id === original.id);
+    assert.equal(current.status, "blocked");
+    assert.equal(String(current.dismissed_at), String(dismissed.dismissed_at));
+    assert.equal(current.dismissed_by_auth_user_id, member.auth);
+    assert.equal(current.assigned_to_auth_user_id, member.auth);
+    await f.update(member, { paidCheckoutAvailable: true }); await f.reconcile();
+    current = (await f.tasks(member.id)).find(task => task.id === original.id);
+    assert.equal(current.status, "in_progress");
+    assert.equal(String(current.dismissed_at), String(dismissed.dismissed_at));
+
+    if (resolution === "completed") await f.update(member, { paymentConfirmed: true });
+    else await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1", [member.id]);
+    await f.reconcile();
+    current = (await f.tasks(member.id)).find(task => task.id === original.id);
+    assert.equal(current.status, resolution, "dismissal does not prevent canonical system resolution");
+    assert.equal(String(current.dismissed_at), String(dismissed.dismissed_at));
+    assert.equal(current.assigned_to_auth_user_id, member.auth);
+
+    if (resolution === "completed") await f.update(member, { paymentConfirmed: false });
+    else await f.db.query("update member_lifecycle set account_state='active' where member_id=$1", [member.id]);
+    await f.reconcile();
+    current = (await f.tasks(member.id)).find(task => task.id === original.id);
+    assert.equal(current.status, "in_progress");
+    assert.equal(current.dismissed_at, null);
+    assert.equal(current.dismissed_by_auth_user_id, null);
+    assert.equal(current.assigned_to_auth_user_id, member.auth);
+    assert.equal((await f.tasks(member.id)).filter(task => task.task_type === original.task_type).length, 1);
+    const events = (await f.db.query("select actor_type,evidence from operator_task_events where operator_task_id=$1 order by id desc limit 1", [original.id])).rows;
+    assert.equal(events[0].actor_type, "system");
+    assert.equal(events[0].evidence.reason, "checkpoint_needed");
+    const progress = (await f.db.query("select progress from member_registration_access where member_id=$1", [member.id])).rows[0].progress;
+    assert.equal(progress.state, "collecting", "dismissal and recurrence never grant profile access");
+  }
 });
 
 test("event failures roll back task/registry writes and registry identities stay private and immutable", async t => {

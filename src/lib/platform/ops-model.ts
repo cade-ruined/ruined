@@ -176,6 +176,7 @@ export type OpsMemberNote = {
 export type OpsTaskSummary = {
   assignedTo: string | null;
   completedAt: string | null;
+  dismissedAt?: string | null;
   dueAt: string | null;
   priority: number;
   state: string;
@@ -228,6 +229,8 @@ export type OpsWorkItem =
       kind: "task";
       claimedByName: string | null;
       claimedByCurrentOperator: boolean;
+      dismissedAt?: string | null;
+      dismissedByName?: string | null;
       version: number;
       taskType?: string;
       description?: string | null;
@@ -256,10 +259,12 @@ export type OpsWorkItem =
 
 export type OpsWorkQueue = {
   items: OpsWorkItem[];
+  view?: "active" | "dismissed";
   totals: {
     artifacts: number;
     failures: number;
     tasks: number;
+    dismissedTasks?: number;
   };
 };
 

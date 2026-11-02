@@ -481,7 +481,7 @@ export default function OperatorMemberRecord({
                     <p className="font-medium">{task.title}</p>
                     <p className="mt-2 text-sm text-[color:var(--operator-muted)]">Due {formatDate(task.dueAt)} · {task.assignedTo ? `Claimed by ${task.assignedTo}` : "Unclaimed"}</p>
                   </div>
-                  <StateLabel state={task.state} />
+                  {task.dismissedAt && ["open", "in_progress", "blocked"].includes(task.state) ? <Link className="text-sm underline underline-offset-4" href="/ops/work?view=dismissed"><StateLabel state="dismissed" /></Link> : <StateLabel state={task.state} />}
                 </div>
               ))}
               {operational.tasks.length === 0 ? <EmptyRow>No open tasks.</EmptyRow> : null}

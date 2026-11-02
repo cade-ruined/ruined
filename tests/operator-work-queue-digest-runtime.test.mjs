@@ -78,9 +78,10 @@ test("digest email escapes titles, uses the official wordmark, respects capped t
   assert.match(result.text, /Updated Oct 5, 9:00 AM MST/);
   assert.match(result.html, /#membership/);
   for (const secret of ["PRIVATE NOTE", "PRIVATE CONTACT", "PRIVATE CARD", "PRIVATE ERROR", "PRIVATE TASK DESCRIPTION"]) assert.equal(JSON.stringify(result).includes(secret), false);
-  const empty = email.createWorkQueueDigestEmail({ queue: emptyQueue, slot, generatedAt: slot.scheduledFor });
+  const empty = email.createWorkQueueDigestEmail({ queue: { ...emptyQueue, totals: { ...emptyQueue.totals, dismissedTasks: 250 } }, slot, generatedAt: slot.scheduledFor });
   assert.match(empty.text, /No open tasks/);
   assert.match(empty.html, /0 tasks · 0 Artifacts · 0 failed actions/);
+  assert.doesNotMatch(empty.html, /category reached the current queue limit/);
 });
 
 async function fixture(t) {

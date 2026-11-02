@@ -27,11 +27,12 @@ async function actionRequest(url: string, body: unknown, method = "POST") {
   }
 }
 
-export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurrentOperator, expectedVersion, preview = false }: {
+export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurrentOperator, dismissedAt, expectedVersion, preview = false }: {
   state: string;
   taskId: string;
   claimedByName: string | null;
   claimedByCurrentOperator: boolean;
+  dismissedAt?: string | null;
   expectedVersion: number;
   preview?: boolean;
 }) {
@@ -43,16 +44,22 @@ export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurr
   const [conflictVersion, setConflictVersion] = useState<number | null>(null);
   const pending = useRef(false);
   const submittedVersion = useRef<number | null>(null);
-  const canClaim = state === "open" && claimedByName === null && !claimedByCurrentOperator;
-  const canComplete = claimedByCurrentOperator && (state === "open" || state === "in_progress");
-  const canUnclaim = claimedByCurrentOperator && (state === "open" || state === "in_progress" || state === "blocked");
+  const isDismissed = Boolean(dismissedAt);
+  const isActive = state === "open" || state === "in_progress" || state === "blocked";
+  const canClaim = !isDismissed && state === "open" && claimedByName === null && !claimedByCurrentOperator;
+  const canComplete = !isDismissed && claimedByCurrentOperator && (state === "open" || state === "in_progress");
+  const canUnclaim = !isDismissed && claimedByCurrentOperator && isActive;
+  const canReopen = state === "completed";
+  const canDismiss = !isDismissed && isActive;
+  const canRestore = isDismissed && isActive;
   const disabled = submitting || settledVersion === expectedVersion;
   const conflicted = conflictVersion === expectedVersion;
 
-  async function act(action: "claim" | "unclaim" | "complete" | "reopen") {
+  async function act(action: "claim" | "unclaim" | "complete" | "reopen" | "dismiss" | "restore") {
     if (pending.current || submittedVersion.current === expectedVersion) return;
     if ((action === "claim" && !canClaim) || (action === "complete" && !canComplete)
-      || (action === "unclaim" && !canUnclaim) || (action === "reopen" && state !== "completed")) return;
+      || (action === "unclaim" && !canUnclaim) || (action === "reopen" && !canReopen)
+      || (action === "dismiss" && !canDismiss) || (action === "restore" && !canRestore)) return;
     setMessageVersion(expectedVersion);
     if (preview) { setMessage("Preview only — the task was not changed."); return; }
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
@@ -65,7 +72,15 @@ export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurr
       await actionRequest(`/api/ops/tasks/${taskId}`, { action, expectedVersion }, "PATCH");
       submittedVersion.current = expectedVersion;
       setSettledVersion(expectedVersion);
-      setMessage(action === "complete" ? "Task completed." : action === "claim" ? "Task claimed." : action === "unclaim" ? "Task unclaimed. Another operator can take it." : "Task reopened and unclaimed.");
+      const successMessages = {
+        claim: "Task claimed.",
+        complete: "Task completed.",
+        unclaim: "Task unclaimed. Another operator can take it.",
+        reopen: "Task reopened and unclaimed.",
+        dismiss: "Task dismissed. You can restore it from Dismissed.",
+        restore: "Task restored to active work.",
+      };
+      setMessage(successMessages[action]);
       router.refresh();
     } catch (error) {
       if (error instanceof OperatorActionError && error.status === 409) {
@@ -89,7 +104,9 @@ export function OperatorTaskAction({ state, taskId, claimedByName, claimedByCurr
       {canClaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("claim")} type="button">Claim</button> : null}
       {canComplete ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("complete")} type="button">Complete</button> : null}
       {canUnclaim ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("unclaim")} type="button">Unclaim</button> : null}
-      {state === "completed" ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("reopen")} type="button">Reopen</button> : null}
+      {canReopen ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("reopen")} type="button">Reopen</button> : null}
+      {canDismiss ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("dismiss")} type="button">Dismiss</button> : null}
+      {canRestore ? <button className={OPERATOR_BUTTON_CLASS} disabled={disabled} onClick={() => act("restore")} type="button">Restore</button> : null}
       {conflicted ? <button className={OPERATOR_BUTTON_CLASS} onClick={() => router.refresh()} type="button">Refresh queue</button> : null}
     </div>
   );
