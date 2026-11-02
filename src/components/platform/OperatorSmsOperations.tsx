@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { COMMUNICATION_BUCKETS, type CommunicationBucket, type CommunicationNavigation } from "@/lib/communications/communications-catalog";
+import { COMMUNICATION_BUCKETS, type CommunicationBucket, type CommunicationNavigation, type CommunicationItem } from "@/lib/communications/communications-catalog";
 import { getMemberSmsTemplatePreviews } from "@/lib/communications/member-sms-operations-model";
 import { memberSmsReminderBody } from "@/lib/communications/member-sms-model";
 import type { MemberSmsHistoryItem, MemberSmsOperationsOverview, MemberSmsOperationTemplate, MemberSmsUpcomingItem, MemberSmsOperationJob } from "@/lib/communications/member-sms-operations-types";
@@ -11,7 +11,7 @@ import styles from "./OperatorSmsOperations.module.css";
 
 const API = "/api/ops/messages/texts";
 const OPERATIONS_TIME_ZONE = "America/Denver";
-type Props = { preview?: boolean; view: CommunicationNavigation["view"]; bucket: CommunicationBucket | null; onNavigate: (next: Partial<CommunicationNavigation>) => void };
+type Props = { preview?: boolean; previewCommunications?: CommunicationItem[]; view: CommunicationNavigation["view"]; bucket: CommunicationBucket | null; onNavigate: (next: Partial<CommunicationNavigation>) => void };
 
 export function smsOperationDate(value: string, timeZone = OPERATIONS_TIME_ZONE): string {
   const date = new Date(value);
@@ -45,13 +45,13 @@ function templateInBucket(template: MemberSmsOperationTemplate, bucket: Communic
   return bucket === "foundations" || bucket === "membership";
 }
 
-function sampleOverview(): MemberSmsOperationsOverview {
+function sampleOverview(communications: CommunicationItem[] = []): MemberSmsOperationsOverview {
   const now = new Date(), due = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const templates = getMemberSmsTemplatePreviews("https://members.example.test");
   const recipient = { memberId: "00000000-0000-4000-8000-000000000001", name: "Alex Example", maskedPhone: "••• ••• 0100", sharedPhone: false };
   const call = { eventId: "00000000-0000-4000-8000-000000000002", title: "Foundations 01 — sample call", startsAt: new Date(due.getTime() + 150 * 60000).toISOString(), timeZone: OPERATIONS_TIME_ZONE, foundations01: true };
   const body = memberSmsReminderBody({ memberId: recipient.memberId, kind: "call_reminder", reminderKey: "sample-only", callDetails: { ...call, meetingUrl: "https://meet.google.com/abc-defg-hij" } }, "https://members.example.test");
-  return { generatedAt: now.toISOString(), automation: { enabled: false, transportEnabled: false, automationEnabled: false, ready: false, callReady: false, warnings: [], activatedAt: null, state: "disabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates, communications: [],
+  return { generatedAt: now.toISOString(), automation: { enabled: false, transportEnabled: false, automationEnabled: false, ready: false, callReady: false, warnings: [], activatedAt: null, state: "disabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates, communications,
     upcoming: { horizonEnd: new Date(now.getTime() + 14 * 86400000).toISOString(), truncated: false, label: "Fictional sample schedule", currentOptIns: 1, items: [{ id: "sample-upcoming", kind: "call_reminder", reminderKey: "sample-only", recipient, call, dueAt: due.toISOString(), expiresAt: new Date(due.getTime() + 600000).toISOString(), body, source: "forecast", confirmation: "required", confirmationBody: templates[0].body, confirmationStatus: null, blockedReason: null }] },
     jobs: { items: [], truncated: false }, history: { nextCursor: null, items: [{ id: "sample-delivery", kind: "opt_in_confirmation", reminderKey: "sample-only", recipient, call: null, createdAt: now.toISOString(), updatedAt: now.toISOString(), status: "accepted", deliveryStatus: "delivered", deliveryUpdatedAt: now.toISOString(), deliveryErrorCode: null, blockedReason: null, messageSid: null, body: templates[0].body, bodySource: "snapshot" }] } };
 }
@@ -84,15 +84,15 @@ function JobCard({ item, checkedAt }: { item: MemberSmsOperationJob; checkedAt: 
   return <details className={`operator-glass ${styles.card}`}><summary><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {item.call?.title ?? (item.kind === "call_reminder" ? "Call reminder" : "Text opt-in confirmation")}</p><p>{smsOperationDate(item.dueAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={label === "Needs review" ? "attention" : undefined}>{label}</span></div></summary><p className={styles.note}>No provider send attempt is recorded for this job.{item.status === "processing" && ended ? " Processing did not finish before the send window ended. It will not be automatically retried." : ""}</p><dl className={styles.facts}><div><dt>Send window</dt><dd>{smsOperationDate(item.dueAt, item.call?.timeZone)} – {smsOperationDate(item.expiresAt, item.call?.timeZone)}</dd></div><div><dt>Last update</dt><dd>{smsOperationDate(item.updatedAt, item.call?.timeZone)}</dd></div>{item.outcome ? <div><dt>Outcome</dt><dd>{reason(item.outcome)}</dd></div> : null}</dl></details>;
 }
 
-export default function OperatorSmsOperations({ preview = false, view, bucket, onNavigate }: Props) {
-  const [overview, setOverview] = useState<MemberSmsOperationsOverview | null>(preview ? sampleOverview : null);
+export default function OperatorSmsOperations({ preview = false, previewCommunications = [], view, bucket, onNavigate }: Props) {
+  const [overview, setOverview] = useState<MemberSmsOperationsOverview | null>(() => preview ? sampleOverview(previewCommunications) : null);
   const [pending, setPending] = useState<"loading" | "more" | null>(preview ? null : "loading");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const requestId = useRef(0), controller = useRef<AbortController | null>(null);
   const section = view === "upcoming" || view === "activity" ? view : "catalog";
   async function load(more = false) {
-    if (preview) { setOverview(sampleOverview()); return; }
+    if (preview) { setOverview(sampleOverview(previewCommunications)); return; }
     controller.current?.abort(); controller.current = new AbortController();
     const signal = controller.current.signal, id = ++requestId.current;
     const cursor = more ? overview?.history.nextCursor : null;

@@ -417,7 +417,7 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
   }
   if (channel === "texts") return <OperatorPageFrame title="Communications">
     <OperatorMessagesTabs active="automations" channel="texts" bucket={communicationNav.bucket} onChannel={value => browse({channel:value,view:"catalog"})} />
-    <OperatorSmsOperations preview={preview} view={communicationNav.view} bucket={communicationNav.bucket} onNavigate={browse} />
+    <OperatorSmsOperations preview={preview} previewCommunications={previewCommunications} view={communicationNav.view} bucket={communicationNav.bucket} onNavigate={browse} />
   </OperatorPageFrame>;
   return <OperatorPageFrame title="Communications">
     <OperatorMessagesTabs active="automations" channel={channel} bucket={communicationNav.bucket} pending={!!pending} onChannel={editorOpen || externalDirty ? undefined : value => browse({channel:value,view:"catalog"})} />
