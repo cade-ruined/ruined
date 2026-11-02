@@ -20,10 +20,16 @@ async function fixture(t) {
     return { query: (query, params) => { statements.push(query); return engine.query(query, params); } };
   }
   const sql = taggedDatabase({ ...observe(db), transaction: callback => db.transaction(tx => callback(observe(tx))) });
+  const heldWork = new Map();
+  const heldReads = [];
   const dependencies = {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/google/calendar": {}, "@/lib/google/communications": {}, "@/lib/support/delivery": {},
     "@/lib/platform/ops-delivery-health": { readOpsDeliveryAttention: async () => [] },
+    "@/lib/communications/held-email-work": {
+      readHeldEmailWork: async () => { heldReads.push("read"); return heldWork; },
+      syncHeldEmailWork: async () => { heldReads.push("sync"); },
+    },
   };
   const mod = { exports: {} };
   const compiled = ts.transpileModule(await source("src/lib/platform/ops-operating-repository.ts"), {
@@ -44,20 +50,107 @@ async function fixture(t) {
     return { auth, person };
   }
   const first = await operator("Alexandra Operator", "Alex"), second = await operator("Benjamin Operator", "Ben");
-  async function task({ owner = null, status = "open", member = null } = {}) {
-    const id = crypto.randomUUID();
+  async function task({ owner = null, status = "open", member = null, createdAt = null, dueAt = null, priority = "normal", key = null, id = crypto.randomUUID() } = {}) {
     await db.query(`insert into operator_tasks(id,task_type,title,status,assigned_to_auth_user_id,created_by_type,member_id,
-      completed_at,blocked_reason) values($1,'member_follow_up','Review new member',$2,$3,'system',$4,
+      completed_at,blocked_reason,created_at,due_at,priority,idempotency_key) values($1,'member_follow_up','Review new member',$2,$3,'system',$4,
       case when $2='completed' then statement_timestamp() else null end,
-      case when $2='blocked' then 'Billing opening pending' else null end)`, [id,status,owner,member]);
+      case when $2='blocked' then 'Billing opening pending' else null end,
+      coalesce($5::timestamptz,statement_timestamp()),$6,$7,$8)`, [id,status,owner,member,createdAt,dueAt,priority,key]);
     return id;
   }
   const state = async id => (await rows("select * from operator_tasks where id=$1", [id]))[0];
   const change = (id, action, expectedVersion, actor = first.auth) => mod.exports.transitionOpsTask({ taskId:id, action, expectedVersion, actorAuthUserId:actor });
-  return { db, rows, repository:mod.exports, statements, operator, first, second, task, state, change };
+  return { db, rows, repository:mod.exports, statements, operator, first, second, task, state, change, heldWork, heldReads };
 }
 
 const code = expected => error => error.code === expected;
+
+test("work filters and creation-date ordering span tasks, Artifacts and failed actions", async t => {
+  const f = await fixture(t);
+  const oldest = await f.task({ createdAt:"2026-01-01T00:00:00Z",dueAt:"2026-12-31T00:00:00Z" });
+  const newest = await f.task({ createdAt:"2026-04-01T00:00:00Z",dueAt:"2026-01-01T00:00:00Z",priority:"urgent" });
+  const heldKey = "fixture:held-birthday";
+  const held = await f.task({ createdAt:"2026-03-01T00:00:00Z",key:heldKey });
+  const details = { id:"lifecycle:birthday",title:"Member birthday",reason:"Choose a redeemable gift.",reviewHref:"/ops/messages?mode=automations&lifecycle=birthday#lifecycle-emails",reviewLabel:"Review template & rules" };
+  f.heldWork.set(heldKey,details);
+
+  const member = crypto.randomUUID(), template = crypto.randomUUID(), version = crypto.randomUUID(), artifact = crypto.randomUUID();
+  await f.db.query("insert into ruined_members(id,email,email_normalized) values($1,'queue-order@example.test','queue-order@example.test')",[member]);
+  await f.db.query("insert into artifact_templates(id,template_slug,name) values($1,'queue-order','Queue ordering')",[template]);
+  await f.db.query("insert into artifact_template_versions(id,artifact_template_id,version,name,status,published_at) values($1,$2,1,'Queue ordering','published','2026-01-01T00:00:00Z')",[version,template]);
+  await f.db.query(`insert into artifact_jobs(id,member_id,artifact_template_version_id,requested_at,created_at,due_at,priority)
+    values($1,$2,$3,'2026-02-01T00:00:00Z','2026-12-01T00:00:00Z','2026-01-01T00:00:00Z',99)`,[artifact,member,version]);
+  const event = crypto.randomUUID(), workflow = crypto.randomUUID();
+  await f.db.query("insert into domain_events(id,aggregate_type,aggregate_id,event_type,dedupe_key) values($1,'fixture','queue','fixture.queue',$2)",[event,event]);
+  await f.db.query(`insert into workflow_actions(id,domain_event_id,action_type,status,idempotency_key,created_at,updated_at)
+    values($1,$2,'send_notification','failed',$3,'2026-02-15T00:00:00Z','2026-12-31T00:00:00Z')`,[workflow,event,workflow]);
+
+  const asc = await f.repository.getOpsWorkQueue(f.first.auth,{sort:"oldest"});
+  assert.deepEqual(asc.items.map(item=>item.workId),[oldest,artifact,workflow,held,newest]);
+  assert.equal(asc.sort,"oldest");
+  assert.equal(asc.items.find(item=>item.workId===artifact).createdAt,"2026-02-01T00:00:00.000Z");
+  assert.equal(asc.items.find(item=>item.workId===workflow).createdAt,"2026-02-15T00:00:00.000Z");
+  const desc = await f.repository.getOpsWorkQueue(f.first.auth,{sort:"newest"});
+  assert.deepEqual(desc.items.map(item=>item.workId),[newest,held,workflow,artifact,oldest]);
+  assert.deepEqual((await f.repository.getOpsWorkQueue(f.first.auth,{filter:"task",sort:"oldest"})).items.map(item=>item.workId),[oldest,held,newest]);
+  assert.deepEqual((await f.repository.getOpsWorkQueue(f.first.auth,{filter:"artifact"})).items.map(item=>item.workId),[artifact]);
+  assert.deepEqual((await f.repository.getOpsWorkQueue(f.first.auth,{filter:"workflow_failure"})).items.map(item=>item.workId),[workflow]);
+  const heldOnly = await f.repository.getOpsWorkQueue(f.first.auth,{filter:"held_email"});
+  assert.deepEqual(heldOnly.items.map(item=>item.workId),[held]);
+  assert.equal(heldOnly.filter,"held_email");
+  assert.deepEqual(heldOnly.items[0].heldEmail,details);
+  assert.equal(heldOnly.totals.tasks,1);
+  assert.equal(heldOnly.totals.artifacts,0);
+  assert.equal(heldOnly.totals.failures,0);
+  const fallback = await f.repository.getOpsWorkQueue(f.first.auth,{filter:"unknown",sort:"unknown"});
+  assert.equal(fallback.filter,"all");
+  assert.equal(fallback.sort,"priority");
+  assert.equal(fallback.items.length,5);
+
+  const added = heldOnly.items[0].createdAt;
+  await f.change(held,"dismiss",1);
+  assert.equal((await f.repository.getOpsWorkQueue(f.first.auth,{filter:"held_email"})).items.length,0);
+  const dismissed = await f.repository.getOpsWorkQueue(f.first.auth,{view:"dismissed",filter:"held_email",sort:"newest"});
+  assert.deepEqual(dismissed.items.map(item=>item.workId),[held]);
+  assert.equal(dismissed.items[0].createdAt,added);
+  await f.change(held,"restore",2);
+  assert.equal((await f.repository.getOpsWorkQueue(f.first.auth,{filter:"held_email"})).items[0].createdAt,added);
+  const guide = await f.operator("Guide","Guide","guide");
+  const priorReads = f.heldReads.length;
+  const guideQueue = await f.repository.getOpsWorkQueue(guide.auth,{filter:"held_email",sort:"newest"});
+  assert.deepEqual(guideQueue.items,[]);
+  assert.equal(f.heldReads.length,priorReads,"held-email state is not read or synchronized for a guide");
+});
+
+test("held filters and oldest/newest ordering apply before the active queue limit", async t => {
+  const f = await fixture(t);
+  await f.db.query(`insert into operator_tasks(task_type,title,priority,created_by_type,created_at)
+    select 'member_follow_up','Older high priority ' || n,'high','system','2026-01-01T00:00:00Z'::timestamptz+n*interval '1 minute'
+    from generate_series(1,205) n`);
+  const heldKey = "fixture:held-holiday";
+  const held = await f.task({ createdAt:"2026-11-01T00:00:00Z",key:heldKey });
+  f.heldWork.set(heldKey,{id:"lifecycle:thanksgiving",title:"Thanksgiving",reason:"Confirm this year's schedule.",reviewHref:"/ops/messages?mode=automations&lifecycle=thanksgiving#lifecycle-emails",reviewLabel:"Review template & rules"});
+  assert.equal((await f.repository.getOpsWorkQueue(f.first.auth)).items.some(item=>item.workId===held),false,"fixture is beyond the default 200 high-priority rows");
+  const filtered = await f.repository.getOpsWorkQueue(f.first.auth,{filter:"held_email"});
+  assert.deepEqual(filtered.items.map(item=>item.workId),[held],"filter can find held work beyond the unfiltered queue cap");
+  const newest = await f.repository.getOpsWorkQueue(f.first.auth,{sort:"newest"});
+  assert.equal(newest.items.length,200);
+  assert.equal(newest.items[0].workId,held,"newest selection happens before truncation");
+  const oldest = await f.repository.getOpsWorkQueue(f.first.auth,{sort:"oldest"});
+  assert.equal(oldest.items.length,200);
+  assert.equal(oldest.items[0].label,"Older high priority 1");
+  assert.equal(oldest.items.at(-1).label,"Older high priority 200");
+
+  const tieDate = "2026-12-01T00:00:00Z";
+  const tied = [
+    await f.task({id:"10000000-0000-4000-8000-000000000002",createdAt:tieDate}),
+    await f.task({id:"10000000-0000-4000-8000-000000000001",createdAt:tieDate}),
+  ];
+  const first = await f.repository.getOpsWorkQueue(f.first.auth,{sort:"newest"});
+  const repeat = await f.repository.getOpsWorkQueue(f.first.auth,{sort:"newest"});
+  assert.deepEqual(first.items.slice(0,2).map(item=>item.workId),[...tied].sort());
+  assert.deepEqual(repeat.items.map(item=>item.workId),first.items.map(item=>item.workId),"same creation dates have deterministic ordering");
+});
 
 test("admin work identifies unfinished registrations without mixing contact emails into names", async t => {
   const f = await fixture(t);

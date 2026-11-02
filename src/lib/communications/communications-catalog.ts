@@ -111,7 +111,7 @@ function cadenceItems(item: CadenceManagementSummary, scope: "event" | "sequence
   });
 }
 
-const HELD_EMAILS: ReadonlyArray<Pick<CommunicationItem, "id" | "bucket" | "title" | "trigger" | "audience" | "detail" | "timing">> = [
+export const HELD_EMAILS: ReadonlyArray<Pick<CommunicationItem, "id" | "bucket" | "title" | "trigger" | "audience" | "detail" | "timing">> = [
   { id: "held:email:profile-drip", bucket: "pre-foundations", title: "Make yourself recognizable", trigger: "Proposed profile follow-up after A few things worth knowing.", audience: "Members who still need their profile information.", timing: "Proposed: three days later at 3 p.m. MT; held", detail: "Confirm profile access, the completion link and timing. Full draft and decisions are in Libby’s work queue." },
   { id: "held:email:foundations-completion", bucket: "foundations", title: "Foundations completion", trigger: "Verified completion of every approved Foundations requirement.", audience: "Completed members only; incomplete members do not graduate through this email.", timing: "Held: confirm the send time after completion", detail: "Resolve completion criteria, Artifact award and fulfillment, leader title and downstream access. No Artifact or completion is inferred from attendance alone." },
   { id: "held:email:circle-reveal", bucket: "membership", title: "Circle reveal", trigger: "Verified completion and a confirmed Circle placement.", audience: "Completed members with a ready Circle, leader and call access.", timing: "Proposed: 24 hours after completion; held", detail: "Confirm reveal timing, Circle / leader information, access and the actual next calls. Existing placement behavior is separate; this email remains off." },
@@ -154,7 +154,7 @@ export function buildCommunicationsCatalog(overview: CadenceManagementOverview, 
         title: workflow.title, trigger: workflow.trigger, timing: workflow.timing });
     }
   }
-  items.push(...HELD_EMAILS.map(item => ({ ...item, channel: "emails" as const, status: "held" as const, statusLabel: "Held", action: { label: "View work queue", href: "/ops/work" } })));
+  items.push(...HELD_EMAILS.map(item => ({ ...item, channel: "emails" as const, status: "held" as const, statusLabel: "Held", action: { label: "Review in work queue", href: `/ops/work?filter=held_email#held-email-${encodeURIComponent(item.id)}` } })));
   items.push(...CADE_MANUAL_TEMPLATES.map(item => ({ id: `manual:${item.id}`, channel: item.channel, bucket: item.bucket, title: item.title,
     trigger: "An administrator selects and completes this approved one-off copy.", audience: "Only the affected, permitted recipients selected and reviewed for this message.",
     timing: "Manual · as needed", status: "manual" as const, statusLabel: "Copy approved · manual", detail: item.dependency,

@@ -298,13 +298,55 @@ test("Blocks is browse-first with clear creation and per-Block management links 
   assert.equal(elements(restricted).some((node) => attr(node, "href") === "#create-block"), false);
 });
 
-test("Work category filters never mutate records and keep empty categories recoverable", () => {
-  const fixture = harness("src/components/platform/OperatorWorkQueue.tsx", "default", { queue: preview.PREVIEW_OPS_WORK_QUEUE, preview: true });
-  const buttons = nodes(fixture.draw()).filter((node) => node.type === "button");
-  assert.equal(buttons.length, 4);
-  buttons.find((node) => reactText(node) === "Tasks").props.onClick();
-  assert.equal(nodes(fixture.draw()).filter((node) => node.type === "article").length, preview.PREVIEW_OPS_WORK_QUEUE.items.filter((item) => item.kind === "task").length);
-  assert.deepEqual(fixture.calls, []);
+test("Work filters navigate to the full server query and preserve view and sort", () => {
+  const queue = { ...preview.PREVIEW_OPS_WORK_QUEUE, sort: "newest", filter: "all" };
+  const before = structuredClone(queue);
+  const tree = render("OperatorWorkQueue", { queue, preview: true });
+  const filters = elements(tree).find(node => attr(node,"aria-label") === "Filter work");
+  const links = elements(filters).filter(node => node.tagName === "a");
+  assert.equal(links.length,5);
+  assert.equal(attr(links.find(node => text(node) === "Held emails"),"href"),"/ops/work?filter=held_email&sort=newest");
+  assert.equal(attr(links.find(node => text(node) === "Tasks"),"href"),"/ops/work?filter=task&sort=newest");
+  assert.deepEqual(queue,before,"rendering does not mutate or reorder the server snapshot");
+  const empty = render("OperatorWorkQueue",{queue:{...queue,view:"dismissed",filter:"held_email",items:[],totals:{tasks:0,artifacts:0,failures:0}},preview:true});
+  assert.match(text(empty),/No held emails in this view/);
+  assert.ok(elements(empty).some(node=>node.tagName==="a" && attr(node,"href")==="/ops/work?view=dismissed&sort=newest" && text(node).includes("Show all work")));
+  const dismissedFilters = elements(elements(empty).find(node=>attr(node,"aria-label")==="Filter work")).filter(node=>node.tagName==="a");
+  assert.deepEqual(dismissedFilters.map(text),["All work","Held emails","Tasks"]);
+});
+
+test("Work date sorting navigates with the current held filter and never sends a mutation", () => {
+  const navigation=[];
+  const Queue=loader({router:{push:href=>navigation.push(href)}})("src/components/platform/OperatorWorkQueue.tsx").default;
+  const tree=Queue({queue:{...preview.PREVIEW_OPS_WORK_QUEUE,view:"dismissed",filter:"held_email",sort:"oldest"},preview:true});
+  const sort=nodes(tree).find(node=>node.type==="select" && node.props.id==="work-sort");
+  assert.equal(sort.props.value,"oldest");
+  assert.deepEqual(nodes(sort).filter(node=>node.type==="option").map(reactText),["Priority","Oldest to newest","Newest to oldest"]);
+  sort.props.onChange({currentTarget:{value:"newest"}});
+  assert.deepEqual(navigation,["/ops/work?view=dismissed&filter=held_email&sort=newest"]);
+});
+
+test("held emails show why they are held, the review destination, original draft and creation date", () => {
+  const tasks=preview.PREVIEW_OPS_WORK_QUEUE.items.filter(item=>item.kind==="task" && item.heldEmail);
+  assert.equal(tasks.length,2);
+  const tree=render("OperatorWorkQueue",{queue:{items:tasks,filter:"held_email",sort:"oldest",totals:{tasks:2,artifacts:0,failures:0}},preview:true});
+  for(const task of tasks) {
+    const card=byId(tree,`held-email-${task.heldEmail.id}`);
+    assert.ok(card);
+    assert.match(text(card),/Held email/);
+    assert.ok(text(card).includes(task.heldEmail.reason));
+    assert.match(text(card),/Added (Oct 21|Nov 2), 2026/);
+    if(task.heldEmail.reviewHref) {
+      const link=elements(card).find(node=>node.tagName==="a" && attr(node,"href")===task.heldEmail.reviewHref);
+      exposed(link);
+      assert.ok(text(link).includes(task.heldEmail.reviewLabel));
+    } else {
+      const draft=elements(card).find(node=>node.tagName==="details");
+      assert.ok(text(draft).includes(task.description));
+      assert.ok(text(draft).includes(task.heldEmail.reviewLabel));
+    }
+  }
+  assert.equal(elements(tree).some(node=>node.tagName==="button" && /send|enable/i.test(text(node))),false);
 });
 
 test("saved-card review explains the hold and opens Membership without exposing general task descriptions", () => {
@@ -619,6 +661,36 @@ test("work route accepts only the dismissed view and preserves preview isolation
   assert.equal(tree.props.preview, true);
   assert.equal(tree.props.queue.view, "dismissed");
   assert.deepEqual(tree.props.queue.items, []);
+});
+
+test("work route validates filters and creation-date sorting before repository reads", async () => {
+  const reads=[];
+  let state="available";
+  const pageLoader=loader({extra:{
+    "@/lib/platform/page-data":{getOperatorPageContext:async()=>({state,dashboard:{},viewer:{authUserId:"admin-one"}})},
+    "@/lib/platform/ops-operating-repository":{getOpsWorkQueue:async(actor,options)=>{reads.push({actor,options});return {...preview.PREVIEW_OPS_WORK_QUEUE,...options};}},
+  }});
+  const Page=pageLoader("app/ops/work/page.tsx").default;
+  const input=[{filter:"held_email",sort:"oldest"},{filter:"task",sort:"newest",view:"dismissed"},{filter:["held_email"],sort:["oldest"]},{filter:"anything",sort:"anything"},{view:"dismissed",filter:"artifact",sort:"newest"}];
+  for(const params of input) await Page({searchParams:Promise.resolve(params)});
+  assert.deepEqual(reads.map(row=>row.options),[
+    {view:"active",filter:"held_email",sort:"oldest"},
+    {view:"dismissed",filter:"task",sort:"newest"},
+    {view:"active",filter:"all",sort:"priority"},
+    {view:"active",filter:"all",sort:"priority"},
+    {view:"dismissed",filter:"all",sort:"newest"},
+  ]);
+  assert.ok(reads.every(row=>row.actor==="admin-one"));
+  state="preview";
+  const before=structuredClone(preview.PREVIEW_OPS_WORK_QUEUE);
+  const oldest=(await Page({searchParams:Promise.resolve({filter:"held_email",sort:"oldest"})})).props.queue;
+  const newest=(await Page({searchParams:Promise.resolve({filter:"held_email",sort:"newest"})})).props.queue;
+  assert.equal(reads.length,input.length,"preview sorting never reads production");
+  assert.equal(oldest.items.length,2);
+  assert.ok(oldest.items.every(item=>item.kind==="task" && item.heldEmail));
+  assert.deepEqual(newest.items.map(item=>item.workId),oldest.items.map(item=>item.workId).reverse());
+  assert.ok(oldest.items[0].createdAt<oldest.items[1].createdAt);
+  assert.deepEqual(preview.PREVIEW_OPS_WORK_QUEUE,before);
 });
 
 test("a stale dismiss cannot be retried until the server supplies the updated dismissal state", async () => {

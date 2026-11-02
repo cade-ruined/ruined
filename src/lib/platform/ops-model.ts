@@ -213,8 +213,19 @@ export type OpsMemberRecord = {
   operational: OpsMemberOperationalRecord;
 };
 
+export type OpsWorkFilter = "all" | "held_email" | "task" | "artifact" | "workflow_failure";
+export type OpsWorkSort = "priority" | "oldest" | "newest";
+export type OpsHeldEmailWork = {
+  id: string;
+  title: string;
+  reason: string;
+  reviewHref: string | null;
+  reviewLabel: string;
+};
+
 export type OpsWorkItem =
   | {
+      createdAt?: string | null;
       dueAt: string | null;
       kind: "artifact";
       label: string;
@@ -225,8 +236,10 @@ export type OpsWorkItem =
       workId: string;
     }
   | {
+      createdAt?: string | null;
       dueAt: string | null;
       kind: "task";
+      heldEmail?: OpsHeldEmailWork;
       claimedByName: string | null;
       claimedByCurrentOperator: boolean;
       dismissedAt?: string | null;
@@ -246,6 +259,7 @@ export type OpsWorkItem =
       workId: string;
     }
   | {
+      createdAt?: string | null;
       dueAt: string | null;
       errorCode: string;
       kind: "workflow_failure";
@@ -260,6 +274,8 @@ export type OpsWorkItem =
 export type OpsWorkQueue = {
   items: OpsWorkItem[];
   view?: "active" | "dismissed";
+  filter?: OpsWorkFilter;
+  sort?: OpsWorkSort;
   totals: {
     artifacts: number;
     failures: number;
