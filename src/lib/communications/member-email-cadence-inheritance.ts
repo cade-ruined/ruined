@@ -130,12 +130,17 @@ async function enrollPaidCohort(tx: TransactionSql,event: CadenceEventSnapshot,b
       join membership_commercial_participants participant on participant.reservation_id=reservation.id and participant.member_id=registration.member_id
       join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id
       join stripe_checkout_attempts attempt on attempt.id=reservation.id
-      join stripe_checkout_sessions checkout on checkout.id=attempt.stripe_session_id
       join stripe_membership_commitments contract on contract.id=proof.contract_id
       join stripe_subscriptions subscription on subscription.id=proof.stripe_subscription_id
       join stripe_invoices invoice on invoice.id=proof.stripe_invoice_id
       where registration.member_id=${candidate.memberId}::uuid and registration.registered_at is not null
-      for share of registration,reservation,participant,proof,attempt,checkout,contract,subscription,invoice`;
+      for share of registration,reservation,participant,proof,attempt,contract,subscription,invoice`;
+    // The canonical payment predicate also verifies delegated saved-method
+    // collections, which have no Checkout Session. Preserve the session lock
+    // when one exists, then recheck payment evidence under all relevant locks.
+    if (paid) await tx`select checkout.id from stripe_checkout_sessions checkout
+      join stripe_checkout_attempts attempt on attempt.stripe_session_id=checkout.id
+      where attempt.id=${paid.id}::uuid for share of checkout`;
     const schedule=paid ? parseFoundationsBillingSchedule(paid.schedule,paid.billingPlan) : null;
     if (!schedule || schedule.cohortMonth!==binding.cohortMonth || schedule.callStartsAt[index]!==event.startsAt) continue;
     const [proof]=await tx<Array<{id:string|null}>>`select private.ruined_member_paid_reservation(${candidate.memberId}::uuid) as id`;

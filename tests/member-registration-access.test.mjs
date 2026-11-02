@@ -94,7 +94,8 @@ test("registration holds survive launch changes and release profiles only after 
   const evidenceMigration = "db/migrations/20261007110000_member_payment_evidence.sql";
   const legacyCheckoutMigration = "db/migrations/20261007111000_legacy_registration_checkout.sql";
   const operatorCheckoutMigration = "db/migrations/20261022140000_operator_membership_checkout.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const operatorSavedPaymentMigration = "db/migrations/20261102120000_operator_saved_membership_payment.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -164,6 +165,7 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec(read(evidenceMigration));
   await db.exec(read(legacyCheckoutMigration));
   await db.exec(read(operatorCheckoutMigration));
+  await db.exec(read(operatorSavedPaymentMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");

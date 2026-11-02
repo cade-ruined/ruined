@@ -20,10 +20,14 @@ export async function reconcileNativeCheckoutConsent(tx: BillingTransaction, str
   const { subscription } = input;
   const attemptId = subscription.metadata.ruined_checkout_attempt_id;
   if (!isUuid(attemptId)) return false;
+  if (subscription.metadata.billing_consent_source === "operator_saved_payment") {
+    const { reconcileOperatorSavedPaymentConsent } = await import("./operator-saved-payment-consent");
+    return reconcileOperatorSavedPaymentConsent(tx, subscription);
+  }
   const [attempt] = await tx<Array<{
     operator_authorization_id: string | null; billing_consent_auth_user_id: string | null; payment_setup_customer_id: string | null;
     id: string; member_id: string; stripe_session_id: string | null; stripe_subscription_id: string | null;
-    billing_consent_source: "member" | "stripe_checkout"; recurring_payment_accepted_at: Date | null;
+    billing_consent_source: "member" | "stripe_checkout" | "operator_saved_payment"; recurring_payment_accepted_at: Date | null;
     checkout_prepared_at: Date; agreement_acceptance_id: string; agreement_version: string;
     commercial_reservation_id: string; offer_id: MembershipOfferId; billing_plan: string; stripe_price_id: string;
     first_charge_at: Date | null; billing_schedule: FoundationsBillingSchedule | null;
@@ -32,6 +36,9 @@ export async function reconcileNativeCheckoutConsent(tx: BillingTransaction, str
       checkout_prepared_at,agreement_acceptance_id,agreement_version,commercial_reservation_id,offer_id,billing_plan,
       stripe_price_id,first_charge_at,billing_schedule,billing_consent_evidence
     from stripe_checkout_attempts where id=${attemptId}::uuid for update`;
+  if (attempt?.billing_consent_source === "operator_saved_payment") {
+    throw new Error("Saved-method payment is missing its delegated consent identity.");
+  }
   if (!attempt || attempt.billing_consent_source !== "stripe_checkout") return Boolean(attempt?.recurring_payment_accepted_at);
   const mismatch = () => { throw new Error("Stripe payment consent does not match the prepared membership."); };
   if (attempt.stripe_subscription_id && attempt.stripe_subscription_id !== subscription.id) return mismatch();

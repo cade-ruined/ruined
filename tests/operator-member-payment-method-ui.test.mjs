@@ -126,6 +126,7 @@ test("member record exposes card setup only to administrators and carries target
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: blank, OperatorTaskCreateAction: blank, OperatorOverrideAction: blank },
     "@/components/platform/OperatorMemberPaymentMethod": { __esModule: true, default: Payment },
     "@/components/platform/OperatorMemberCheckout": { __esModule: true, default: Checkout },
+    "@/components/platform/OperatorSavedMemberPayment": { __esModule: true, default: () => null },
   };
   for (const name of ["OperatorMemberDeleteAction", "OperatorMemberCheckpoints", "CirclePlacementRecommendations", "OperatorPageFrame", "OperatorMemberSetup", "OperatorProfileSupport", "OperatorProgress", "OperatorMemberAvatar", "OperatorMemberReferrals", "OperatorMemberWorkspace", "StateLabel"]) deps[`@/components/platform/${name}`] = { __esModule: true, default: blank };
   const Record = load("src/components/platform/OperatorMemberRecord.tsx", deps).default;

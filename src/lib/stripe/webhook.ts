@@ -369,6 +369,11 @@ async function handleInvoice(
       eventCreated: event.created, verifiedPayment: verifiedPayment && !taxProblem });
     if (prepaidState === null) return true;
     state = prepaidState;
+    if (subscription.metadata.billing_consent_source === "operator_saved_payment" && verifiedPayment && !taxProblem
+      && (prepaidState === "pending" || prepaidState === "active")) {
+      const { completeOperatorSavedPaymentAttempt } = await import("./operator-saved-payment-repository");
+      await completeOperatorSavedPaymentAttempt(tx, { attemptId: subscription.metadata.ruined_checkout_attempt_id, subscriptionId: subscription.id });
+    }
   } else if (v2 && membershipPriceMatches) {
     const { prepareCommitmentInvoiceProjection } = await import("@/lib/stripe/commitment-webhook");
     await prepareCommitmentInvoiceProjection(tx, { event, subscription, invoice, memberId: member.id,

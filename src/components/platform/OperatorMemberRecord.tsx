@@ -17,6 +17,7 @@ import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspa
 import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
 import OperatorMemberPaymentMethod from "@/components/platform/OperatorMemberPaymentMethod";
 import OperatorMemberCheckout from "@/components/platform/OperatorMemberCheckout";
+import OperatorSavedMemberPayment from "@/components/platform/OperatorSavedMemberPayment";
 import StateLabel from "@/components/platform/StateLabel";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { guidanceForMemberRecord, memberGuidanceAction } from "@/lib/platform/operator-member-guidance";
@@ -221,7 +222,7 @@ export default function OperatorMemberRecord({
 
         {profileSupport ? <OperatorProfileSupport memberId={header.memberId} profile={profileSupport} preview={preview} /> : null}
 
-        {access.roles.includes("ops_admin") ? <OperatorMemberCheckout key={header.memberId} memberId={header.memberId} memberName={header.preferredName} preview={preview} /> : null}
+        {access.roles.includes("ops_admin") ? <><OperatorSavedMemberPayment key={`saved-${header.memberId}`} memberId={header.memberId} memberName={header.preferredName} preview={preview} /><OperatorMemberCheckout key={header.memberId} memberId={header.memberId} memberName={header.preferredName} preview={preview} /></> : null}
 
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           <div className="operator-bento-card">

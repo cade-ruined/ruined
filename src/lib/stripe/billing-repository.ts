@@ -34,7 +34,7 @@ export type MembershipCheckoutReservation = {
   plan: MembershipBillingPlan;
   stripePriceId: string;
   recurringPaymentAcceptedAt: Date | null;
-  consentSource: "member" | "stripe_checkout";
+  consentSource: "member" | "stripe_checkout" | "operator_saved_payment";
   checkoutPreparedAt: Date;
   existingAcceptanceMatches: boolean;
   existingStripeSessionId: string | null;
@@ -162,11 +162,11 @@ export async function findBillingMemberById(memberId: string): Promise<BillingMe
 }
 
 export async function getMembershipCheckoutForReservation(reservationId: string, memberId: string): Promise<{
-  id: string; status: string; stripeSessionId: string | null; consentSource: "member" | "stripe_checkout";
+  id: string; status: string; stripeSessionId: string | null; consentSource: "member" | "stripe_checkout" | "operator_saved_payment";
   expiresAt: Date; operatorAuthorizationId: string | null; actorAuthUserId: string | null;
 } | null> {
   const sql = getBillingDatabase();
-  const [row] = await sql<Array<{ id: string; status: string; stripe_session_id: string | null; billing_consent_source: "member" | "stripe_checkout";
+  const [row] = await sql<Array<{ id: string; status: string; stripe_session_id: string | null; billing_consent_source: "member" | "stripe_checkout" | "operator_saved_payment";
     expires_at: Date; operator_authorization_id: string | null; billing_consent_auth_user_id: string | null }>>`
     select id,status,stripe_session_id,billing_consent_source,expires_at,operator_authorization_id,billing_consent_auth_user_id from stripe_checkout_attempts
     where commercial_reservation_id=${reservationId}::uuid and member_id=${memberId}::uuid limit 1`;
@@ -194,12 +194,13 @@ export async function reserveMembershipCheckout({
   stripePriceId: string;
   paidAgreementVersion: string;
   commercialReservationId: string;
-  consentSource?: "member" | "stripe_checkout";
+  consentSource?: "member" | "stripe_checkout" | "operator_saved_payment";
   /** Server-authorized beneficiary; authUserId remains the real administrator. */
   operatorMemberId?: string;
 }): Promise<MembershipCheckoutReservation> {
   if (!commercialReservationId || attemptId !== commercialReservationId) throw new MembershipCheckoutConflictError();
-  if (operatorMemberId && consentSource !== "stripe_checkout") throw new MembershipCheckoutConflictError();
+  if ((operatorMemberId && !["stripe_checkout", "operator_saved_payment"].includes(consentSource)) ||
+    (!operatorMemberId && consentSource === "operator_saved_payment")) throw new MembershipCheckoutConflictError();
   const sql = getBillingDatabase();
   const emailNormalized = normalizeEmail(email);
 
@@ -268,6 +269,7 @@ export async function reserveMembershipCheckout({
       Array<{
         accepted_at: Date;
         operator_authorization_id: string | null;
+        operator_authorized_at: Date | null;
         age_attested_at: Date;
         agreement_key: string;
         agreement_version: number;
@@ -278,6 +280,7 @@ export async function reserveMembershipCheckout({
       select
         acceptance.id,
         acceptance.operator_authorization_id,
+        delegation.authorized_at as operator_authorized_at,
         acceptance.accepted_at,
         age_attestation.accepted_at as age_attested_at,
         agreement.agreement_key,
@@ -301,6 +304,8 @@ export async function reserveMembershipCheckout({
             and delegation.id=${commercial.id}::uuid and delegation.reservation_id=${commercial.id}::uuid
             and delegation.member_id=acceptance.member_id and delegation.person_id=acceptance.person_id
             and delegation.actor_auth_user_id=${authUserId}::uuid and delegation.billing_plan=${plan}
+            and ((${consentSource}='stripe_checkout' and delegation.authority_version='operator-membership-authority-v1')
+              or (${consentSource}='operator_saved_payment' and delegation.authority_version='operator-saved-payment-authority-v2'))
             and delegation.agreement_version_id=agreement.id and delegation.agreement_content_sha256=agreement.content_sha256
             and private.ruined_operator_membership_target_ready(acceptance.member_id,delegation.minimum_age)))
         and agreement.agreement_key = 'ruined_membership'
@@ -363,7 +368,7 @@ export async function reserveMembershipCheckout({
         first_charge_at: Date | null;
         billing_schedule: FoundationsBillingSchedule | null;
         recurring_payment_accepted_at: Date | null;
-        billing_consent_source: "member" | "stripe_checkout";
+        billing_consent_source: "member" | "stripe_checkout" | "operator_saved_payment";
         checkout_prepared_at: Date;
         commercial_reservation_id: string | null;
         offer_id: string | null;
@@ -391,7 +396,7 @@ export async function reserveMembershipCheckout({
     const existingAttempt = attemptRows[0];
 
     if (existingAttempt) {
-      if (existingAttempt.billing_consent_auth_user_id !== authUserId ||
+      if (existingAttempt.billing_consent_source !== consentSource || existingAttempt.billing_consent_auth_user_id !== authUserId ||
         existingAttempt.operator_authorization_id !== acceptance.operator_authorization_id) throw new MembershipCheckoutConflictError();
       if (!sameBillingSchedule(existingAttempt.billing_schedule, commercial.billingSchedule)) throw new MembershipCheckoutConflictError();
       if ((existingAttempt.first_charge_at?.getTime() ?? null) !== (commercial.firstChargeAt?.getTime() ?? null)) throw new MembershipCheckoutConflictError();
@@ -466,6 +471,7 @@ export async function reserveMembershipCheckout({
         stripe_price_id,
         recurring_payment_accepted_at,
         billing_consent_source,
+        billing_consent_evidence,
         billing_consent_auth_user_id,
         operator_authorization_id,
         recurring_payment_terms,
@@ -484,8 +490,15 @@ export async function reserveMembershipCheckout({
         ${acceptance.age_attested_at},
         ${plan},
         ${stripePriceId},
-        case when ${consentSource}='stripe_checkout' then null else statement_timestamp() end,
+        case when ${consentSource}='stripe_checkout' then null
+          when ${consentSource}='operator_saved_payment' then (select authorized_at from operator_membership_authorizations where id=${acceptance.operator_authorization_id}::uuid)
+          else statement_timestamp() end,
         ${consentSource},
+        case when ${consentSource}='operator_saved_payment' then jsonb_build_object('source','operator_saved_payment',
+          'operatorAuthorizationId',${acceptance.operator_authorization_id}::text,'actorAuthUserId',${authUserId}::text,
+          'memberId',${member.id}::text,'attemptId',${attemptId}::text,
+          'acceptedAt',(select authorized_at from operator_membership_authorizations where id=${acceptance.operator_authorization_id}::uuid))
+          else null end,
         ${authUserId}::uuid,
         ${acceptance.operator_authorization_id}::uuid,
         ${tx.json({ version: "membership-billing-v2", ...offer, firstPayment: commercial.billingSchedule ? "prepaid" : commercial.firstChargeAt ? "scheduled" : "upfront", billingSchedule: commercial.billingSchedule ?? null, firstChargeAt: commercial.firstChargeAt?.toISOString() ?? null, recurring: true,

@@ -7,7 +7,7 @@ import { getPaidMembershipAgreementVersion } from "@/lib/stripe/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { PlatformAccessDeniedError } from "@/lib/platform/repository";
 import { isUuid } from "@/lib/stripe/membership-state";
-import { OPERATOR_MEMBERSHIP_AUTHORITY_TEXT, OPERATOR_MEMBERSHIP_AUTHORITY_VERSION } from "@/lib/stripe/operator-membership-model";
+import { OPERATOR_MEMBERSHIP_AUTHORITY_TEXT, OPERATOR_MEMBERSHIP_AUTHORITY_VERSION, OPERATOR_SAVED_PAYMENT_AUTHORITY_TEXT, OPERATOR_SAVED_PAYMENT_AUTHORITY_VERSION, type OperatorSavedPaymentEvidence } from "@/lib/stripe/operator-membership-model";
 
 export type OperatorCheckoutMember = {
   memberId: string; personId: string; name: string; email: string;
@@ -81,13 +81,34 @@ export async function getOperatorCheckoutMember(authUserId: string, memberId: st
   }) as OperatorCheckoutMember;
 }
 
-/** Record the administrator's affirmative action, never manufacture member authentication. */
-export async function acceptOperatorMembershipAgreement(input: {
+type OperatorAgreementInput = {
   authUserId: string; memberId: string; reservationId: string; authorityAccepted: unknown;
   authorityVersion: unknown; expectedAgreementVersion: string; expectedAgreementSha256: string; origin: string; userAgent?: string | null;
+};
+
+/** Existing sponsor flow: the real administrator is also the cardholder. */
+export async function acceptOperatorMembershipAgreement(input: OperatorAgreementInput): Promise<{ acceptanceId: string }> {
+  return acceptOperatorAgreement(input, null);
+}
+
+/** Records external member authorization honestly; it never fabricates a member click. */
+export async function acceptOperatorSavedPaymentAgreement(input: OperatorAgreementInput & {
+  evidence: OperatorSavedPaymentEvidence;
 }): Promise<{ acceptanceId: string }> {
+  if (input.evidence?.source !== "operator_recorded_member_authorization" ||
+    typeof input.evidence.statement !== "string" || input.evidence.statement.trim().length < 10 || input.evidence.statement.length > 4000 ||
+    (input.evidence.reference !== undefined && (typeof input.evidence.reference !== "string" || input.evidence.reference.length > 500))) {
+    throw new MembershipCheckoutConflictError("operator_authority_evidence_required");
+  }
+  return acceptOperatorAgreement(input, { source: input.evidence.source, statement: input.evidence.statement.trim(),
+    ...(input.evidence.reference ? { reference: input.evidence.reference.trim() } : {}) });
+}
+
+async function acceptOperatorAgreement(input: OperatorAgreementInput, evidence: OperatorSavedPaymentEvidence | null): Promise<{ acceptanceId: string }> {
+  const authorityVersion = evidence ? OPERATOR_SAVED_PAYMENT_AUTHORITY_VERSION : OPERATOR_MEMBERSHIP_AUTHORITY_VERSION;
+  const authorityText = evidence ? OPERATOR_SAVED_PAYMENT_AUTHORITY_TEXT : OPERATOR_MEMBERSHIP_AUTHORITY_TEXT;
   if (!isUuid(input.authUserId) || !isUuid(input.memberId) || !isUuid(input.reservationId) ||
-    input.authorityAccepted !== true || input.authorityVersion !== OPERATOR_MEMBERSHIP_AUTHORITY_VERSION) {
+    input.authorityAccepted !== true || input.authorityVersion !== authorityVersion) {
     throw new MembershipCheckoutConflictError("operator_authority_required");
   }
   const configuration = getPlatformConfiguration();
@@ -120,25 +141,28 @@ export async function acceptOperatorMembershipAgreement(input: {
       for share`;
     if (!agreement || input.expectedAgreementVersion !== `ruined_membership-v${agreement.version}` ||
       input.expectedAgreementSha256 !== agreement.content_sha256) throw new MembershipCheckoutConflictError("membership_agreement_changed");
-    const [previous] = await tx<Array<{ actor_auth_user_id: string; member_id: string; agreement_version_id: string; acceptance_id: string | null }>>`
-      select delegation.actor_auth_user_id,delegation.member_id,delegation.agreement_version_id,acceptance.id as acceptance_id
+    const [previous] = await tx<Array<{ actor_auth_user_id: string; member_id: string; agreement_version_id: string; acceptance_id: string | null; authority_version: string; authority_evidence: OperatorSavedPaymentEvidence | null }>>`
+      select delegation.actor_auth_user_id,delegation.member_id,delegation.agreement_version_id,acceptance.id as acceptance_id,delegation.authority_version,delegation.authority_evidence
       from operator_membership_authorizations delegation
       left join membership_agreement_acceptances acceptance on acceptance.operator_authorization_id=delegation.id
       where delegation.id=${quote.id}::uuid`;
     if (previous) {
       if (previous.actor_auth_user_id !== input.authUserId || previous.member_id !== member.memberId ||
-        previous.agreement_version_id !== agreement.id || !previous.acceptance_id) throw new MembershipCheckoutConflictError();
+        previous.agreement_version_id !== agreement.id || previous.authority_version !== authorityVersion ||
+        (previous.authority_evidence?.source ?? null) !== (evidence?.source ?? null) ||
+        (previous.authority_evidence?.statement ?? null) !== (evidence?.statement ?? null) ||
+        (previous.authority_evidence?.reference ?? null) !== (evidence?.reference ?? null) || !previous.acceptance_id) throw new MembershipCheckoutConflictError();
       return { acceptanceId: previous.acceptance_id };
     }
     if (new Date(quote.expires_at).getTime() <= Date.now()) throw new MembershipCheckoutConflictError("membership_offer_expired");
     await tx`insert into operator_membership_authorizations(id,member_id,person_id,actor_auth_user_id,
       actor_name_snapshot,actor_email_snapshot,member_name_snapshot,member_email_snapshot,
       agreement_version_id,agreement_content_sha256,reservation_id,billing_plan,authority_version,authority_text,
-      minimum_age,origin,user_agent)
+      minimum_age,origin,user_agent,authority_evidence)
       values(${quote.id}::uuid,${member.memberId}::uuid,${member.personId}::uuid,${input.authUserId}::uuid,
         ${member.actorName},${member.actorEmail},${member.name},${member.email},${agreement.id}::uuid,${agreement.content_sha256},
-        ${quote.id}::uuid,${quote.billing_plan},${OPERATOR_MEMBERSHIP_AUTHORITY_VERSION},${OPERATOR_MEMBERSHIP_AUTHORITY_TEXT},
-        ${configuration.minimumAge},${input.origin},${input.userAgent?.slice(0,500) ?? null})`;
+        ${quote.id}::uuid,${quote.billing_plan},${authorityVersion},${authorityText},
+        ${configuration.minimumAge},${input.origin},${input.userAgent?.slice(0,500) ?? null},${evidence ? tx.json(evidence) : null}::jsonb)`;
     const [age] = await tx<Array<{ id: number }>>`insert into member_consents(member_id,consent_type,policy_version,
       decision,accepted_at,source,actor_auth_user_id,evidence,dedupe_key)
       values(${member.memberId}::uuid,'age_attestation',${`minimum-age-${configuration.minimumAge}`},'accepted',
@@ -150,11 +174,10 @@ export async function acceptOperatorMembershipAgreement(input: {
       signer_email_snapshot,affirmative_action,acceptance_context,accepted_at,agreement_key_snapshot,agreement_version_snapshot,
       agreement_title_snapshot,agreement_content_sha256,agreement_body_snapshot,acceptance_evidence,dedupe_key,operator_authorization_id)
       values(${agreement.id}::uuid,${member.personId}::uuid,${member.memberId}::uuid,${input.authUserId}::uuid,${age.id},
-        ${member.actorName},${member.actorEmail},'checkbox_and_submit','initial_membership',statement_timestamp(),
+        ${member.actorName},${member.actorEmail},${evidence ? 'operator_recorded_authorization' : 'checkbox_and_submit'},'initial_membership',statement_timestamp(),
         ${agreement.agreement_key},${agreement.version},${agreement.title},${agreement.content_sha256},${agreement.body_text},
         ${tx.json({ channel: "ops_delegated_membership", operatorAuthorizationId: quote.id,
-          beneficiaryName: member.name, beneficiaryEmail: member.email, authorityVersion: OPERATOR_MEMBERSHIP_AUTHORITY_VERSION,
-          authorityText: OPERATOR_MEMBERSHIP_AUTHORITY_TEXT, origin: input.origin, userAgent: input.userAgent?.slice(0,500) ?? null })}::jsonb,
+          beneficiaryName: member.name, beneficiaryEmail: member.email, authorityVersion, authorityText, ...(evidence ? { memberAuthorization: evidence } : {}), origin: input.origin, userAgent: input.userAgent?.slice(0,500) ?? null })}::jsonb,
         ${`operator-membership-agreement:${quote.id}`},${quote.id}::uuid) returning id`;
     await tx`update member_onboardings set agreement_completed_at=coalesce(agreement_completed_at,statement_timestamp()),
       state=case when state='completed' then state else 'in_progress' end,
