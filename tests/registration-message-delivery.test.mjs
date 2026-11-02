@@ -792,12 +792,16 @@ test("local email preview assets stay same-origin across localhost and 127.0.0.1
         const response=preview.GET(new Request(`http://${host}/api/preview/registration-email?kind=${kind}`));
         const html=await response.text();
         const images=[...html.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)].map(match=>match[1]);
-        assert.equal(images.length,5);
+        assert.equal(images.length,kind==="welcome"?5:8);
         assert.ok(images.every(source=>source.startsWith("/")&&!source.startsWith("//")),`${host} ${kind} assets must stay same-origin`);
         if(kind==="welcome") {
           assert.ok(images.includes("/api/preview/registration-email/image?source=direct"));
           assert.match(html,/background="\/membership\/design\/printers-ink.jpg"/);
           assert.ok(html.includes("background-image:url('/membership/design/printers-ink.jpg')"));
+        } else {
+          for(const asset of ["make-it-yours-v2.png","first-words-v2.png","on-the-record-v1.png"]){
+            assert.ok(images.includes(`/membership/badges/${asset}`));
+          }
         }
         assert.match(response.headers.get("Content-Security-Policy"),/img-src 'self'/);
       }
