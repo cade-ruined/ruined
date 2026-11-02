@@ -52,6 +52,7 @@ async function eligibleMember(tx: TransactionSql, input: MemberSmsReminder, lock
 
 /** A committed dispatching reservation is never automatically resumed or reclaimed. */
 export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder, body: string, options: MemberSmsDispatchOptions = {}): Promise<Reservation | MemberSmsSendResult> {
+  if (input.kind === "one_off" && !options.guard) return { status: "blocked", reason: "source_ineligible" };
   return await sql.begin(async tx => {
     await tx`set local lock_timeout='3s'`;
     await tx`set local statement_timeout='10s'`;
@@ -86,6 +87,7 @@ export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder
  */
 export async function dispatchReservedMemberSms(sql: Sql, input: MemberSmsReminder, reservation: Reservation,
   send: (phone: string) => Promise<string>, options: MemberSmsDispatchOptions = {}): Promise<MemberSmsSendResult> {
+  if (input.kind === "one_off" && !options.guard) return { status: "blocked", reason: "source_ineligible" };
   return await sql.begin(async tx => {
     await tx`set local lock_timeout='3s'`;
     await tx`set local statement_timeout='10s'`;

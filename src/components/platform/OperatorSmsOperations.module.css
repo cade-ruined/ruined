@@ -1,6 +1,8 @@
 .workspace { min-width: 0; color: var(--operator-ink); font-size: .9375rem; line-height: 1.5; }
 .header, .rowHeading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 1rem; }
 .header { margin-bottom: 1.25rem; }
+.headerActions { display: flex; flex-wrap: wrap; gap: .65rem; }
+.sendEntry { display: inline-flex; align-items: center; min-height: 2.75rem; border: 1px solid var(--operator-ink); padding: .65rem 1rem; background: var(--operator-ink); color: var(--operator-surface); font-size: .875rem; font-weight: 600; }
 .header p, .muted, .note { color: var(--operator-muted); }
 .header p { margin: .5rem 0 0; max-width: 42rem; font-size: .875rem; }
 .nav { display: flex; flex-wrap: wrap; gap: .25rem; padding: .4rem; margin: 1.25rem 0; }

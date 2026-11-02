@@ -83,6 +83,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
+  await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
   const sql = sqlBridge(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true", MEMBER_SMS_AUTOMATION_ENABLED: "true",
     MEMBER_SMS_AUTOMATION_ACTIVATED_AT: new Date(Date.now() - 60 * 60_000).toISOString(), GOOGLE_COMMUNICATIONS_LIVEMODE: "true" };
   let providerFails = false; const sends = [];

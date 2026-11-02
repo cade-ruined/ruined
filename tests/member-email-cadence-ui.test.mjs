@@ -22,7 +22,8 @@ const manualCopy = compile("src/lib/communications/cade-communications.ts");
 const catalog = compile("src/lib/communications/communications-catalog.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView, "./cade-communications": manualCopy })[name] ?? noDependency(name));
 const navigation = compile("src/lib/communications/email-automation-navigation.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
 const styles = compile("src/components/platform/operatorStyles.ts");
-const smsModel = compile("src/lib/communications/member-sms-model.ts");
+const smsOneOffModel = compile("src/lib/communications/member-sms-one-off-model.ts");
+const smsModel = compile("src/lib/communications/member-sms-model.ts", name => ({ "./member-sms-one-off-model": smsOneOffModel })[name] ?? noDependency(name));
 const smsAutomationModel = compile("src/lib/communications/member-sms-automation-model.ts");
 const smsOperationsModel = compile("src/lib/communications/member-sms-operations-model.ts", name => ({ "./member-sms-model": smsModel, "./member-sms-automation-model": smsAutomationModel })[name] ?? noDependency(name));
 const SMS_API = "/api/ops/messages/texts";
@@ -99,6 +100,8 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/lib/communications/email-automation-navigation": navigation,
     "@/lib/communications/communications-catalog": catalog,
     "@/lib/communications/member-sms-model": smsModel,
+    "@/lib/communications/member-sms-one-off-model": smsOneOffModel,
+    "./OperatorSmsOneOffComposer.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "@/lib/communications/member-sms-operations-model": smsOperationsModel,
     "./OperatorSmsOperations.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorCommunicationsCatalog.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
@@ -121,6 +124,7 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     return Response.json(JSON.parse(call.body).action === "preview" ? reviewed : { ok: true });
   }
   async function transport(url, options) { const call = { url, ...options }; calls.push(call); return respond ? respond(call, fallback) : fallback(call); }
+  deps["./OperatorSmsOneOffComposer"] = compile("src/components/platform/OperatorSmsOneOffComposer.tsx", name => deps[name] ?? noDependency(name), transport);
   deps["./OperatorSmsOperations"] = compile("src/components/platform/OperatorSmsOperations.tsx", name => deps[name] ?? noDependency(name), transport);
   const Component = compile("src/components/platform/OperatorEmailAutomations.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }, transport).default;
   function draw() {

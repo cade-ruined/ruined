@@ -1,8 +1,12 @@
+import { isMemberSmsOneOffBody } from "./member-sms-one-off-model";
+
 export type MemberSmsReminder = {
   memberId: string;
   /** Stable per member and reminder occurrence. Never generate a new key for a retry. */
   reminderKey: string;
-  kind: "call_reminder" | "membership_reminder" | "opt_in_confirmation";
+  kind: "call_reminder" | "membership_reminder" | "opt_in_confirmation" | "one_off";
+  /** Server-frozen review only; sending also requires its transaction guard. */
+  oneOff?: { reviewId: string; actorAuthUserId: string; body: string };
   /** Confirmation is bound to the exact authenticated checkbox event. */
   expectedConsentId?: string;
   callDetails?: { eventId: string; title: string; startsAt: string; timeZone: string; foundations01?: boolean; meetingUrl?: string };
@@ -16,11 +20,17 @@ export type MemberSmsSendResult =
   | { status: "unknown"; attemptId: string };
 export type MemberSmsInbound = { messageSid: string; phone: string; kind: "STOP" | "START" | "HELP" | "message" };
 
-/** Only membership reminder templates are available; no arbitrary campaign body. */
+/** Automatic templates and a server-reviewed one-member text share the delivery transport. */
 export function memberSmsReminderBody(input: MemberSmsReminder, publicOrigin: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.memberId)
     || !/^[a-zA-Z0-9][a-zA-Z0-9:._/-]{0,159}$/.test(input.reminderKey)) {
     throw new Error("Invalid membership reminder identity.");
+  }
+  if (input.kind === "one_off") {
+    if (!input.oneOff || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.oneOff.reviewId)
+      || input.reminderKey !== `one-off:${input.oneOff.reviewId}` || !/^[1-9][0-9]*$/.test(input.expectedConsentId ?? "")
+      || !isMemberSmsOneOffBody(input.oneOff.body)) throw new Error("Invalid reviewed membership text.");
+    return input.oneOff.body;
   }
   if (input.kind === "opt_in_confirmation" && (!/^[1-9][0-9]*$/.test(input.expectedConsentId ?? "")
     || input.reminderKey !== `consent:${input.expectedConsentId}`)) throw new Error("Invalid confirmation identity.");

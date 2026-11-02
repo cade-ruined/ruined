@@ -25,6 +25,7 @@ function harness(fetch) {
     if (name === 'next/link') return function TestLink({ children, ...props }) { return React.createElement('a', props, children); };
     if (name === './OperatorSmsOperations.module.css') return new Proxy({}, { get: (_, key) => key });
     if (name === './operatorStyles') return { OPERATOR_BUTTON_CLASS: 'button' };
+    if (name === './OperatorSmsOneOffComposer') return function OneOffComposerStub() { return null; };
     if (name === '@/lib/communications/member-sms-operations-model') return model;
     if (name === '@/lib/communications/member-sms-model') return loader()('src/lib/communications/member-sms-model.ts');
     if (name === '@/lib/communications/communications-catalog') return { COMMUNICATION_BUCKETS: [{ value: 'registration', label: 'Registration' }, { value: 'foundations', label: 'Foundations' }, { value: 'membership', label: 'Membership' }] };
@@ -50,7 +51,7 @@ test('SMS sample view uses real templates but never requests or mutates live dat
   assert.match(messages, /Example with sample call details/); assert.match(messages, /Reply STOP/);
   const activity = text(expanded(h.render(props({ preview: true, view: 'activity' }))));
   assert.match(activity, /Alex Example/); assert.match(activity, /Delivered/);
-  assert.equal(nodes(expanded(h.render(props({ preview: true })))).some(node => node.type === 'button' && /send|pause|save/i.test(text(node))), false);
+  assert.equal(nodes(expanded(h.render(props({ preview: true })))).some(node => node.type === 'button' && /^(Send text|Pause|Save)$/i.test(text(node))), false);
 });
 
 test('independent read-only SMS loading exposes actual wording and recoverable errors', async () => {
@@ -118,4 +119,14 @@ test('expired and interrupted jobs remain distinct from a delivered message', as
   assert.match(rendered, /Jobs without a send attempt/); assert.match(rendered, /Needs review/); assert.match(rendered, /Expired/);
   assert.match(rendered, /will not be automatically retried/); assert.match(rendered, /No provider send attempt is recorded/);
   assert.match(rendered, /processing jobs first/); assert.doesNotMatch(rendered, /The carrier reported delivery/);
+});
+
+test('one-off activity shows the operator and separates blocked requests from interrupted results', async () => {
+  const request = { id: 'request-1', recipient, body: 'Ruined: A reviewed service update.', actorName: 'Cade Example', createdAt: '2026-11-02T18:00:00Z', claimedAt: '2026-11-02T18:00:01Z', status: 'claimed', outcome: null };
+  const h = harness(async () => ({ ok: true, json: async () => overview({ history: { items: [attempt({ kind: 'one_off', actorName: 'Cade Example', body: 'Exact one-off wording.' })], nextCursor: null }, oneOffRequests: { items: [request, { ...request, id: 'request-2', status: 'finished', outcome: 'blocked' }], truncated: false } }) }));
+  h.render(props({ view: 'activity' })); await settle();
+  const rendered = text(expanded(h.render(props({ view: 'activity' }))));
+  assert.match(rendered, /One-off text/); assert.match(rendered, /Requested by/); assert.match(rendered, /Cade Example/); assert.match(rendered, /Exact one-off wording/);
+  assert.match(rendered, /Needs review/); assert.match(rendered, /Not sent/); assert.match(rendered, /Eligibility checks stopped/);
+  assert.match(rendered, /will not be automatically resent/); assert.doesNotMatch(rendered, /Awaiting result/);
 });

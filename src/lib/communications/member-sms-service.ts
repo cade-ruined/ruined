@@ -13,6 +13,7 @@ import { dispatchReservedMemberSms, reserveMemberSmsAttempt } from "./member-sms
  * Enable only after sender registration, Advanced Opt-Out, and approval.
  */
 export async function sendMemberSmsReminder(input: MemberSmsReminder, options: MemberSmsDispatchOptions = {}): Promise<MemberSmsSendResult> {
+  if (input.kind === "one_off" && !options.guard) return { status: "blocked", reason: "source_ineligible" };
   const config = readMemberSmsConfiguration();
   if (!config.enabled) return { status: "disabled" };
   if (!config.sendReady || !config.publicOrigin) return { status: "unconfigured" };
