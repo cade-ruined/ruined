@@ -34,6 +34,29 @@ function missingFor(rule: LifecycleRule, year: number, design: CadenceDesignPlan
   if (rule.enabled && !rule.authorized) missing.push("The approving administrator no longer has active access.");
   return missing;
 }
+export type LifecycleEmailWorkReadiness = {
+  key: LifecycleEmailKey;
+  title: string;
+  ready: boolean;
+  missing: string[];
+  revision: number;
+};
+
+/** The catalog's readiness checks, without recipient scans or delivery writes. */
+export async function readLifecycleEmailWorkReadiness(
+  tx: TransactionSql,
+  now = new Date(),
+  lock = false,
+): Promise<LifecycleEmailWorkReadiness[]> {
+  const [installed] = await tx`select to_regclass('private.member_lifecycle_email_rules') is not null as installed`;
+  if (!installed?.installed) return [];
+  const [rules, design] = await Promise.all([readLifecycleRules(tx, lock), defaultDesign(tx)]);
+  const year = Number(denverDate(now).slice(0, 4));
+  return rules.map(rule => {
+    const missing = missingFor(rule, year, rule.design ?? design);
+    return { key: rule.key, title: LIFECYCLE_TITLES[rule.key], ready: missing.length === 0, missing, revision: rule.revision };
+  });
+}
 export async function getMemberLifecycleEmailOverview(actor: string, selected?: LifecycleEmailKey) {
   return getApplicationDatabase().begin(async tx => {
     await requireAdminEmailActor(tx,actor);

@@ -133,7 +133,8 @@ test("held protocols stay out of the reusable template library while approved ma
   const held = rows.filter(item => item.status === "held");
   assert.equal(held.filter(item => item.bucket === "missed-protocol").length, 1);
   assert.equal(held.length, 7);
-  assert.ok(held.every(item => item.channel === "emails" && item.statusLabel === "Held" && item.action.href === "/ops/work" && !item.action.selection));
+  assert.ok(held.every(item => item.channel === "emails" && item.statusLabel === "Held"
+    && item.action.href === `/ops/work?filter=held_email#held-email-${encodeURIComponent(item.id)}` && !item.action.selection));
   const manual = rows.filter(item => item.status === "manual");
   assert.equal(manual.length, 6);
   assert.ok(manual.every(item => item.action.href.startsWith("/ops/messages?mode=emails&manualTemplate=")));

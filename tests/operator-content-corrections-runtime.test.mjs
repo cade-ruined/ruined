@@ -67,6 +67,7 @@ async function fixture(t, { migrate = true } = {}) {
   const common = { "@/lib/database/server": { getApplicationDatabase: () => bridge(db) } };
   const ops = await load("src/lib/platform/ops-operating-repository.ts", {
     ...common, "@/lib/google/calendar": {}, "@/lib/google/communications": {}, "@/lib/support/delivery": {}, "@/lib/platform/ops-delivery-health": {},
+    "@/lib/communications/held-email-work": { readHeldEmailWork: async () => new Map(), syncHeldEmailWork: async () => {} },
   });
   const academy = await load("src/lib/platform/ops-academy-repository.ts", { ...common, "@/lib/platform/ops-operating-repository": ops });
   const row = async (query, values = []) => (await db.query(query, values)).rows[0];

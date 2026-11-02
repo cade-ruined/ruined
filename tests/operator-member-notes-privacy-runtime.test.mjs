@@ -61,6 +61,7 @@ async function fixture(t) {
   const dependencies = {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/google/calendar": {}, "@/lib/google/communications": {}, "@/lib/support/delivery": {}, "@/lib/platform/ops-delivery-health": {},
+    "@/lib/communications/held-email-work": { readHeldEmailWork: async () => new Map(), syncHeldEmailWork: async () => {} },
   };
   new Function("require", "module", "exports", compiled)((name) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name];

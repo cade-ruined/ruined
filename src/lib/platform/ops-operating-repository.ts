@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
+import { readHeldEmailWork, syncHeldEmailWork } from "@/lib/communications/held-email-work";
 import { getGoogleCalendarConfigurationStatus } from "@/lib/google/calendar";
 import { getSupportEmailConfiguration } from "@/lib/support/delivery";
 import { buildOpsHealthServices, readOpsDeliveryAttention, readOpsDeliveryHealth } from "@/lib/platform/ops-delivery-health";
@@ -25,6 +26,7 @@ import type {
   OpsCircleCommunicationItem,
   OpsExperienceDirectoryItem,
   OpsHistoryEvent,
+  OpsHeldEmailWork,
   OpsMemberRecord,
   OpsOverviewActivityKind,
   OpsOverviewActivityTone,
@@ -32,7 +34,9 @@ import type {
   OpsSystemHealth,
   OpsTaskSummary,
   OpsWorkItem,
+  OpsWorkFilter,
   OpsWorkQueue,
+  OpsWorkSort,
 } from "@/lib/platform/ops-model";
 
 const UUID_PATTERN =
@@ -1242,27 +1246,32 @@ export async function getOpsMemberOperatingRecord(
 
 export async function getOpsWorkQueue(
   actorAuthUserId: string,
-  options: { view?: "active" | "dismissed" } = {},
+  options: { view?: "active" | "dismissed"; filter?: OpsWorkFilter; sort?: OpsWorkSort } = {},
 ): Promise<OpsWorkQueue> {
   const view = options.view === "dismissed" ? "dismissed" : "active";
+  const filter: OpsWorkFilter = new Set(["held_email", "task", "artifact", "workflow_failure"]).has(options.filter ?? "") ? options.filter! : "all";
+  const sort: OpsWorkSort = options.sort === "oldest" || options.sort === "newest" ? options.sort : "priority";
   const sql = getApplicationDatabase();
-  // Deferred CADE review work is installed only after an authorized admin opens
-  // the queue and the canonical assignee is verified. The queue snapshot below
-  // remains read-only; existing tasks and their manual decisions are preserved.
+  // Reconcile review work only after an active admin is reauthorized. This never
+  // enables a message or selects recipients; the queue snapshot stays read-only.
   await sql.begin(async (tx) => {
     const access = await requireOperatorAccess(tx, actorAuthUserId);
     if (!access.roles.includes("ops_admin")) return;
     const [seed] = await tx`select to_regprocedure('private.ruined_seed_cade_communications_work()') is not null as installed`;
-    if (!seed?.installed) return;
     await tx`select pg_advisory_xact_lock(hashtext('ruined-operator-admins'), 1)`;
     await requireOperatorAccess(tx, actorAuthUserId, { lock: true, requireAdmin: true });
-    await tx`select private.ruined_seed_cade_communications_work()`;
+    if (seed?.installed) await tx`select private.ruined_seed_cade_communications_work()`;
+    await syncHeldEmailWork(tx);
   });
   return sql.begin(async (tx) => {
     await tx`set transaction isolation level repeatable read read only`;
     const access = await requireOperatorAccess(tx, actorAuthUserId);
     const isAdmin = access.roles.includes("ops_admin");
-    const taskRows = isAdmin ? await tx<Array<{
+    const heldEmails = isAdmin ? await readHeldEmailWork(tx) : new Map<string, OpsHeldEmailWork>();
+    const heldKeys = [...heldEmails.keys()];
+    const taskRows = isAdmin && ["all", "task", "held_email"].includes(filter) ? await tx<Array<{
+      created_at: Date | string;
+      idempotency_key: string | null;
       assigned_to_auth_user_id: string | null;
       claimed_by_name: string | null;
       dismissed_at: Date | string | null;
@@ -1283,6 +1292,8 @@ export async function getOpsWorkQueue(
     }>>`
       select
         task.id as task_id,
+        task.created_at,
+        task.idempotency_key,
         task.assigned_to_auth_user_id,
         task.version,
         case when task.assigned_to_auth_user_id is null then null else coalesce(
@@ -1321,6 +1332,7 @@ export async function getOpsWorkQueue(
       left join user_profiles dismisser_legacy_profile on dismisser_legacy_profile.auth_user_id = dismisser.auth_user_id
       where task.status in ('open', 'in_progress', 'blocked')
         and (task.dismissed_at is not null) = ${view === "dismissed"}
+        and (${filter !== "held_email"} or task.idempotency_key = any(${heldKeys}::text[]))
         and (
           ${isAdmin}
           or exists (
@@ -1343,10 +1355,13 @@ export async function getOpsWorkQueue(
           )
         )
       order by
-        case when ${view === "dismissed"} then task.dismissed_at end desc nulls last,
+        case when ${sort === "oldest"} then task.created_at end asc,
+        case when ${sort === "newest"} then task.created_at end desc,
+        case when ${sort !== "priority"} then task.id end,
+        case when ${sort === "priority" && view === "dismissed"} then task.dismissed_at end desc nulls last,
         case task.priority when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end,
         task.due_at nulls last,
-        task.created_at
+        task.created_at, task.id
       limit ${view === "dismissed" ? null : 200}
     ` : [];
 
@@ -1355,9 +1370,10 @@ export async function getOpsWorkQueue(
       where status in ('open', 'in_progress', 'blocked') and dismissed_at is not null
     ` : [];
 
-    const artifactRows = isAdmin && view === "active"
+    const artifactRows = isAdmin && view === "active" && ["all", "artifact"].includes(filter)
       ? await tx<Array<{
           artifact_job_id: string;
+          created_at: Date | string;
           due_at: Date | string | null;
           member_id: string;
           member_name: string;
@@ -1367,6 +1383,7 @@ export async function getOpsWorkQueue(
         }>>`
           select
             job.id as artifact_job_id,
+            job.requested_at as created_at,
             job.member_id,
             coalesce(profile.preferred_name, profile.display_name, 'Member') as member_name,
             coalesce(award.award_name, template_version.name) as title,
@@ -1380,14 +1397,19 @@ export async function getOpsWorkQueue(
           join artifact_template_versions template_version
             on template_version.id = job.artifact_template_version_id
           where job.status not in ('fulfilled', 'canceled')
-          order by job.priority desc, job.due_at nulls last, job.requested_at
+          order by
+            case when ${sort === "oldest"} then job.requested_at end asc,
+            case when ${sort === "newest"} then job.requested_at end desc,
+            case when ${sort !== "priority"} then job.id end,
+            job.priority desc, job.due_at nulls last, job.requested_at, job.id
           limit 200
         `
       : [];
 
-    const workflowRows = isAdmin && view === "active"
+    const workflowRows = isAdmin && view === "active" && ["all", "workflow_failure"].includes(filter)
       ? await tx<Array<{
           action_id: string;
+          created_at: Date | string;
           action_type: string;
           error_code: string | null;
           member_id: string | null;
@@ -1397,6 +1419,7 @@ export async function getOpsWorkQueue(
         }>>`
           select
             action.id as action_id,
+            action.created_at,
             action.action_type,
             action.status as state,
             action.updated_at,
@@ -1415,15 +1438,22 @@ export async function getOpsWorkQueue(
             limit 1
           ) latest_attempt on true
           where action.status in ('failed', 'dead_letter')
-          order by action.updated_at, action.created_at
+          order by
+            case when ${sort === "oldest"} then action.created_at end asc,
+            case when ${sort === "newest"} then action.created_at end desc,
+            case when ${sort !== "priority"} then action.id end,
+            case when action.status = 'dead_letter' then 0 else 1 end,
+            action.updated_at, action.created_at, action.id
           limit 200
         `
       : [];
 
     const items: OpsWorkItem[] = [
       ...taskRows.map((row): OpsWorkItem => ({
+        createdAt: asIso(row.created_at),
         dueAt: asIso(row.due_at),
         kind: "task",
+        ...(row.idempotency_key && heldEmails.has(row.idempotency_key) ? { heldEmail: heldEmails.get(row.idempotency_key) } : {}),
         claimedByName: row.claimed_by_name,
         claimedByCurrentOperator: row.assigned_to_auth_user_id === access.authUserId,
         dismissedAt: asIso(row.dismissed_at),
@@ -1442,6 +1472,7 @@ export async function getOpsWorkQueue(
         workId: row.task_id,
       })),
       ...artifactRows.map((row): OpsWorkItem => ({
+        createdAt: asIso(row.created_at),
         dueAt: asIso(row.due_at),
         kind: "artifact",
         label: row.title,
@@ -1452,6 +1483,7 @@ export async function getOpsWorkQueue(
         workId: row.artifact_job_id,
       })),
       ...workflowRows.map((row): OpsWorkItem => ({
+        createdAt: asIso(row.created_at),
         dueAt: asIso(row.updated_at),
         errorCode: row.error_code ?? "unknown_failure",
         kind: "workflow_failure",
@@ -1463,15 +1495,26 @@ export async function getOpsWorkQueue(
         workId: row.action_id,
       })),
     ].sort((left, right) => {
+      const createdOrder = (left.createdAt ?? "9999").localeCompare(right.createdAt ?? "9999");
+      if (sort !== "priority") {
+        if (!left.createdAt && right.createdAt) return 1;
+        if (!right.createdAt && left.createdAt) return -1;
+        return (sort === "oldest" ? createdOrder : -createdOrder) || left.workId.localeCompare(right.workId);
+      }
+      if (view === "dismissed" && left.kind === "task" && right.kind === "task") {
+        const dismissedOrder = (right.dismissedAt ?? "").localeCompare(left.dismissedAt ?? "");
+        if (dismissedOrder) return dismissedOrder;
+      }
       if (right.priority !== left.priority) return right.priority - left.priority;
-      if (!left.dueAt) return 1;
-      if (!right.dueAt) return -1;
-      return left.dueAt.localeCompare(right.dueAt);
+      const dueOrder = (left.dueAt ?? "9999").localeCompare(right.dueAt ?? "9999");
+      return dueOrder || createdOrder || left.workId.localeCompare(right.workId);
     });
 
     return {
       items,
       view,
+      filter,
+      sort,
       totals: {
         artifacts: artifactRows.length,
         failures: workflowRows.length,

@@ -50,6 +50,7 @@ async function fixture() {
     "@/lib/support/delivery": { getSupportEmailConfiguration: () => ({ ready: true }) },
     "@/lib/google/communications": {},
     "@/lib/platform/ops-delivery-health": health,
+    "@/lib/communications/held-email-work": { readHeldEmailWork: async () => new Map(), syncHeldEmailWork: async () => {} },
   });
   return { pg, sql, ids, repository };
 }

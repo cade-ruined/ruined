@@ -98,6 +98,7 @@ test("work queue and overview carry Circle identity, context, and owner from the
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/google/calendar": {}, "@/lib/google/communications": {}, "@/lib/support/delivery": {},
     "@/lib/platform/ops-delivery-health": { readOpsDeliveryAttention: async () => [] },
+    "@/lib/communications/held-email-work": { readHeldEmailWork: async () => new Map(), syncHeldEmailWork: async () => {} },
   };
   const repository = loadModule("src/lib/platform/ops-operating-repository.ts", name => {
     assert.ok(Object.hasOwn(dependencies, name), `Known repository dependency ${name}`);
