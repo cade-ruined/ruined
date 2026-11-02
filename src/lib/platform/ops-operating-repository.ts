@@ -841,6 +841,7 @@ export async function getOpsMemberOperatingRecord(
       ? await tx<Array<{
           assigned_to: string | null;
           completed_at: Date | string | null;
+          dismissed_at: Date | string | null;
           due_at: Date | string | null;
           priority: string;
           state: string;
@@ -854,6 +855,7 @@ export async function getOpsMemberOperatingRecord(
             task.status as state,
             task.due_at,
             task.completed_at,
+            task.dismissed_at,
             case when task.assigned_to_auth_user_id is null then null else coalesce(
               nullif(btrim(assignee_profile.display_name), ''),
               nullif(btrim(assignee_legacy_profile.display_name), ''),
@@ -866,7 +868,8 @@ export async function getOpsMemberOperatingRecord(
           left join user_profiles assignee_legacy_profile on assignee_legacy_profile.auth_user_id = assignee.auth_user_id
           where task.member_id = ${memberId}::uuid
           order by
-            case task.status when 'open' then 0 when 'in_progress' then 1 when 'blocked' then 2 else 3 end,
+            case when task.dismissed_at is not null then 4
+              else case task.status when 'open' then 0 when 'in_progress' then 1 when 'blocked' then 2 else 3 end end,
             task.due_at nulls last,
             task.created_at desc
           limit 100
@@ -996,7 +999,7 @@ export async function getOpsMemberOperatingRecord(
       limit 100
     `;
 
-    const openWorkCount = taskRows.filter((task) => !["completed", "cancelled"].includes(task.state)).length
+    const openWorkCount = taskRows.filter((task) => !task.dismissed_at && !["completed", "cancelled"].includes(task.state)).length
       + artifactRows.filter((artifact) => !["fulfilled", "canceled", "revoked"].includes(artifact.state)).length;
     const agreement = agreementRows[0];
     const billing = billingRows[0];
@@ -1225,6 +1228,7 @@ export async function getOpsMemberOperatingRecord(
         tasks: taskRows.map<OpsTaskSummary>((row) => ({
           assignedTo: row.assigned_to,
           completedAt: asIso(row.completed_at),
+          dismissedAt: asIso(row.dismissed_at),
           dueAt: asIso(row.due_at),
           priority: priorityWeight(row.priority),
           state: row.state,
@@ -1236,7 +1240,11 @@ export async function getOpsMemberOperatingRecord(
   });
 }
 
-export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQueue> {
+export async function getOpsWorkQueue(
+  actorAuthUserId: string,
+  options: { view?: "active" | "dismissed" } = {},
+): Promise<OpsWorkQueue> {
+  const view = options.view === "dismissed" ? "dismissed" : "active";
   const sql = getApplicationDatabase();
   // Deferred CADE review work is installed only after an authorized admin opens
   // the queue and the canonical assignee is verified. The queue snapshot below
@@ -1257,6 +1265,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
     const taskRows = isAdmin ? await tx<Array<{
       assigned_to_auth_user_id: string | null;
       claimed_by_name: string | null;
+      dismissed_at: Date | string | null;
+      dismissed_by_name: string | null;
       version: number | string;
       due_at: Date | string | null;
       member_id: string | null;
@@ -1281,6 +1291,13 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
           nullif(btrim(assignee_profile.preferred_name), ''),
           'Operator'
         ) end as claimed_by_name,
+        task.dismissed_at,
+        case when task.dismissed_by_auth_user_id is null then null else coalesce(
+          nullif(btrim(dismisser_profile.display_name), ''),
+          nullif(btrim(dismisser_legacy_profile.display_name), ''),
+          nullif(btrim(dismisser_profile.preferred_name), ''),
+          'Operator'
+        ) end as dismissed_by_name,
         task.task_type,
         task.description,
         task.circle_id,
@@ -1299,7 +1316,11 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
       left join platform_users assignee on assignee.auth_user_id = task.assigned_to_auth_user_id
       left join person_profiles assignee_profile on assignee_profile.person_id = assignee.person_id
       left join user_profiles assignee_legacy_profile on assignee_legacy_profile.auth_user_id = assignee.auth_user_id
+      left join platform_users dismisser on dismisser.auth_user_id = task.dismissed_by_auth_user_id
+      left join person_profiles dismisser_profile on dismisser_profile.person_id = dismisser.person_id
+      left join user_profiles dismisser_legacy_profile on dismisser_legacy_profile.auth_user_id = dismisser.auth_user_id
       where task.status in ('open', 'in_progress', 'blocked')
+        and (task.dismissed_at is not null) = ${view === "dismissed"}
         and (
           ${isAdmin}
           or exists (
@@ -1322,13 +1343,19 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
           )
         )
       order by
+        case when ${view === "dismissed"} then task.dismissed_at end desc nulls last,
         case task.priority when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end,
         task.due_at nulls last,
         task.created_at
-      limit 200
+      limit ${view === "dismissed" ? null : 200}
     ` : [];
 
-    const artifactRows = isAdmin
+    const dismissedRows = isAdmin ? await tx<Array<{ count: number | string }>>`
+      select count(*) as count from operator_tasks
+      where status in ('open', 'in_progress', 'blocked') and dismissed_at is not null
+    ` : [];
+
+    const artifactRows = isAdmin && view === "active"
       ? await tx<Array<{
           artifact_job_id: string;
           due_at: Date | string | null;
@@ -1358,7 +1385,7 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         `
       : [];
 
-    const workflowRows = isAdmin
+    const workflowRows = isAdmin && view === "active"
       ? await tx<Array<{
           action_id: string;
           action_type: string;
@@ -1399,6 +1426,8 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
         kind: "task",
         claimedByName: row.claimed_by_name,
         claimedByCurrentOperator: row.assigned_to_auth_user_id === access.authUserId,
+        dismissedAt: asIso(row.dismissed_at),
+        dismissedByName: row.dismissed_by_name,
         version: Number(row.version),
         taskType: row.task_type,
         description: row.description,
@@ -1442,10 +1471,12 @@ export async function getOpsWorkQueue(actorAuthUserId: string): Promise<OpsWorkQ
 
     return {
       items,
+      view,
       totals: {
         artifacts: artifactRows.length,
         failures: workflowRows.length,
         tasks: taskRows.length,
+        dismissedTasks: Number(dismissedRows[0]?.count ?? 0),
       },
     };
   });
@@ -1557,7 +1588,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
         (select count(*) from scoped_circles where status = 'forming') as forming_circles,
         (
           select count(*) from operator_tasks task
-          where ${isAdmin} and task.status in ('open', 'in_progress', 'blocked')
+          where ${isAdmin} and task.status in ('open', 'in_progress', 'blocked') and task.dismissed_at is null
         ) as open_tasks,
         (
           select count(*) from artifact_jobs job
@@ -1860,6 +1891,8 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
           task.member_id,
           coalesce(scoped_member.member_name, 'Operations'),
           task.title || case
+            when task_event.event_type = 'state_changed' and task_event.evidence->>'action' = 'dismiss' then ' dismissed'
+            when task_event.event_type = 'state_changed' and task_event.evidence->>'action' = 'restore' then ' restored'
             when task_event.event_type = 'completed' then ' completed'
             when task_event.event_type = 'created' then ' created'
             else ' · ' || replace(task_event.event_type, '_', ' ')
@@ -1976,6 +2009,7 @@ export async function getOpsOverviewData(actorAuthUserId: string): Promise<OpsOv
             left join person_profiles assignee_profile on assignee_profile.person_id = assignee.person_id
             left join user_profiles assignee_legacy_profile on assignee_legacy_profile.auth_user_id = assignee.auth_user_id
             where task.status in ('open', 'in_progress', 'blocked')
+              and task.dismissed_at is null
 
             union all
 
@@ -3153,7 +3187,7 @@ export async function transitionOpsTask(input: {
   taskId: string;
 }) {
   const taskId = requireUuid(input.taskId, "Task");
-  if (!new Set(["claim", "unclaim", "complete", "reopen"]).has(input.action)) {
+  if (!new Set(["claim", "unclaim", "complete", "reopen", "dismiss", "restore"]).has(input.action)) {
     throw new OpsOperatingRepositoryError("invalid_request", "Choose a valid task action.");
   }
   if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) {
@@ -3168,11 +3202,14 @@ export async function transitionOpsTask(input: {
     const taskRows = await tx<Array<{
       assigned_to_auth_user_id: string | null;
       circle_id: string | null;
+      dismissed_at: Date | string | null;
+      dismissed_by_auth_user_id: string | null;
       member_id: string | null;
       status: string;
       version: number | string;
     }>>`
-      select assigned_to_auth_user_id, member_id, circle_id, status, version
+      select assigned_to_auth_user_id, member_id, circle_id, status, version,
+        dismissed_at, dismissed_by_auth_user_id
       from operator_tasks
       where id = ${taskId}::uuid
       for update
@@ -3182,13 +3219,22 @@ export async function transitionOpsTask(input: {
     if (Number(task.version) !== input.expectedVersion) {
       throw new OpsOperatingRepositoryError("conflict", "The task changed. Refresh and review its current owner before trying again.");
     }
-    const valid = input.action === "claim"
-      ? task.status === "open" && task.assigned_to_auth_user_id === null
-      : input.action === "complete"
-        ? new Set(["open", "in_progress"]).has(task.status)
-        : input.action === "unclaim"
-          ? new Set(["open", "in_progress", "blocked"]).has(task.status)
-          : task.status === "completed";
+    const isAttentionAction = input.action === "dismiss" || input.action === "restore";
+    const isActive = new Set(["open", "in_progress", "blocked"]).has(task.status);
+    if (!isAttentionAction && input.action !== "reopen" && task.dismissed_at !== null) {
+      throw new OpsOperatingRepositoryError("conflict", "Restore this task before updating it.");
+    }
+    const valid = input.action === "dismiss"
+      ? isActive && task.dismissed_at === null
+      : input.action === "restore"
+        ? isActive && task.dismissed_at !== null
+        : input.action === "claim"
+          ? task.status === "open" && task.assigned_to_auth_user_id === null
+          : input.action === "complete"
+            ? new Set(["open", "in_progress"]).has(task.status)
+            : input.action === "unclaim"
+              ? isActive
+              : task.status === "completed";
     if (!valid) {
       throw new OpsOperatingRepositoryError("conflict", "That task action is not available from its current state or ownership.");
     }
@@ -3200,23 +3246,34 @@ export async function transitionOpsTask(input: {
         throw new OpsOperatingRepositoryError("forbidden", "Only the person who claimed this task can complete or unclaim it.");
       }
     }
-    const nextState = input.action === "claim" ? "in_progress"
-      : input.action === "complete" ? "completed"
-        : input.action === "unclaim" && task.status === "blocked" ? "blocked" : "open";
+    const nextState = isAttentionAction ? task.status
+      : input.action === "claim" ? "in_progress"
+        : input.action === "complete" ? "completed"
+          : input.action === "unclaim" && task.status === "blocked" ? "blocked" : "open";
     const nextAssignee = input.action === "claim" ? access.authUserId
       : input.action === "unclaim" || input.action === "reopen" ? null : task.assigned_to_auth_user_id;
 
-    const updatedRows = await tx<Array<{ completed_at: Date | string | null; version: number | string }>>`
+    const updatedRows = await tx<Array<{
+      completed_at: Date | string | null;
+      dismissed_at: Date | string | null;
+      dismissed_by_auth_user_id: string | null;
+      version: number | string;
+    }>>`
       update operator_tasks
       set
         status = ${nextState},
         assigned_to_auth_user_id = ${nextAssignee}::uuid,
-        completed_at = case when ${nextState} = 'completed' then statement_timestamp() else null end,
+        completed_at = case when ${isAttentionAction} then completed_at
+          when ${nextState} = 'completed' then statement_timestamp() else null end,
+        dismissed_at = case when ${input.action} = 'dismiss' then statement_timestamp()
+          when ${input.action} = 'restore' then null else dismissed_at end,
+        dismissed_by_auth_user_id = case when ${input.action} = 'dismiss' then ${access.authUserId}::uuid
+          when ${input.action} = 'restore' then null else dismissed_by_auth_user_id end,
         version = version + 1,
         updated_at = statement_timestamp()
       where id = ${taskId}::uuid
         and version = ${input.expectedVersion}
-      returning completed_at, version
+      returning completed_at, dismissed_at, dismissed_by_auth_user_id, version
     `;
     if (!updatedRows[0]) throw new OpsOperatingRepositoryError("conflict", "The task changed. Refresh and try again.");
     const eventType = input.action === "claim" ? "assigned" : input.action === "complete" ? "completed" : "state_changed";
@@ -3239,6 +3296,12 @@ export async function transitionOpsTask(input: {
           action: input.action,
           previousAssignedToAuthUserId: task.assigned_to_auth_user_id,
           assignedToAuthUserId: nextAssignee,
+          ...(isAttentionAction ? {
+            previousDismissedAt: asIso(task.dismissed_at),
+            dismissedAt: asIso(updatedRows[0].dismissed_at),
+            previousDismissedByAuthUserId: task.dismissed_by_auth_user_id,
+            dismissedByAuthUserId: updatedRows[0].dismissed_by_auth_user_id,
+          } : {}),
         })},
         ${randomUUID()}
       )
@@ -3246,14 +3309,27 @@ export async function transitionOpsTask(input: {
     await writeAudit(tx, {
       action: `task.${input.action}`,
       actorAuthUserId: access.authUserId,
-      after: { assignedToAuthUserId: nextAssignee, state: nextState, version: Number(updatedRows[0].version) },
-      before: { assignedToAuthUserId: task.assigned_to_auth_user_id, state: task.status, version: Number(task.version) },
+      after: {
+        assignedToAuthUserId: nextAssignee, state: nextState, version: Number(updatedRows[0].version),
+        ...(isAttentionAction ? {
+          dismissedAt: asIso(updatedRows[0].dismissed_at),
+          dismissedByAuthUserId: updatedRows[0].dismissed_by_auth_user_id,
+        } : {}),
+      },
+      before: {
+        assignedToAuthUserId: task.assigned_to_auth_user_id, state: task.status, version: Number(task.version),
+        ...(isAttentionAction ? {
+          dismissedAt: asIso(task.dismissed_at),
+          dismissedByAuthUserId: task.dismissed_by_auth_user_id,
+        } : {}),
+      },
       memberId: task.member_id,
       subjectId: taskId,
       subjectType: "operator_task",
     });
     return {
       completedAt: asIso(updatedRows[0].completed_at),
+      dismissedAt: asIso(updatedRows[0].dismissed_at),
       id: taskId,
       state: nextState,
       version: Number(updatedRows[0].version),

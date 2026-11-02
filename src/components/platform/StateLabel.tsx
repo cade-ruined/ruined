@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   completed: "Complete",
   dead_letter: "Needs intervention",
   delivered: "Delivered",
+  dismissed: "Dismissed",
   draft: "Draft",
   ended: "Ended",
   exception: "Delivery issue",

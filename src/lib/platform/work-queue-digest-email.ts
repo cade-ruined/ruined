@@ -27,7 +27,7 @@ export function createWorkQueueDigestEmail(input: { queue: OpsWorkQueue; slot: W
     return { title, member, state, due, href };
   });
   const remainder = queue.items.length > MAX_ITEMS ? `Showing the first ${MAX_ITEMS} prioritized items. Open the work queue for the rest.` : "";
-  const bounded = Object.values(queue.totals).some((value) => value >= 200) ? "200+ indicates a category reached the current queue limit." : "";
+  const bounded = [queue.totals.tasks, queue.totals.artifacts, queue.totals.failures].some((value) => value >= 200) ? "200+ indicates a category reached the current queue limit." : "";
   const empty = "No open tasks, Artifact jobs, or failed actions are waiting in the work queue.";
   const rows = items.map((item) => `<tr><td style="padding:20px 0;border-top:1px solid #C8C3BA"><a href="${escapeHtml(item.href)}" style="font-size:16px;font-weight:600;line-height:1.5;color:#222;text-decoration:none">${escapeHtml(item.title)}</a><p style="margin:6px 0 0;font-size:13px;line-height:1.6;color:#595750">${escapeHtml(item.member)} · ${escapeHtml(item.state)}<br>${escapeHtml(item.due)}</p></td></tr>`).join("");
   return {

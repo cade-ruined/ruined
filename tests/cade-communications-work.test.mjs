@@ -68,6 +68,20 @@ test("complete protocol allowance preserves the normal task length limit", async
   await f.db.query(insert,['communications.cade_review','x'.repeat(30000)]);
   await assert.rejects(f.db.query(insert,['communications.cade_review','x'.repeat(30001)]),/operator_tasks_description_cade_limit/);
 });
+test("CADE reseeding preserves a dismissed decision without recreating its task or events", async t => {
+  const f = await fixture(t); await f.apply();
+  await f.db.exec(await read("db/migrations/20261102160000_operator_task_dismissal.sql"));
+  const [original] = (await f.db.query("select * from operator_tasks order by idempotency_key limit 1")).rows;
+  await f.db.query("update operator_tasks set dismissed_at=statement_timestamp(),dismissed_by_auth_user_id=$2,version=version+1 where id=$1", [original.id, f.id]);
+  const before = (await f.db.query("select * from operator_tasks where id=$1", [original.id])).rows[0];
+  assert.equal((await f.db.query("select private.ruined_seed_cade_communications_work() n")).rows[0].n, 0);
+  await f.apply();
+  const after = (await f.db.query("select * from operator_tasks where id=$1", [original.id])).rows[0];
+  assert.deepEqual(after, before, "the seeder must preserve the operator's dismissal and original decision copy");
+  assert.equal(after.status, "open", "dismissal does not approve or complete the held decision");
+  assert.equal((await f.db.query("select count(*)::int n from operator_tasks")).rows[0].n, 12);
+  assert.equal((await f.db.query("select count(*)::int n from operator_task_events")).rows[0].n, 12);
+});
 for(const [name,options] of [['inactive',{status:'disabled'}],['unverified',{verified:false}],['not admin',{role:false}]]) test(`missing authority defers assignment without blocking schema: ${name}`,async t=>{
   const f=await fixture(t,options);await f.apply();
   assert.equal((await f.db.query('select count(*) n from operator_tasks')).rows[0].n,0);
