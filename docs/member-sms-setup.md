@@ -1,8 +1,23 @@
 # Ruined membership text messages
 
+## November 2, 2026 launch preflight
+
+The corrected public form was deployed in PR #69. The existing campaign was
+resubmitted and approved, with its existing Messaging Service and number verified.
+Taelor's authorized test used normal email sign-in and the live form to save
+consent `100` for the number ending `3718`. One confirmation was accepted by
+Twilio, its signed callback recorded `delivered`, and handset receipt was
+confirmed. Message SID: `SM1715f852a3cd6c89a9170ba395ed16a6`.
+
+Automatic sending was disabled during that test. The owner has now authorized
+automatic texts for opted-in members; production activation is in progress and
+is not yet verified here. HELP, STOP, and a call reminder have not been tested on
+a handset. This evidence supersedes the pending entries in the historical
+October 14 checklist below; it does not establish those untested behaviors.
+
 ## Current scope
 
-Updated October 14, 2026. Two website paths collect a separate, optional SMS
+Two website paths collect a separate, optional SMS
 choice for membership updates and call reminders: the public text-message
 preferences page and authenticated membership registration. A new SMS choice is
 unchecked. Promotions are excluded. A successful authenticated save records the
@@ -11,23 +26,17 @@ in the existing consent ledger. Email choices are independent. Older SMS
 decisions do not enroll members under the new wording; original records are
 preserved.
 
-The public form correction described below is awaiting deployment and live
-verification. Do not treat this implementation description as production proof.
-
-The repository includes a disabled transport, signed inbound/status webhooks,
+The repository includes a gated transport, signed inbound/status webhooks,
 and a gated scheduled worker for fresh opt-in confirmations and call reminders.
-This describes the implementation, not a claim that the release or real delivery
-test has completed. Keep `MEMBER_SMS_ENABLED=false` and
-`MEMBER_SMS_AUTOMATION_ENABLED=false`. Installing credentials alone does not send
-texts. There is no promotional campaign or bulk historical confirmation backfill.
+Installing credentials alone does not send texts. There is no promotional
+campaign or bulk historical confirmation backfill.
 
 The previously submitted campaign `CM1964ed2428424f5a584f230e93395445` was
 rejected with **30896 — Opt-in Error**. The reviewer found no working submit
 button at the submitted URL and rejected the non-submitting mockup as consent
-evidence. Use [the prepared resubmission draft](member-sms-campaign-draft.md) and
-edit the same campaign after correcting and verifying the live flow. Confirm
-the existing RU/NED brand, service, and number in Console. No resubmission or
-campaign approval is recorded here.
+evidence. The corrected campaign was subsequently approved as recorded above.
+The [resubmission draft](member-sms-campaign-draft.md) preserves the correction
+details.
 
 ## Public review links and consent paths
 
@@ -75,10 +84,10 @@ flow. The previous interactive example and preview screenshots are not proof
 that the corrected form can submit or save consent; do not use them as the
 primary opt-in flow. Screenshots supplement the functional forms.
 
-Do not claim messaging is active. The public terms identify delivery as not yet
-enabled, and automation remains gated until approval and delivery testing.
+Confirm the production activation and scheduled worker before claiming automatic
+messaging is active. A saved preference alone does not prove message delivery.
 
-## October 14 rejection correction — verification record
+## October 14 rejection correction — historical checklist
 
 Campaign: `CM1964ed2428424f5a584f230e93395445`. Original submission: October 8,
 2026 at 22:21:32.493 UTC. Rejection: **30896**, missing functional submission and

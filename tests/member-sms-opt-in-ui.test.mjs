@@ -116,7 +116,7 @@ test("explicit opt-in posts the normalized phone and exact consent evidence, nev
     phone: "+12025550124", sms: true, expectedRevision: "revision-1", noticeVersion: MEMBER_COMMUNICATION_NOTICE_VERSION, smsOptIn: { phone: "+12025550124" },
   } }]);
   assert.match(content(f.status()), /Your text-message consent is saved/);
-  assert.match(content(f.status()), /Delivery is not currently enabled/);
+  assert.match(content(f.status()), /Reply STOP to unsubscribe or HELP for help/);
   assert.equal(f.consent().props.checked, false);
 });
 
