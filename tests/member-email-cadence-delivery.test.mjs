@@ -236,13 +236,16 @@ test("deadline exhaustion never begins a provider send", async () => configured(
 
 test("a reminder expiring during suppression lookup cannot begin a send", async () => configured(async () => {
   let now = Date.now();
-  const expiresAt = now + 100;
+  // Fixture transpilation can exceed 100ms during the parallel billing suite.
+  // Advance the injected clock at suppression, not during fixture setup.
+  const expiresAt = now + 60_000;
   const f = await fixture({ row: { expiresAt: new Date(expiresAt).toISOString() },
     globals: { Date: class extends Date { static now() { return now; } } },
     suppression: (_calls, _row, budget) => { assert.equal(budget.deadline, expiresAt); now = expiresAt; },
   });
   const result = await f.processMemberEmailCadenceBatch(1);
   assert.equal(result.manualReview, 1); assert.equal(f.calls.provider.length, 0);
+  assert.equal(f.calls.suppression, 1);
   assert.deepEqual(f.calls.errors, [{ code: "delivery_window_expired", terminal: true }]);
 }));
 

@@ -612,6 +612,34 @@ test("reusable email sequences inherit only reviewed semantics and current autho
     assert.equal((await f.db.query("select count(*)::int as count from experience_registrations")).rows[0].count, 0);
     assert.deepEqual(f.calendar, []);
   });
+  await t.test("verified payments without a Checkout Session inherit their cohort exactly once", async () => {
+    await f.reset(); const { event, schedule } = await foundationSequence(f);
+    const paid = await paidCohortMember(f, schedule);
+    const unpaid = await paidCohortMember(f, schedule);
+    await f.db.exec("delete from stripe_checkout_sessions; update stripe_checkout_attempts set stripe_session_id=null");
+    // This is the enrollment boundary: the financial predicate's delegated
+    // authority/refund checks have their own database tests. Supply its verified
+    // result here to prove enrollment does not additionally require Checkout.
+    const original = (await f.db.query("select pg_get_functiondef('private.ruined_member_paid_reservation(uuid)'::regprocedure) as definition")).rows[0].definition;
+    await f.db.exec("create table private.test_verified_paid(member_id uuid primary key,reservation_id uuid)");
+    await f.db.query("insert into private.test_verified_paid values($1,$2)", [paid.memberId, paid.reservation]);
+    await f.db.exec(`create or replace function private.ruined_member_paid_reservation(target_member_id uuid) returns uuid
+      language sql stable security definer set search_path=pg_catalog,public,private as $$
+      select reservation_id from private.test_verified_paid where member_id=target_member_id $$`);
+    try {
+      assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 1 });
+      assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
+      const rows = (await f.db.query("select member_id,status,source from experience_registrations")).rows;
+      assert.deepEqual(rows, [{ member_id: paid.memberId, status: "registered", source: "ops" }]);
+      assert.equal(rows.some(row => row.member_id === unpaid.memberId), false);
+      assert.deepEqual(f.calendar.map(item => [item.experienceId, item.reason]), [[event.id, "attendees"]]);
+      assert.equal((await f.db.query("select count(*)::int as count from member_consents")).rows[0].count, 0);
+      assert.equal((await f.db.query("select standing_state from member_lifecycle where member_id=$1", [paid.memberId])).rows[0].standing_state, "pre_active");
+    } finally {
+      await f.db.exec(original);
+      await f.db.exec("drop table private.test_verified_paid");
+    }
+  });
   await t.test("capacity remains create-only, founder tests remain manually rostered, and revoked authority enrolls nobody", async () => {
     await f.reset(); let current = await foundationSequence(f); await paidCohortMember(f, current.schedule); await paidCohortMember(f, current.schedule);
     await f.db.query("update experiences set capacity=1 where id=$1", [current.event.id]);
