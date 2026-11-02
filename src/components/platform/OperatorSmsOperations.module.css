@@ -1,0 +1,47 @@
+.workspace { min-width: 0; color: var(--operator-ink); font-size: .9375rem; line-height: 1.5; }
+.header, .rowHeading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 1rem; }
+.header { margin-bottom: 1.25rem; }
+.header p, .muted, .note { color: var(--operator-muted); }
+.header p { margin: .5rem 0 0; max-width: 42rem; font-size: .875rem; }
+.nav { display: flex; flex-wrap: wrap; gap: .25rem; padding: .4rem; margin: 1.25rem 0; }
+.nav button { min-height: 2.75rem; padding: .5rem 1rem; font-size: .875rem; border-bottom: 2px solid transparent; }
+.nav button[aria-current="page"] { border-color: var(--operator-ink); background: var(--operator-surface-muted); font-weight: 600; }
+.readiness { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.25rem; padding: 1rem 1.25rem; font-size: .8125rem; }
+.readiness p { margin: 0; }
+.readiness strong { font-weight: 650; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; margin: 1.5rem 0 1rem; }
+.toolbar h3, .card h3, .card h4, .empty h3 { font-family: var(--font-body) !important; font-weight: 650 !important; letter-spacing: -.025em; line-height: 1.3; }
+.toolbar h3 { margin: 0; font-size: 1.4rem; }
+.toolbar label { display: grid; gap: .4rem; min-width: min(100%, 14rem); font-size: .75rem; color: var(--operator-muted); }
+.toolbar input, .toolbar select { min-height: 2.75rem; max-width: 100%; border: 1px solid var(--operator-line); padding: .6rem .75rem; background: var(--operator-surface); color: var(--operator-ink); font-size: 1rem; border-radius: 0; }
+.stack { display: grid; gap: 1rem; list-style: none; padding: 0; margin: 0; }
+.card { min-width: 0; padding: 1.25rem; overflow-wrap: anywhere; }
+.card h3, .card h4 { margin: 0; font-size: 1.125rem; }
+.card summary { cursor: pointer; list-style: none; }
+.card summary::-webkit-details-marker { display: none; }
+.card summary .rowHeading::after { content: "+"; color: var(--operator-muted); margin-left: auto; }
+.card[open] summary .rowHeading::after { content: "−"; }
+.identity { flex: 1 1 15rem; min-width: 0; }
+.identity p { margin: .35rem 0 0; font-size: .8125rem; color: var(--operator-muted); }
+.status { font-size: .75rem; font-weight: 650; border: 1px solid var(--operator-line); padding: .3rem .5rem; max-width: 100%; }
+.status[data-tone="complete"] { color: var(--operator-success-text); }
+.status[data-tone="attention"] { color: var(--operator-danger); }
+.facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem 1.5rem; margin: 1.25rem 0; }
+.facts > div { min-width: 0; }
+.facts dt, .eyebrow { margin: 0; color: var(--operator-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; }
+.facts dd { margin: .4rem 0 0; font-size: .875rem; }
+.body { padding: 1.1rem 1.25rem; margin: .65rem 0 0; border-left: 2px solid var(--operator-line); background: var(--operator-surface-muted); white-space: pre-wrap; font-family: var(--font-body); font-size: .9375rem; line-height: 1.65; overflow-wrap: anywhere; }
+.note { margin: .7rem 0 1rem; max-width: 58rem; font-size: .8125rem; }
+.messageNote { margin: .65rem 0 0; color: var(--operator-muted); font-size: .75rem; }
+.empty { padding: 1.5rem; }
+.empty h3 { margin: 0; font-size: 1rem; }
+.empty p { max-width: 44rem; margin: .6rem 0 0; color: var(--operator-muted); font-size: .875rem; }
+.error { border: 1px solid var(--operator-danger); padding: 1rem 1.25rem; margin: 1rem 0; font-size: .875rem; }
+.error p { margin: .35rem 0; }
+.footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; font-size: .75rem; color: var(--operator-muted); }
+.manual { margin-top: 2rem; }
+.manual h3 { font-size: 1rem; font-weight: 650; }
+.action { display: inline-flex; align-items: center; min-height: 2.75rem; margin-top: .5rem; font-size: .8125rem; text-decoration: underline; text-underline-offset: .2em; }
+.workspace button:disabled { opacity: .5; cursor: not-allowed; }
+.workspace button:focus-visible, .workspace summary:focus-visible, .workspace input:focus-visible, .workspace select:focus-visible { outline: 2px solid var(--operator-focus); outline-offset: 3px; }
+@media (min-width: 700px) { .card { padding: 1.5rem; } .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -5,6 +5,7 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getSupabaseConfigStatus } from "@/lib/supabase/config";
 import { readMemberSmsAutomationConfiguration } from "./member-sms-automation-model";
 import { getMemberSmsConfigurationStatus } from "./member-sms-config";
+import { MEMBER_SMS_OPERATION_RULES } from "./member-sms-operations-model";
 import type { CommunicationItem } from "./communications-catalog";
 
 type State = Pick<CommunicationItem, "status" | "statusLabel">;
@@ -58,9 +59,9 @@ function channelCatalog({ connected, workerConfigured, invitationEmailReady, sms
   const smsCallReminder = {
     channel: "texts" as const,
     ...smsState,
-    audience: "Active members with released profile access, current SMS consent, and access to that call.",
-    timing: "60 minutes before the call, checked every five minutes. The send window expires after 10 minutes.",
-    detail: `One shared SMS rule covers Foundations, Membership, and Circle calls. These catalog entries share the same schedule and configuration. ${smsDetail} A successful opt-in confirmation is required before the call reminder. Call changes and access are checked again before delivery.`,
+    audience: MEMBER_SMS_OPERATION_RULES.call_reminder.audience,
+    timing: MEMBER_SMS_OPERATION_RULES.call_reminder.timing,
+    detail: `Call reminders share the same consent and delivery checks. ${smsDetail} A successful opt-in confirmation is required before the call reminder. Call changes and access are checked again before delivery.`,
     action: { label: "Review calls", href: "/ops/experiences" },
   };
 
@@ -75,22 +76,30 @@ function channelCatalog({ connected, workerConfigured, invitationEmailReady, sms
       action: { label: "Open invitation tools", href: "/my/invitation" },
     },
     {
-      id: "sms:opt-in-confirmation", channel: "texts", bucket: "registration", title: "Text opt-in confirmation",
+      id: "sms:opt-in-confirmation", channel: "texts", bucket: "registration", title: MEMBER_SMS_OPERATION_RULES.opt_in_confirmation.title,
       ...smsState,
-      trigger: "A member explicitly opts in to membership texts after automation activation.",
-      audience: "Members with current, supported SMS consent for their present phone number.",
-      timing: "Within 10 minutes of a new opt-in, checked every five minutes. Older consent is confirmed only when an eligible call reminder becomes due.",
+      trigger: MEMBER_SMS_OPERATION_RULES.opt_in_confirmation.trigger,
+      audience: MEMBER_SMS_OPERATION_RULES.opt_in_confirmation.audience,
+      timing: MEMBER_SMS_OPERATION_RULES.opt_in_confirmation.timing,
       detail: smsDetail,
       action: { label: "View text opt-in", href: "/membership/text-messages" },
     },
     {
       ...smsCallReminder,
-      id: "sms:foundations-call-reminder", bucket: "foundations", title: "60-minute Foundations reminder",
-      trigger: "An eligible published Foundations call with a working Google Meet link is one hour away.",
+      id: "sms:foundations-01-call-reminder", bucket: "foundations", title: `${MEMBER_SMS_OPERATION_RULES.foundations_01.noticeMinutes}-minute Foundations 01 reminder`,
+      trigger: MEMBER_SMS_OPERATION_RULES.foundations_01.trigger,
+      audience: MEMBER_SMS_OPERATION_RULES.foundations_01.audience,
+      timing: MEMBER_SMS_OPERATION_RULES.foundations_01.timing,
+      detail: `${smsCallReminder.detail} The earlier timing and direct Google Meet link apply only to a saved Foundations 01 call assignment with invite-only visibility and internal registration; the call title does not select this rule.`,
     },
     {
       ...smsCallReminder,
-      id: "sms:membership-call-reminder", bucket: "membership", title: "60-minute Membership / Circle reminder",
+      id: "sms:foundations-call-reminder", bucket: "foundations", title: `${MEMBER_SMS_OPERATION_RULES.call_reminder.noticeMinutes}-minute Foundations reminder`,
+      trigger: "An eligible published Foundations call with a working Google Meet link is one hour away, excluding calls that qualify for the earlier Foundations 01 reminder.",
+    },
+    {
+      ...smsCallReminder,
+      id: "sms:membership-call-reminder", bucket: "membership", title: `${MEMBER_SMS_OPERATION_RULES.call_reminder.noticeMinutes}-minute Membership / Circle reminder`,
       trigger: "An eligible published Membership or Circle call with a working Google Meet link is one hour away.",
     },
     {

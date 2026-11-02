@@ -22,6 +22,11 @@ const manualCopy = compile("src/lib/communications/cade-communications.ts");
 const catalog = compile("src/lib/communications/communications-catalog.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView, "./cade-communications": manualCopy })[name] ?? noDependency(name));
 const navigation = compile("src/lib/communications/email-automation-navigation.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
 const styles = compile("src/components/platform/operatorStyles.ts");
+const smsModel = compile("src/lib/communications/member-sms-model.ts");
+const smsAutomationModel = compile("src/lib/communications/member-sms-automation-model.ts");
+const smsOperationsModel = compile("src/lib/communications/member-sms-operations-model.ts", name => ({ "./member-sms-model": smsModel, "./member-sms-automation-model": smsAutomationModel })[name] ?? noDependency(name));
+const SMS_API = "/api/ops/messages/texts";
+const smsOverview = { generatedAt: "2026-11-02T19:00:00Z", automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: "2026-11-01T00:00:00Z", state: "enabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates: smsOperationsModel.getMemberSmsTemplatePreviews("https://members.example.test"), communications: [], upcoming: { items: [], horizonEnd: "2026-11-16T19:00:00Z", truncated: false, label: "Current eligibility forecast.", currentOptIns: 7 }, history: { items: [], nextCursor: null }, jobs: { items: [], truncated: false } };
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 const API = "/api/ops/emails/automations";
@@ -56,7 +61,7 @@ function savedDetail(data, scope, id, eventId) {
     recipients: review.recipients, recipientsChecked: true, recentDeliveries: [], warnings: [],
   };
 }
-function fixture({ preview = false, data = overview, reviewed = review, selectedTemplate = template, previewCommunications = [], respond } = {}) {
+function fixture({ preview = false, data = overview, reviewed = review, selectedTemplate = template, previewCommunications = [], smsData = smsOverview, respond } = {}) {
   const stores = new Map(), effects = [], calls = [];
   let currentStore, changed = false, visited;
   function slot() { assert.ok(currentStore, "Hooks must run inside a component render"); const store = currentStore; return [store, store.cursor++]; }
@@ -93,6 +98,9 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/lib/communications/email-automation-view": automationView,
     "@/lib/communications/email-automation-navigation": navigation,
     "@/lib/communications/communications-catalog": catalog,
+    "@/lib/communications/member-sms-model": smsModel,
+    "@/lib/communications/member-sms-operations-model": smsOperationsModel,
+    "./OperatorSmsOperations.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorCommunicationsCatalog.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorEmailAutomationDetail.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorEmailAutomationReview.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
@@ -106,12 +114,15 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   deps["@/components/platform/OperatorEmailAutomationManager"] = compile("src/components/platform/OperatorEmailAutomationManager.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; });
   async function fallback(call) {
     if (call.method === "GET") {
+      if (call.url === SMS_API) return Response.json(smsData);
       if (call.url.startsWith(`${API}?`)) { const query = new URL(call.url, "https://example.test").searchParams; return Response.json(savedDetail(data, query.get("scope"), query.get("id"), query.get("eventId"))); }
       return Response.json(call.url === API ? data : { template: selectedTemplate });
     }
     return Response.json(JSON.parse(call.body).action === "preview" ? reviewed : { ok: true });
   }
-  const Component = compile("src/components/platform/OperatorEmailAutomations.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }, async (url, options) => { const call = { url, ...options }; calls.push(call); return respond ? respond(call, fallback) : fallback(call); }).default;
+  async function transport(url, options) { const call = { url, ...options }; calls.push(call); return respond ? respond(call, fallback) : fallback(call); }
+  deps["./OperatorSmsOperations"] = compile("src/components/platform/OperatorSmsOperations.tsx", name => deps[name] ?? noDependency(name), transport);
+  const Component = compile("src/components/platform/OperatorEmailAutomations.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }, transport).default;
   function draw() {
     for (let i = 0; i < 10; i++) {
       changed = false; visited = new Set();
@@ -863,18 +874,19 @@ test("saved call and sequence edits keep their approved scope and audience track
 
 
 test("the catalog starts with six member-journey buckets and preserves the bucket across channels", async () => {
-  const sample = { id: "registration-text", channel: "texts", bucket: "registration", title: "SMS consent confirmation", trigger: "Member explicitly opts in.", timing: "After consent is saved.", audience: "The opted-in member.", status: "paused", statusLabel: "Texts off", detail: "No message is sent while outbound texting is disabled." };
-  const f = fixture({ data: { ...overview, communications: [sample] } }); f.draw(); await f.settle();
+  const f = fixture(); f.draw(); await f.settle();
   const buckets = nodes(f.draw()).filter(node => node.type === "button" && node.props["aria-label"]?.startsWith("Open "));
   assert.deepEqual(buckets.map(node => node.key), catalog.COMMUNICATION_BUCKETS.map(item => item.value));
   assert.equal(f.button("By step").props["aria-current"], "page");
   assert.match(text(f.draw()), /Counts refer to communications, not members or deliveries/);
   f.bucket("Registration");
   assert.match(text(f.draw()), /No emails configured here yet/);
-  f.channel("Texts");
-  assert.equal(text(f.find(node => node.props?.id === "communications-catalog-heading")), "Registration");
-  assert.ok(f.find(node => node.type === "li" && node.key === sample.id));
-  assert.match(text(f.draw()), /Texts off/);
+  f.channel("Texts"); f.draw(); await f.settle();
+  assert.equal(f.find(node => node.type === "select").props.value, "registration");
+  assert.match(text(f.draw()), /Exact message wording/);
+  assert.match(text(f.draw()), /You opted in to membership updates/);
+  assert.match(text(f.draw()), /Automatic texts enabled/);
+  assert.equal(f.calls.filter(call => call.url === SMS_API).length, 1);
   assert.equal(f.find(node => node.type === "button" && text(node) === "New automation"), undefined);
   assert.equal(f.find(node => node.props?.id === "communications-include-tests"), undefined);
   f.channel("Notifications");
@@ -927,14 +939,47 @@ test("a catalog reminder opens its exact approved stage and returns to its bucke
   assert.equal(f.calls.filter(call => call.method === "POST").length, 0);
 });
 
-test("sample channel data uses the catalog while all external management remains disabled", async () => {
+test("sample text operations preserve manual examples while all external management remains disabled", async () => {
   const sample = { id: "sample-text", channel: "texts", bucket: "registration", title: "Manual invitation", trigger: "A member prepares an invitation.", timing: "Sent manually.", audience: "The chosen invitee.", status: "manual", statusLabel: "Manual", action: { label: "Create invitation", href: "/my/invitation" } };
-  const f = fixture({ preview: true, previewCommunications: [sample] }); f.draw(); f.channel("Texts"); f.bucket("Registration");
-  const row = f.find(node => node.type === "li" && node.key === sample.id);
+  const f = fixture({ preview: true, previewCommunications: [sample] }); f.draw(); f.channel("Texts");
+  f.find(node => node.type === "select").props.onChange({ currentTarget: { value: "registration" } });
+  const row = f.find(node => node.type === "article" && node.key === sample.id);
   assert.ok(row);
-  assert.equal(nodes(row).find(node => node.type === "button").props.disabled, true);
   assert.equal(nodes(row).some(node => node.type === "a"), false);
+  assert.match(text(f.draw()), /Sample workspace/);
+  assert.match(text(f.draw()), /Exact message wording/);
   assert.equal(f.calls.length, 0);
+});
+
+test("a direct Texts bookmark loads SMS without email readiness and stays usable after an email outage", async () => {
+  const previous = globalThis.window;
+  const location = { href: "https://example.test/ops/messages?mode=automations&channel=texts&bucket=foundations&commsView=activity", pathname: "/ops/messages", search: "?mode=automations&channel=texts&bucket=foundations&commsView=activity", hash: "" };
+  const listeners = new Map();
+  globalThis.window = { location, history: { state: null, replaceState(_state, _unused, path) { const url = new URL(path, location.href); Object.assign(location, { href: url.href, pathname: url.pathname, search: url.search, hash: url.hash }); } }, addEventListener(name, listener) { listeners.set(name, listener); }, removeEventListener(name) { listeners.delete(name); } };
+  try {
+    const f = fixture({ respond: (call, fallback) => call.url === API ? Response.json({ error: "Email service unavailable." }, { status: 503 }) : fallback(call) });
+    f.draw(); await f.settle();
+    assert.deepEqual(f.calls.map(call => call.url), [SMS_API]);
+    assert.equal(f.button("Activity").props["aria-current"], "page");
+    assert.match(text(f.draw()), /No text attempts recorded/);
+    f.button("Messages").props.onClick(); f.draw();
+    assert.equal(f.find(node => node.type === "select").props.value, "foundations");
+    assert.match(text(f.draw()), /150 minutes/);
+    assert.equal(new URLSearchParams(location.search).get("channel"), "texts");
+    assert.equal(new URLSearchParams(location.search).get("bucket"), "foundations");
+    f.channel("Emails"); f.draw(); await f.settle();
+    assert.match(text(f.draw()), /Email service unavailable/);
+    f.channel("Texts"); f.draw(); await f.settle();
+    assert.match(text(f.draw()), /Exact|Example with sample call details/);
+    assert.doesNotMatch(text(f.draw()), /Email service unavailable/);
+    assert.equal(f.calls.filter(call => call.url === API).length, 1);
+    assert.equal(f.calls.filter(call => call.url === SMS_API).length, 2);
+    location.search = "?mode=automations&channel=texts&commsView=upcoming";
+    listeners.get("popstate")(); f.draw();
+    assert.equal(f.button("Upcoming").props["aria-current"], "page");
+    assert.match(text(f.draw()), /No texts are due in this window/);
+    assert.equal(f.calls.some(call => call.method !== "GET"), false);
+  } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });
 
 test("communications bookmarks resolve Activity independently of missing or conflicting legacy views", async () => {

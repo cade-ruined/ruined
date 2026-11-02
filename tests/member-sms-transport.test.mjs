@@ -38,6 +38,7 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
       policy_version text,decision text,accepted_at timestamptz,source text,actor_auth_user_id uuid,evidence jsonb,dedupe_key text unique);`);
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
+  await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
   const sql = sqlFor(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true" }, calls = [];
   let failProvider = false, providerErrorCode;
   const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql }, twilio: (account, token, options) => {
@@ -114,6 +115,8 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
     const m = await member(); await consent(m);
     const sent = await service.sendMemberSmsReminder(m);
     assert.equal(sent.status, "accepted"); assert.equal(calls.length, 1);
+    const storedBody = (await db.query("select body_text,body_sha256 from private.member_sms_delivery_attempts where id=$1", [sent.attemptId])).rows[0];
+    assert.equal(storedBody.body_text,calls[0].body, "reservation retains exactly the provider payload body");
     assert.equal(calls[0].from, env.TWILIO_PHONE_NUMBER); assert.equal(calls[0].messagingServiceSid, env.TWILIO_MESSAGING_SERVICE_SID);
     assert.match(calls[0].body, /^Ruined:/); assert.match(calls[0].body, /STOP.*HELP/);
     assert.equal((await service.sendMemberSmsReminder(m)).status, "duplicate");

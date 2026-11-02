@@ -66,8 +66,8 @@ export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder
     if (options.guard && !await options.guard(tx)) return { status: "blocked" as const, reason: "source_ineligible" as const };
     const digest = createHash("sha256").update(body, "utf8").digest("hex");
     const [attempt] = await tx<Array<{ id: string }>>`insert into private.member_sms_delivery_attempts
-      (member_id,reminder_key,reminder_kind,destination_e164,consent_id,body_sha256)
-      values(${input.memberId}::uuid,${input.reminderKey},${input.kind},${phone},${gate.consentId}::bigint,${digest})
+      (member_id,reminder_key,reminder_kind,destination_e164,consent_id,body_sha256,body_text)
+      values(${input.memberId}::uuid,${input.reminderKey},${input.kind},${phone},${gate.consentId}::bigint,${digest},${body})
       on conflict(member_id,reminder_kind,reminder_key) do nothing returning id`;
     if (!attempt) {
       const [existing] = await tx<Array<{ id: string }>>`select id from private.member_sms_delivery_attempts

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { loader } from "./helpers/member-sms-fixture.mjs";
 
 function fixture() {
   const configuration = {
@@ -20,6 +21,7 @@ function fixture() {
     "@/lib/membership/personal-invitation-delivery": { getPersonalInvitationEmailReady: getter("invitationEmailReady") },
     "./member-sms-config": { getMemberSmsConfigurationStatus: getter("transport") },
     "./member-sms-automation-model": { readMemberSmsAutomationConfiguration: getter("automation") },
+    "./member-sms-operations-model": loader()("src/lib/communications/member-sms-operations-model.ts"),
   };
   const source = readFileSync(new URL("../src/lib/communications/communications-channel-catalog.ts", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -39,7 +41,7 @@ test("preview uses the same inventory without live configuration reads or active
   const f = fixture();
   const preview = f.preview();
   assert.ok(Object.values(f.reads).every(count => count === 0));
-  assert.equal(preview.length, 12);
+  assert.equal(preview.length, 13);
   assert.ok(preview.every(item => ["manual", "paused"].includes(item.status)));
   assert.ok(preview.every(item => item.statusLabel.startsWith("Sample ·")));
   assert.ok(preview.every(item => item.detail.startsWith("Sample workspace. Nothing is saved or sent.")));
@@ -49,7 +51,7 @@ test("preview uses the same inventory without live configuration reads or active
 test("SMS requires both explicit switches, configured transport and worker, and an elapsed activation time", () => {
   const f = fixture();
   const sms = () => f.catalog().filter(item => item.id.startsWith("sms:"));
-  assert.equal(sms().length, 3, "the confirmation and both catalog views of the call rule share the same gates");
+  assert.equal(sms().length, 4, "the confirmation and all call timing variants share the same gates");
   assert.ok(sms().every(item => item.status === "paused"), "credentials alone never enable SMS");
   f.configuration.transport.enabled = true;
   assert.ok(sms().every(item => item.status === "paused"), "transport alone never enables automation");
@@ -113,10 +115,18 @@ test("manual invitations and app publishing describe their actual boundaries and
   assert.match(f.item("notification:circle-reveal").trigger, /after.*completed Foundations/);
 });
 
-test("Foundations and Membership expose the same SMS rule in their own catalog buckets", () => {
+test("Foundations 01 exposes its explicit earlier rule while other calls retain the standard timing", () => {
   const rows = fixture().catalog();
+  const firstFoundations = rows.find(item => item.id === "sms:foundations-01-call-reminder");
   const foundations = rows.find(item => item.id === "sms:foundations-call-reminder");
   const membership = rows.find(item => item.id === "sms:membership-call-reminder");
+  assert.equal(firstFoundations.channel, "texts");
+  assert.equal(firstFoundations.bucket, "foundations");
+  assert.equal(firstFoundations.title, "150-minute Foundations 01 reminder");
+  assert.match(firstFoundations.trigger, /explicitly assigned to Foundations 01.*invite-only.*internal registration/);
+  assert.match(firstFoundations.timing, /150 minutes.*2½ hours/);
+  assert.match(firstFoundations.detail, /call title does not select this rule/);
+  assert.match(firstFoundations.detail, /direct Google Meet link/);
   assert.equal(foundations.channel, "texts");
   assert.equal(foundations.bucket, "foundations");
   assert.equal(foundations.title, "60-minute Foundations reminder");
@@ -126,7 +136,9 @@ test("Foundations and Membership expose the same SMS rule in their own catalog b
   for (const key of ["audience", "timing", "detail", "status", "statusLabel", "action"]) {
     assert.deepEqual(foundations[key], membership[key], key);
   }
-  assert.match(foundations.detail, /One shared SMS rule.*same schedule and configuration/);
+  assert.match(foundations.timing, /60 minutes before/);
+  assert.match(foundations.trigger, /excluding calls that qualify for the earlier Foundations 01 reminder/);
+  assert.match(foundations.detail, /same consent and delivery checks/);
   assert.equal(rows.some(item => item.id === "sms:call-reminder"), false);
 });
 
