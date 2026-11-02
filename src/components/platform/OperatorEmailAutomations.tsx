@@ -5,6 +5,7 @@ import OperatorRegistrationEmailTemplates from "./OperatorRegistrationEmailTempl
 import OperatorLifecycleEmails from "./OperatorLifecycleEmails";
 import { lifecycleCommunicationItems, type LifecycleEmailOverview } from "@/lib/communications/lifecycle-email-view";
 import OperatorCommunicationsCatalog from "./OperatorCommunicationsCatalog";
+import OperatorSmsOperations from "./OperatorSmsOperations";
 import { buildCommunicationsCatalog, readCommunicationNavigation, writeCommunicationNavigation, type CommunicationItem, type CommunicationNavigation } from "@/lib/communications/communications-catalog";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import OperatorEmailAutomationManager, { type AutomationFilter, type AutomationSelection } from "@/components/platform/OperatorEmailAutomationManager";
@@ -163,13 +164,21 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
   useEffect(() => {
     mounted.current = true;
     if (preview) return () => { mounted.current = false; };
+    const startsWithTexts = !initialNavigation.current && typeof window !== "undefined" && readWorkspaceNavigation(window.location.search).channel === "texts";
+    if (communicationNav.channel === "texts" || startsWithTexts) {
+      busy.current = false; setPending(null);
+      return () => { mounted.current = false; };
+    }
+    if (overview) return () => { mounted.current = false; };
     const controller = new AbortController();
-    busy.current = true;
+    busy.current = true; setPending("loading");
     request<Overview>(API, undefined, controller.signal).then(result => { if (mounted.current) setOverview(result); }).catch(error => {
       if (mounted.current && !controller.signal.aborted) { setMessage(error instanceof Error ? error.message : "Automations could not be loaded."); setFailed(true); }
     }).finally(() => { if (mounted.current && !controller.signal.aborted) { busy.current = false; setPending(null); } });
     return () => { mounted.current = false; controller.abort(); };
-  }, [preview]);
+    // Switching from Texts loads the email overview only when needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview,communicationNav.channel]);
 
   useEffect(() => {
     if (!editorOpen || typeof window === "undefined") return;
@@ -208,16 +217,17 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
 
   // Keep direct links to individual emails and restore the browsing context on reload/back.
   useEffect(() => {
-    if (typeof window === "undefined" || !overview || pending || initialNavigation.current) return;
+    if (typeof window === "undefined" || pending || initialNavigation.current) return;
+    const workspace = readWorkspaceNavigation(window.location.search);
+    if (!overview && workspace.channel !== "texts") return;
     initialNavigation.current = true;
     const saved = readAutomationNavigation(window.location.search);
-    const workspace = readWorkspaceNavigation(window.location.search);
     const resolvedSection = workspace.view === "catalog" ? "upcoming" : workspace.view;
     const normalized = normalizeAutomationView(resolvedSection, saved.filter, saved.options);
     setCommunicationNav(workspace);
     setSection(resolvedSection); setQuery(saved.query); setFilter(normalized.filter); setViewOptions(normalized.options);
     setNavigationReady(true);
-    if (saved.selection) void openDetail(saved.selection,saved.eventId);
+    if (workspace.channel === "emails" && saved.selection) void openDetail(saved.selection,saved.eventId);
     // Loading the overview is the only initialization dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overview,pending]);
@@ -241,7 +251,7 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
       const normalized = normalizeAutomationView(resolvedSection, saved.filter, saved.options);
       setCommunicationNav(workspace);
       setSection(resolvedSection);setQuery(saved.query);setFilter(normalized.filter);setViewOptions(normalized.options);
-      if (saved.selection) void openDetail(saved.selection,saved.eventId);
+      if (workspace.channel === "emails" && saved.selection) void openDetail(saved.selection,saved.eventId);
       else {setDetail(null);setSelection(null);}
     };
     window.addEventListener("popstate",restore);
@@ -405,9 +415,13 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
     setDetail(null); setSelection(null); setMessage("");
     if (next.view === "catalog" || next.channel) { setSection("upcoming"); setQuery(""); setFilter("all"); setViewOptions({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"}); }
   }
+  if (channel === "texts") return <OperatorPageFrame title="Communications">
+    <OperatorMessagesTabs active="automations" channel="texts" bucket={communicationNav.bucket} onChannel={value => browse({channel:value,view:"catalog"})} />
+    <OperatorSmsOperations preview={preview} view={communicationNav.view} bucket={communicationNav.bucket} onNavigate={browse} />
+  </OperatorPageFrame>;
   return <OperatorPageFrame title="Communications">
     <OperatorMessagesTabs active="automations" channel={channel} bucket={communicationNav.bucket} pending={!!pending} onChannel={editorOpen || externalDirty ? undefined : value => browse({channel:value,view:"catalog"})} />
-    <header className="mb-5 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"><div className="min-w-0"><h2 className="operator-page-heading">{channel === "emails" ? "Emails" : channel === "texts" ? "Texts" : "Notifications"}</h2><p className="mt-2 text-sm text-[color:var(--operator-muted)]">{channel === "emails" ? "Messages organized around the member journey." : channel === "texts" ? "SMS and invitation links, with their delivery requirements." : "Updates members receive inside Ruined."}</p></div><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || externalDirty} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || externalDirty} onClick={() => void refresh()} type="button">Refresh</button>}</div></header>
+    <header className="mb-5 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"><div className="min-w-0"><h2 className="operator-page-heading">{channel === "emails" ? "Emails" : "Notifications"}</h2><p className="mt-2 text-sm text-[color:var(--operator-muted)]">{channel === "emails" ? "Messages organized around the member journey." : "Updates members receive inside Ruined."}</p></div><div className="flex flex-wrap gap-3">{editorOpen ? <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || externalDirty} onClick={() => closeEditor()} type="button">{editingLabel && detail ? detail.scope === "sequence" ? "Back to sequence" : "Back to call" : "Back to automations"}</button> : <button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || externalDirty} onClick={() => void refresh()} type="button">Refresh</button>}</div></header>
     {!editorOpen ? <div className="operator-glass mb-6 flex flex-wrap items-start justify-between gap-2 p-2">
       {channel === "emails" ? <nav className="flex flex-wrap gap-1" aria-label="Email views">{([['catalog','By step'],['upcoming','Upcoming'],['activity','Activity']] as const).map(([value,label]) => <button key={value} type="button" disabled={!!pending || externalDirty} aria-current={communicationNav.view === value ? "page" : undefined} className={`min-h-11 px-3 text-sm ${communicationNav.view === value ? "border-b-2 border-[color:var(--operator-ink)] bg-[var(--operator-surface-muted)] font-semibold" : "text-[color:var(--operator-muted)] hover:bg-[var(--operator-surface-hover)]"}`} onClick={() => value === "catalog" ? browse({view:value}) : changeSection(value)}>{label}</button>)}</nav> : <span className="inline-flex min-h-11 items-center text-sm text-[color:var(--operator-muted)]">Automations by step</span>}
       {channel === "emails" ? <details className="text-sm"><summary className="min-h-11 cursor-pointer px-3 py-3 text-[color:var(--operator-muted)]">More email tools</summary><div className="flex flex-wrap gap-2 py-2"><Link className={OPERATOR_BUTTON_CLASS} href="/ops/messages?mode=emails">Compose &amp; history</Link><button className={OPERATOR_BUTTON_CLASS} type="button" disabled={!!pending || externalDirty} onClick={() => changeSection("library")}>Call sequences</button><button className={OPERATOR_BUTTON_CLASS} disabled={!!pending || externalDirty || !overview || overview.setupRequired} onClick={newAutomation} type="button">New automation</button></div></details> : channel === "notifications" ? <div className="flex flex-wrap gap-2"><Link className={OPERATOR_BUTTON_CLASS} href="/ops/messages?mode=alerts">Send &amp; history</Link><Link className={OPERATOR_BUTTON_CLASS} href="/ops/messages?mode=posts">Board posts</Link></div> : <Link className={OPERATOR_BUTTON_CLASS} href="/my/invitation">Create an invitation</Link>}

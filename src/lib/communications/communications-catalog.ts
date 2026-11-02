@@ -121,6 +121,14 @@ export const HELD_EMAILS: ReadonlyArray<Pick<CommunicationItem, "id" | "bucket" 
   { id: "held:email:later-anniversaries", bucket: "misc", title: "Registration anniversaries · year two and beyond", trigger: "A later registration anniversary, after its copy and rules are approved.", audience: "Future eligible anniversary members.", timing: "Not scheduled", detail: "The approved automated anniversary covers year one only. Libby’s work queue holds later-year planning." },
 ];
 
+export function getManualCommunicationCatalog(): CommunicationItem[] {
+  return CADE_MANUAL_TEMPLATES.map(item => ({ id: `manual:${item.id}`, channel: item.channel, bucket: item.bucket, title: item.title,
+    trigger: "An administrator selects and completes this approved one-off copy.", audience: "Only the affected, permitted recipients selected and reviewed for this message.",
+    timing: "Manual · as needed", status: "manual", statusLabel: "Copy approved · manual", detail: item.dependency,
+    action: { label: item.channel === "emails" ? "Use in composer" : "Prepare text", href: `/ops/messages?mode=emails&manualTemplate=${item.id}` },
+  }));
+}
+
 /** Read-only inventory. Grouping never enrolls a member, creates a plan, or enables delivery. */
 export function buildCommunicationsCatalog(overview: CadenceManagementOverview, supplemental: CommunicationItem[] = []): CommunicationItem[] {
   const items: CommunicationItem[] = [];
@@ -155,11 +163,7 @@ export function buildCommunicationsCatalog(overview: CadenceManagementOverview, 
     }
   }
   items.push(...HELD_EMAILS.map(item => ({ ...item, channel: "emails" as const, status: "held" as const, statusLabel: "Held", action: { label: "Review in work queue", href: `/ops/work?filter=held_email#held-email-${encodeURIComponent(item.id)}` } })));
-  items.push(...CADE_MANUAL_TEMPLATES.map(item => ({ id: `manual:${item.id}`, channel: item.channel, bucket: item.bucket, title: item.title,
-    trigger: "An administrator selects and completes this approved one-off copy.", audience: "Only the affected, permitted recipients selected and reviewed for this message.",
-    timing: "Manual · as needed", status: "manual" as const, statusLabel: "Copy approved · manual", detail: item.dependency,
-    action: { label: item.channel === "emails" ? "Use in composer" : "Prepare text", href: `/ops/messages?mode=emails&manualTemplate=${item.id}` },
-  })));
+  items.push(...getManualCommunicationCatalog());
   const seen = new Set<string>();
   return [...items, ...supplemental].filter(item => {
     if (!item.id || seen.has(item.id) || !CHANNEL_VALUES.includes(item.channel) || !BUCKET_VALUES.includes(item.bucket)) return false;

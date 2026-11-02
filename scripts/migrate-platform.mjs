@@ -132,6 +132,7 @@ const migrations = [
   "../db/migrations/20261030120000_public_timeline_reflections.sql",
   "../db/migrations/20261102120000_operator_saved_membership_payment.sql",
   "../db/migrations/20261102160000_operator_task_dismissal.sql",
+  "../db/migrations/20261102201731_member_sms_body_snapshot.sql",
 ];
 
 function migrationBody(migration, migrationName) {
