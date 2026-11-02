@@ -18,8 +18,10 @@ async function load(path,dependencies={}) {
 const pricingConfirmation=await load("src/lib/membership/registration-pricing-confirmation.ts");
 const schedules=await load("src/lib/membership/foundations-schedule.ts");
 const paidConfirmation=await load("src/lib/membership/registration-paid-confirmation.ts", {"./foundations-schedule":schedules});
+const profileReadyEmail=await load("src/lib/membership/profile-ready-email.ts");
 const email=await load("src/lib/membership/registration-email.ts", {
   "./registration-pricing-confirmation":pricingConfirmation,"./registration-paid-confirmation":paidConfirmation,
+  "./profile-ready-email":profileReadyEmail,
 });
 const consentModel=await load("src/lib/membership/member-communication-preferences-model.ts");
 const preferences=await load("src/lib/membership/member-communication-preferences.ts",{"server-only":{},"node:crypto":crypto,
@@ -164,14 +166,14 @@ test("visual emails use the supplied welcome letter, escape identity, and preser
   const complimentary=email.createRegistrationEmail({...input,completionBasis:"complimentary"});
   assert.deepEqual(complimentary,result,"the same welcome letter reaches paid-path and complimentary registrations");
   const ready=email.createRegistrationEmail({...input,kind:"profile_ready"});
-  assert.match(ready.html,/invitation-spin-v1.jpg/);
+  assert.match(ready.html,/profile-guide\/profile.jpg/);
   assert.match(ready.text,/profile is now open/);
   assert.doesNotMatch(ready.text,/November 5|First, thank you/);
   assert.match(ready.text,/explicitly confirm activation/);
   assert.match(ready.text,/does not authorize future charges/);
   assert.match(ready.text,/Open your profile: https:\/\/members.example.test\/my/);
   assert.match(ready.text,/After the fear\./);
-  assert.doesNotMatch(ready.html,/printers-ink/);
+  assert.match(ready.html,/printers-ink/);
 });
 
 test("welcome protects all live ink-background text without blending artwork or the dark-on-yellow price panel",()=>{
@@ -211,7 +213,61 @@ test("welcome protects all live ink-background text without blending artwork or 
   assert.match(html,/u \+ \.ruined-email \.gmail-blend-difference\{background:#000;mix-blend-mode:difference\}/);
   assert.match(html,/linear-gradient\(#10100f,#10100f\)/,"retain dark fallback when remote texture is blocked");
   assert.match(html,/linear-gradient\(#a83329,#a83329\)/,"preserve the red callout behind protected light text");
-  assert.doesNotMatch(email.createRegistrationEmail({...input,kind:"profile_ready"}).html,/gmail-blend|ruined-email|linear-gradient/);
+  assert.match(email.createRegistrationEmail({...input,kind:"profile_ready"}).html,/gmail-blend/);
+});
+
+test("profile release teaches the actual first-visit routes and public/private boundary with three demo screenshots",()=>{
+  const result=email.createRegistrationEmail({kind:"profile_ready",memberName:"Alex",completionBasis:"complimentary",siteUrl:new URL("https://members.example.test")});
+  const nodes=[];
+  function visit(node){nodes.push(node);for(const child of node.childNodes??[])visit(child);}
+  visit(parse(result.html));
+  const attr=(node,name)=>node.attrs?.find(a=>a.name===name)?.value;
+  const screenshots=nodes.filter(node=>node.tagName==="img"&&attr(node,"src")?.includes("/profile-guide/"));
+  assert.deepEqual(screenshots.map(node=>attr(node,"src")),["profile","timeline","calendar"].map(name=>`https://members.example.test/membership/email/profile-guide/${name}.jpg`));
+  for(const screenshot of screenshots) assert.ok(attr(screenshot,"alt")?.startsWith("Demo "));
+  for(const path of ["/my","/my/profile","/my#journal","/my/timeline/new","/my/experiences","/my/foundations","/my/badges"]) {
+    assert.ok(nodes.some(node=>node.tagName==="a"&&attr(node,"href")===`https://members.example.test${path}`),path);
+    assert.ok(result.text.includes(`https://members.example.test${path}`),`${path}: plain-text alternative`);
+  }
+  for(const wording of ["Journal is private.","Timeline is public.","Check Add to Timeline only when", "Go deeper is optional", "it’s permanent", "attend your first Foundations or Membership call", "Screenshots show a demonstration profile", "does not start paid billing"]) assert.ok(result.text.includes(wording),wording);
+  assert.doesNotMatch(result.html+result.text,/invitation-spin|November 5|your Circle is ready\./);
+  assert.ok(Buffer.byteLength(result.html)<100_000,"keep the guide below Gmail clipping size");
+});
+
+test("profile release protects live text in Gmail without recoloring screenshots, logo or yellow controls",()=>{
+  const {html}=email.createRegistrationEmail({kind:"profile_ready",memberName:"Alex",completionBasis:"complimentary",siteUrl:new URL("https://members.example.test")});
+  const attr=(node,name)=>node.attrs?.find(a=>a.name===name)?.value;
+  const hasClass=(node,name)=>attr(node,"class")?.split(/\s+/).includes(name);
+  let protectedText=0,images=0,buttons=0;
+  function visit(node,ancestors=[]){
+    const chain=[...ancestors,node];
+    const blended=chain.some(n=>hasClass(n,"gmail-blend-difference"));
+    const yellow=chain.some(n=>attr(n,"bgcolor")==="#ffca2c");
+    if(node.tagName==="img"){images++;assert.equal(blended,false,"screenshots and identity artwork preserve their colors");}
+    if(node.nodeName==="#text"&&node.value.trim()&&chain.some(n=>n.tagName==="td")) {
+      if(yellow){buttons++;assert.equal(blended,false);}
+      else{protectedText++;assert.equal(blended,true,node.value);assert.ok(chain.some(n=>hasClass(n,"gmail-blend-screen")));}
+    }
+    for(const child of node.childNodes??[])visit(child,chain);
+  }
+  visit(parse(html));
+  assert.equal(images,8);
+  assert.equal(buttons,2);
+  assert.ok(protectedText>20);
+  assert.match(html,/linear-gradient\(#10100f,#10100f\)/);
+  assert.match(html,/u \+ \.ruined-email \.gmail-blend-difference\{background:#000;mix-blend-mode:difference\}/);
+});
+
+test("editing profile-release copy cannot remove the guide, privacy notice, access links or billing notice",()=>{
+  const result=email.createRegistrationEmail({kind:"profile_ready",memberName:'Alex <script> & "Friend"',completionBasis:"saved_card",siteUrl:new URL("https://members.example.test"),
+    templateOverride:{subject:"A place for {{member_name}}",body:"{{member_name}}, come on in.\n\nYour link is {{profile_url}}.\n\n<script>Not executable</script>"}});
+  assert.equal(result.subject,'A place for Alex <script> & "Friend"');
+  assert.match(result.html,/Alex &lt;script&gt; &amp; &quot;Friend&quot;/);
+  assert.doesNotMatch(result.html,/<script>/);
+  assert.match(result.html,/&lt;script&gt;Not executable&lt;\/script&gt;/);
+  assert.match(result.text,/Your link is https:\/\/members.example.test\/my\./);
+  for(const pattern of [/profile-guide\/profile.jpg/,/Journal is private/,/Timeline is public/,/does not authorize future charges/,/Open your profile/]) assert.match(result.html,pattern);
+  assert.throws(()=>email.createRegistrationEmail({kind:"profile_ready",memberName:"Alex",completionBasis:"saved_card",siteUrl:new URL("https://members.example.test"),templateOverride:{subject:"Bad {{first_call}}",body:"Hello"}}),/Unsupported registration field/);
 });
 
 test("paid receipt also protects its live dates and terms while preserving dark text on the yellow payment panel",()=>{
@@ -736,12 +792,16 @@ test("local email preview assets stay same-origin across localhost and 127.0.0.1
         const response=preview.GET(new Request(`http://${host}/api/preview/registration-email?kind=${kind}`));
         const html=await response.text();
         const images=[...html.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)].map(match=>match[1]);
-        assert.equal(images.length,kind==="welcome" ? 5 : 2);
+        assert.equal(images.length,kind==="welcome"?5:8);
         assert.ok(images.every(source=>source.startsWith("/")&&!source.startsWith("//")),`${host} ${kind} assets must stay same-origin`);
         if(kind==="welcome") {
           assert.ok(images.includes("/api/preview/registration-email/image?source=direct"));
           assert.match(html,/background="\/membership\/design\/printers-ink.jpg"/);
           assert.ok(html.includes("background-image:url('/membership/design/printers-ink.jpg')"));
+        } else {
+          for(const asset of ["make-it-yours-v2.png","first-words-v2.png","on-the-record-v1.png"]){
+            assert.ok(images.includes(`/membership/badges/${asset}`));
+          }
         }
         assert.match(response.headers.get("Content-Security-Policy"),/img-src 'self'/);
       }
@@ -963,7 +1023,8 @@ test("registration edits escape content while immutable payment facts, terms and
     templateOverride:{subject:'A new <heading>',body:"Hello {{member_name}}.\n\nA different profile note."}});
   assert.match(profile.html,/A new &lt;heading&gt;/);assert.match(profile.text,/does not authorize future charges/);
   assert.match(profile.html,/href="https:\/\/members.example.test\/my"/);
-  assert.doesNotMatch(profile.text,/Add your photo/);
+  assert.match(profile.text,/A different profile note/);
+  assert.match(profile.text,/Add your photo/,"the screenshot guide survives intro edits");
 });
 
 test("new registration payload uses current approved override once; uncertain retries never adopt a later edit",async t=>{

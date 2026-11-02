@@ -1,6 +1,7 @@
 import type { RegistrationFoundingPricing } from "./registration-model";
 import { registrationFoundingConfirmation } from "./registration-pricing-confirmation";
 import { registrationPaidConfirmation, type RegistrationPaidMembership } from "./registration-paid-confirmation";
+import { createProfileReadyEmail, PROFILE_READY_TEMPLATE } from "./profile-ready-email";
 
 export type RegistrationMessageKind = "welcome" | "profile_ready" | "pre_foundations";
 export type RegistrationFoundationsCall = { startsAt: string; timeZone: string };
@@ -66,8 +67,7 @@ export function getRegistrationEditableTemplate(kind: RegistrationMessageKind): 
     "Tyler, Libby, Cade & Mitch", "RU/NED", "After the fear."].join("\n\n")};
   if (kind==="pre_foundations") return {subject:"A few things worth knowing.",tokens,
     body:["You’re in. Now what?",...followupParagraphs].join("\n\n")};
-  return {subject:"Your Ruined profile is ready",tokens,body:["{{member_name}}, your Ruined profile is now open.",
-    "Add your photo, tell a little of your story, and make this space your own.","After the fear."].join("\n\n")};
+  return {...PROFILE_READY_TEMPLATE,tokens};
 }
 export function validateRegistrationTemplateOverride(kind: RegistrationMessageKind,value: unknown): RegistrationTemplateOverride {
   if (!value || typeof value!=="object" || Array.isArray(value)) throw new Error("Provide the email subject and body.");
@@ -104,6 +104,21 @@ function welcomeBodyHtml(thankYouImage: string, paragraphs = welcomeParagraphs) 
 
 /** Pure rendering: the worker stores this exact HTML/text before any provider call. */
 export function createRegistrationEmail(input: RegistrationEmailInput) {
+  if (input.kind === "profile_ready") {
+    return createProfileReadyEmail({
+      memberName: input.memberName,
+      siteUrl: input.siteUrl,
+      template: input.templateOverride
+        ? validateRegistrationTemplateOverride("profile_ready", input.templateOverride)
+        : PROFILE_READY_TEMPLATE,
+      billingNote: input.completionBasis === "paid_membership" ||
+        (input.completionBasis === "saved_card" && Boolean(input.paidMembership))
+        ? "Opening your profile does not authorize a new charge. Your membership billing follows the terms you already accepted; review Membership billing for its current status."
+        : input.completionBasis === "saved_card"
+        ? "Paid membership begins only after you review the price and terms and explicitly confirm activation. Saving a card or opening your profile does not authorize future charges."
+        : "Opening your profile does not start paid billing. Any future paid membership requires your review and explicit confirmation.",
+    });
+  }
   const welcome = input.kind === "welcome";
   const followup = input.kind === "pre_foundations";
   const dark = welcome || followup;
