@@ -72,6 +72,35 @@ For review, use one date range and device filter, then compare:
 - **Possible friction:** `product_selected` versus `product_opened`, then `add_to_bag` and checkout stages for the same selection, alongside counts and the attribution limits above.
 - **Confirmed commerce:** Shopify sessions, cart/checkout progress, completed orders, and variant sales. Do not treat a browser redirect as a purchase.
 
+## Paid-ad order attribution
+
+For future Meta ads, paste this into the ad's **URL parameters** field, without a leading `?`. Keep the website destination a clean `/store` or `/store/<product-handle>` URL; apply it to every ad, including carousel destinations where applicable.
+
+```text
+utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.id}}&utm_term={{adset.id}}&utm_content={{ad.id}}
+```
+
+Meta expands the macros when it serves the ad. `utm_campaign` is the campaign ID, `utm_term` is the ad-set ID, and `utm_content` is the ad ID. Names and unexpanded macros do not qualify as order attribution. Use a resolved URL containing numeric IDs for a manual QA visit; clicking a preview with literal macros is not that test.
+
+After explicit marketing **and** analytics permission, the production storefront uses the first and latest eligible paid Meta visits within a 30-day window in that browser. Expired history is discarded on the next eligible read. A visit contains only its timestamp, permitted source/medium, numeric advertising IDs, and public landing pathname. It does not contain customer details, full URLs, queries, fragments, or `fbclid`. Direct, organic, and internal navigation preserve the saved paid visits. Repeated calls do not refresh a visit's timestamp. If the first visit expires while a later visit remains, the later visit becomes the earliest retained visit. This retention window is separate from Meta's reporting attribution window.
+
+The cart and checkout requests carry the currently consented record. The server validates its shape, age, and consent again, saves it as Shopify cart attributes, then reads the cart back before returning checkout. Only the `ruined_attribution_` namespace is replaced; other cart attributes and preorder line attributes remain intact. Withdrawal clears browser history; the next cart/checkout reconciliation removes these managed cart fields. Checkout also reconciles again if permission changes while its request is in flight. Unknown, pending, denied, or GPC-blocked permission exports no record and does not prevent shopping.
+
+Look for these fields in the order's **Additional details** after a verified completed checkout. The prefix is either `ruined_attribution_first_` or `ruined_attribution_latest_`:
+
+| Field suffix | Meaning |
+| --- | --- |
+| `at` | UTC timestamp of the retained permitted visit. |
+| `source`, `medium` | Meta placement source and paid traffic medium. |
+| `campaignId` | `utm_campaign`; compare to the Meta campaign ID. |
+| `adsetId` | `utm_term`; compare to the Meta ad-set ID, when supplied. |
+| `adId` | `utm_content`; compare to the Meta ad ID, when supplied. |
+| `landingPath` | Public storefront path without query or fragment. |
+
+`ruined_attribution_version=1` identifies the record format. These are auditable custom order details, not a claim that Shopify's native **Conversion summary** will classify the order identically. A retained tagged visit is evidence of that browser journey; it does not prove the ad caused the purchase. Copied links, cross-device checkout, blocked tracking, deleted storage, and missing consent limit coverage. Do not retroactively label old orders from this new collection.
+
+Shopify continues to own hosted-checkout Purchase reporting and its Meta integration. This change adds no browser Purchase event or custom CAPI Purchase sender. Local tests verify capture, expiry, consent/GPC, cart metadata, failure/readback handling, and shopping behavior using simulated Shopify responses. Before calling the next campaign verified, separately record a production tagged journey through cart/checkout, a permitted completed test order with these fields, and Meta receipt/deduplication of the corresponding Purchase. Passing code tests or a checkout redirect alone proves none of those downstream outcomes. See the [Shopify cart attributes API](https://shopify.dev/docs/api/storefront/latest/mutations/cartAttributesUpdate) for the supported metadata mutation.
+
 ## Why counts can differ or be missing
 
 These reports represent the measurable, consenting subset of traffic. Unknown, pending, declined, or revoked analytics consent prevents sending. GPC also blocks collection. Shopify analytics additionally requires its privacy API and valid tracking tokens to be ready. Browser blockers, network failures, interrupted navigation, and provider processing delay can reduce receipt.

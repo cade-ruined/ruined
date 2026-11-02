@@ -16,6 +16,7 @@ function load(path, dependencies = {}, environment = {}) {
   return output.exports;
 }
 const consent = load("src/lib/marketing/consent.ts");
+const attribution = load("src/lib/marketing/attribution.ts", { "./consent": consent });
 const requestOrigin = load("src/lib/request-origin.ts");
 const variant = (id) => `gid://shopify/ProductVariant/${id}`;
 const fullCartId = "gid://shopify/Cart/opaque-token?key=private-capability";
@@ -38,7 +39,7 @@ function fixture(options = {}) {
   const fetch = async (document, { variables, headers, ...rest }) => {
     parse(document); // Exercise actual generated GraphQL documents, not a parallel query.
     calls.push({ document, variables: clone(variables), headers: clone(headers), ...rest });
-    const operation = document.match(/\b(cartCreate|cartLinesAdd|cartLinesUpdate|cartLinesRemove)\(/)?.[1];
+    const operation = document.match(/\b(cartCreate|cartLinesAdd|cartLinesUpdate|cartLinesRemove|cartAttributesUpdate)\(/)?.[1];
     if (options.before) await options.before({ operation, cart, calls });
     if (options.networkError) throw new Error("secret upstream failure");
     let payload;
@@ -46,9 +47,11 @@ function fixture(options = {}) {
       if (options.queryError) return Response.json({ errors: [{ message: "secret upstream failure" }] });
       const result = clone(cart);
       if (options.finalMismatch && result && calls.length > 1) result.lines.nodes[0].quantity = 19;
+      if (options.finalAttributeMismatch && result && calls.length > 1) result.attributes = [];
       payload = { data: { cart: result } };
     } else {
-      if (operation === "cartCreate") cart = { id: fullCartId, checkoutUrl: "https://fixture.myshopify.com/checkouts/cn/token?_cs=signed%2Bconsent", lines: { nodes: variables.lines.map(newLine), pageInfo: { hasNextPage: false } } };
+      if (operation === "cartCreate") cart = { id: fullCartId, checkoutUrl: "https://fixture.myshopify.com/checkouts/cn/token?_cs=signed%2Bconsent", attributes: variables.attributes ?? [], lines: { nodes: variables.lines.map(newLine), pageInfo: { hasNextPage: false } } };
+      if (operation === "cartAttributesUpdate") cart.attributes = clone(variables.attributes);
       if (operation === "cartLinesRemove") {
         cart.lines.nodes = cart.lines.nodes.filter((line) => !variables.lineIds.includes(line.id));
         if (options.rotateLineIds) cart.lines.nodes.forEach((line) => { line.id += "-changed"; });
@@ -62,14 +65,14 @@ function fixture(options = {}) {
     return Response.json(payload, { headers: responseHeaders });
   };
   const api = load("src/lib/store/shopify-cart.ts", {
-    "server-only": {}, "@/lib/marketing/consent": consent, "@/lib/request-origin": requestOrigin,
+    "server-only": {}, "@/lib/marketing/consent": consent, "@/lib/marketing/attribution": attribution, "@/lib/request-origin": requestOrigin,
     "@/lib/shopify": { getProducts: async () => products, getShopifyStorefrontClient: () => options.unconfigured ? null : { fetch },
       resolvePublicCheckoutUrl: (value) => { const url = new URL(value); if (url.protocol !== "https:") return null; url.hostname = "checkout.theruinedproject.com"; return url.toString(); } },
   }, { NODE_ENV: "production" });
   return { calls, current: () => clone(cart), handle: (request_, checkout = false) => api.handleShopifyCartRequest(request_, { checkout }), api };
 }
-function existing(lines) {
-  return { id: fullCartId, checkoutUrl: "https://fixture.myshopify.com/checkouts/cn/token?_cs=signed%2Bconsent", lines: {
+function existing(lines, attributes = []) {
+  return { id: fullCartId, checkoutUrl: "https://fixture.myshopify.com/checkouts/cn/token?_cs=signed%2Bconsent", attributes, lines: {
     nodes: lines.map((line, index) => ({ id: `gid://shopify/CartLine/existing-${index}`, quantity: line.quantity, attributes: line.attributes ?? [], merchandise: { id: line.variantId } })), pageInfo: { hasNextPage: false },
   } };
 }
@@ -266,4 +269,86 @@ test("cart uses actual Host through Next's internal hostname without trusting fo
     { origin: "http://theruinedproject.com", host: "theruinedproject.com" },
   ]) assert.equal((await invalid.handle(request(undefined, {}, headers))).status, 403);
   assert.equal(invalid.calls.length, 0);
+});
+
+function paidHistory() {
+  const now = Date.now();
+  const visit = attribution.paidVisitFromLocation("utm_source=ig&utm_medium=paid_social&utm_campaign=120252930805990325&utm_term=120252930805980325&utm_content=120252930805970325", "/store/ruined-hoodie", now);
+  return attribution.mergePaidAttribution(null, visit, now);
+}
+const allowedAttributionConsent = { analytics: true, marketing: true, saleOfData: true };
+
+test("a consented tagged checkout writes exact paid IDs to the actual cartCreate input and verifies stored cart attributes", async () => {
+  const history = paidHistory();
+  const expected = attribution.paidAttributionAttributes(history, allowedAttributionConsent);
+  const f = fixture();
+  const response = await f.handle(request([{ variantId: variant(4), quantity: 2 }], { attribution: history, visitorConsent: allowedAttributionConsent }), true);
+  assert.equal(response.status, 200);
+  assert.deepEqual(f.calls[0].variables.attributes, expected);
+  assert.deepEqual(f.current().attributes, expected);
+  assert.equal(f.current().attributes.find(item => item.key === "ruined_attribution_latest_adId").value, "120252930805970325");
+  assert.deepEqual(f.current().lines.nodes[0].attributes, [{ key: "Order type", value: "Preorder" }, { key: "Expected ship date", value: "November 2026" }]);
+  assert.ok(f.calls.every(call => call.document.includes("attributes { key value }")));
+  assert.doesNotMatch(JSON.stringify(await response.json()), /ruined_attribution|120252930805990325|private-capability/);
+});
+
+test("paid attribution updates the same cart and preserves unrelated cart metadata and preorder line metadata", async () => {
+  const oldHistory = paidHistory();
+  const newHistory = structuredClone(oldHistory);
+  newHistory.latest.adId = "120252930805970326";
+  const unrelated = [{ key: "gift_note", value: "Leave this intact" }];
+  const lines = [{ variantId: variant(4), quantity: 2, attributes: [{ key: "Order type", value: "Preorder" }, { key: "Expected ship date", value: "November 2026" }] }];
+  const f = fixture({ cart: existing(lines, [...unrelated, ...attribution.paidAttributionAttributes(oldHistory, allowedAttributionConsent)]) });
+  assert.equal((await f.handle(request([{ variantId: variant(4), quantity: 2 }], { attribution: newHistory, visitorConsent: allowedAttributionConsent }, { cookie: cartCookie }), true)).status, 200);
+  assert.deepEqual(f.calls.map(call => call.document.match(/(?:query|mutation) (\w+)/)[1]), ["RuinedCart", "RuinedCartAttributes", "RuinedCart"]);
+  assert.equal(f.current().id, fullCartId);
+  assert.deepEqual(f.current().attributes, [...unrelated, ...attribution.paidAttributionAttributes(newHistory, allowedAttributionConsent)]);
+  assert.deepEqual(f.current().lines.nodes[0].attributes, lines[0].attributes);
+  assert.equal((await f.handle(request([{ variantId: variant(4), quantity: 2 }], { attribution: newHistory, visitorConsent: allowedAttributionConsent }, { cookie: cartCookie }), true)).status, 200);
+  assert.equal(f.calls.length, 5, "identical attribution requires no extra mutation");
+});
+
+test("denial, unknown consent, GPC and invalid history remove existing attribution without preventing checkout", async () => {
+  const history = paidHistory();
+  const unrelated = [{ key: "gift_note", value: "Retain" }];
+  const expired = structuredClone(history);
+  expired.first.at = expired.latest.at = new Date(Date.now() - attribution.PAID_ATTRIBUTION_TTL_MS - 1000).toISOString();
+  const cases = [
+    { visitorConsent: undefined, attribution: history },
+    { visitorConsent: { analytics: true, marketing: false }, attribution: history },
+    { visitorConsent: { analytics: false, marketing: true }, attribution: history },
+    { visitorConsent: { ...allowedAttributionConsent, saleOfData: false }, attribution: history },
+    { visitorConsent: allowedAttributionConsent, attribution: history, gpc: true },
+    { visitorConsent: allowedAttributionConsent, attribution: expired },
+    { visitorConsent: allowedAttributionConsent, attribution: { ...history, email: "private@example.com" } },
+    { visitorConsent: allowedAttributionConsent, attribution: null },
+  ];
+  for (const choice of cases) {
+    const f = fixture({ cart: existing([{ variantId: variant(1), quantity: 1 }], [...unrelated, ...attribution.paidAttributionAttributes(history, allowedAttributionConsent)]) });
+    const response = await f.handle(request(undefined, { visitorConsent: choice.visitorConsent, attribution: choice.attribution }, { cookie: cartCookie, ...(choice.gpc ? { "sec-gpc": "1" } : {}) }), true);
+    assert.equal(response.status, 200);
+    assert.deepEqual(f.current().attributes, unrelated);
+    assert.equal(f.current().lines.nodes.length, 1);
+    assert.equal(f.current().id, fullCartId);
+    assert.doesNotMatch(JSON.stringify(f.calls.map(call => call.variables)), /private@example/);
+    if (choice.gpc) assert.ok(f.calls.every(call => call.variables.visitorConsent.analytics === false && call.variables.visitorConsent.marketing === false));
+  }
+});
+
+test("attribute write failures and readback collisions fail checkout; a subsequent snapshot heals committed work", async () => {
+  const history = paidHistory();
+  for (const problem of [{ userError: "cartAttributesUpdate" }, { warning: "cartAttributesUpdate" }, { finalAttributeMismatch: true }]) {
+    const options = { cart: existing([{ variantId: variant(1), quantity: 1 }]), ...problem };
+    const f = fixture(options);
+    const makeRequest = () => request(undefined, { attribution: history, visitorConsent: allowedAttributionConsent }, { cookie: cartCookie });
+    const response = await f.handle(makeRequest(), true);
+    assert.equal(response.status, 503);
+    assert.deepEqual(Object.keys(await response.json()), ["error"]);
+    assert.equal(response.headers.getSetCookie().length, 0);
+    delete options.userError; delete options.warning; delete options.finalAttributeMismatch;
+    const retry = await f.handle(makeRequest(), true);
+    assert.equal(retry.status, 200);
+    assert.deepEqual(f.current().attributes, attribution.paidAttributionAttributes(history, allowedAttributionConsent));
+    assert.ok(f.calls.every(call => call.retries === 0), "mutations are not silently replayed");
+  }
 });

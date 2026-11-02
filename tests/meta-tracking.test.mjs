@@ -17,6 +17,7 @@ function load(path, dependencies = {}) {
   return output.exports;
 }
 const consent = load("src/lib/marketing/consent.ts");
+const attribution = load("src/lib/marketing/attribution.ts", { "./consent": consent });
 const links = load("src/lib/store/product-links.ts");
 const config = { storefrontAccessToken: "a".repeat(32), storefrontRootDomain: "theruinedproject.com", checkoutRootDomain: "checkout.theruinedproject.com" };
 const variant = { id: "gid://shopify/ProductVariant/52219441938753", available: true, priceAmount: "96.00", currencyCode: "USD", selectedOptions: [{ name: "Size", value: "M" }] };
@@ -49,7 +50,7 @@ function browser(choice = { marketing: "", analytics: "" }) {
     referrer: "", createElement: () => ({}), head: { appendChild: (script) => scripts.push(script) },
     addEventListener: docEvents.addEventListener.bind(docEvents), removeEventListener: docEvents.removeEventListener.bind(docEvents), dispatchEvent: docEvents.dispatchEvent.bind(docEvents),
   };
-  const meta = load("src/lib/marketing/meta.ts", { "./consent": consent });
+  const meta = load("src/lib/marketing/meta.ts", { "./consent": consent, "./attribution": attribution });
   meta.configureMetaTracking(true);
   return { scripts, requests, timers, privacy, meta, choose: (value) => { choice = value; } };
 }
@@ -99,7 +100,7 @@ test("decline removes queued events immediately and survives SDK failure and a f
   b.meta.vetoMetaTracking();
   b.meta.trackMetaAddToCart(product, variant);
   assert.equal(window.fbq.queue.some((call) => call[0] === "trackSingle"), false);
-  const fresh = load("src/lib/marketing/meta.ts", { "./consent": consent });
+  const fresh = load("src/lib/marketing/meta.ts", { "./consent": consent, "./attribution": attribution });
   fresh.configureMetaTracking(true); fresh.grantMetaTracking();
   assert.equal(fresh.currentMarketingPermission(), false);
 });
@@ -311,4 +312,60 @@ test("Meta cart additions use the actual saved quantity and reject zero or inval
   assert.equal(adds.length, 1);
   assert.equal(adds[0][3].value, 192);
   assert.deepEqual(adds[0][3].contents, [{ id: "52219441938753", quantity: 2, item_price: 96 }]);
+});
+
+test("paid history survives a full-page tagged store referrer and direct revisit but withdrawal clears it", () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  window.location = new URL("https://theruinedproject.com/store/ruined-hoodie?utm_source=ig&utm_medium=paid_social&utm_campaign=120252930805990325&utm_term=120252930805980325&utm_content=120252930805970325&fbclid=known-click");
+  b.meta.grantMetaTracking(true); b.meta.trackMetaPageView();
+  const saved = b.meta.checkoutAttribution();
+  assert.equal(saved.first.campaignId, "120252930805990325");
+  assert.equal(saved.latest.adId, "120252930805970325");
+  assert.ok(window.localStorage.getItem(attribution.PAID_ATTRIBUTION_STORAGE_KEY));
+  document.referrer = window.location.href;
+  window.location = new URL("https://theruinedproject.com/bag");
+  assert.equal(b.meta.currentMarketingPermission(), true);
+  assert.deepEqual(b.meta.checkoutAttribution(), saved);
+  document.referrer = "";
+  const fresh = load("src/lib/marketing/meta.ts", { "./consent": consent, "./attribution": attribution });
+  fresh.configureMetaTracking(true); fresh.grantMetaTracking();
+  assert.deepEqual(fresh.checkoutAttribution(), saved);
+  fresh.vetoMetaTracking();
+  assert.equal(fresh.checkoutAttribution(), null);
+  assert.equal(window.localStorage.getItem(attribution.PAID_ATTRIBUTION_STORAGE_KEY), null);
+  assert.equal(window.sessionStorage.getItem("ruined:marketing-attribution:v1"), null);
+});
+
+test("tagged public referrers allow commerce while credentials, private subdomains and unknown URL data stay blocked", () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  const publicUrl = "https://theruinedproject.com/bag";
+  assert.equal(b.meta.safeMarketingLocation(publicUrl, "https://theruinedproject.com/store?utm_source=ig&utm_medium=paid_social&utm_campaign=123&variant=456"), true);
+  for (const referrer of [
+    "https://theruinedproject.com/store?token=secret", "https://theruinedproject.com/store?utm_content=person%40example.com",
+    "https://members.theruinedproject.com/store", "https://theruinedproject.com/my", "https://www.instagram.com/?credential=private",
+  ]) assert.equal(b.meta.safeMarketingLocation(publicUrl, referrer), false, referrer);
+  for (const href of [publicUrl + "?utm_campaign=123&utm_campaign=456", publicUrl + "?utm_source=person%40example.com", publicUrl + "?variant=private", publicUrl + "#secret"]) {
+    assert.equal(b.meta.safeMarketingLocation(href), false, href);
+  }
+});
+
+test("saved attribution never bypasses GPC, a pending choice, a private route or malformed storage", () => {
+  const b = browser({ marketing: "yes", analytics: "yes" });
+  window.location = new URL("https://theruinedproject.com/store?utm_source=ig&utm_medium=paid_social&utm_campaign=123&utm_term=456&utm_content=789");
+  b.meta.grantMetaTracking(true);
+  assert.ok(b.meta.checkoutAttribution());
+  window.navigator.globalPrivacyControl = true;
+  assert.equal(b.meta.checkoutAttribution(), null);
+  window.navigator.globalPrivacyControl = false;
+  consent.setConsentUpdatePending(true);
+  assert.equal(b.meta.checkoutAttribution(), null);
+  consent.setConsentUpdatePending(false);
+  window.location = new URL("https://theruinedproject.com/my");
+  assert.equal(b.meta.checkoutAttribution(), null);
+  window.location = new URL("https://theruinedproject.com/bag");
+  window.localStorage.setItem(attribution.PAID_ATTRIBUTION_STORAGE_KEY, "malformed-json");
+  const fresh = load("src/lib/marketing/meta.ts", { "./consent": consent, "./attribution": attribution });
+  fresh.configureMetaTracking(true); fresh.grantMetaTracking();
+  assert.equal(fresh.checkoutAttribution(), null);
+  assert.equal(window.localStorage.getItem(attribution.PAID_ATTRIBUTION_STORAGE_KEY), null);
 });

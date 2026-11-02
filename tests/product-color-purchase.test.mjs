@@ -38,7 +38,7 @@ const dependencies = {
   "@/lib/analytics/storefront": { trackStoreEvent: () => false, flushStoreCart: async () => {} },
   "@/lib/analytics/shopify": { shopifyAnalyticsTrackingHeaders: () => ({}) },
   "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
-  "@/lib/marketing/meta": { trackMetaAddToCart: () => {}, checkoutWithAttribution: (url) => url, checkoutVisitorConsent: () => undefined },
+  "@/lib/marketing/meta": { trackMetaAddToCart: () => {}, checkoutWithAttribution: (url) => url, checkoutAttribution: () => null, checkoutVisitorConsent: () => undefined },
   "react/jsx-runtime": jsxRuntime,
   "next/link": { default: () => null },
   "next/image": { default: () => null },
