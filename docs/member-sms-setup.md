@@ -60,6 +60,35 @@ the stored hash; otherwise the wording is unavailable. Recipient phone numbers
 are masked in operations responses. Admin authorization is checked on each
 request, and these views do not change consent, queue sends, or call Twilio.
 
+### One-off member texts
+
+Use **Send a text** in Communications → Texts to prepare a membership update or
+call-related message for one member. Choose an eligible member from the search
+results; an arbitrary phone number cannot be entered. The member must have an
+active account and membership, verified member identity, released profile
+access, and current SMS consent for their saved phone number. Suppressed numbers
+are excluded. This tool does not enroll anyone or send promotional campaigns.
+
+Write up to 900 characters. Ruined identification and the STOP/HELP footer are
+included in the exact preview. **Review text** saves a private, short-lived
+snapshot of the member, phone, consent, message, and administrator. **Send text**
+is a separate action that submits that reviewed snapshot. Changing the message
+or recipient requires a new review. Consent, phone, account access, and the
+administrator's authority are checked again before dispatch.
+
+Each review has one durable send identity. Repeated requests cannot create a
+second provider attempt for that review, and uncertain outcomes are not
+automatically retried. Check **Activity** before considering any follow-up.
+Provider acceptance is shown separately from carrier delivery; recorded text
+and the requesting administrator remain available with the activity record.
+Preparing or reviewing a message does not send it. Sample mode never contacts
+Twilio.
+
+One-off sending uses the existing `MEMBER_SMS_ENABLED` transport switch and
+registered Messaging Service. It does not depend on the automatic-worker switch
+or create a scheduled job. The automatic confirmation and call reminder rules
+remain unchanged.
+
 The previously submitted campaign `CM1964ed2428424f5a584f230e93395445` was
 rejected with **30896 — Opt-in Error**. The reviewer found no working submit
 button at the submitted URL and rejected the non-submitting mockup as consent
@@ -248,9 +277,10 @@ purchases, and email subscriptions do not authorize texts.
 - `accepted` means Twilio returned a message SID, not confirmed handset delivery.
   Signed callbacks separately record queued/sending/sent/delivered/failed/
   undelivered status, with replay and out-of-order protection. Provider error
-  21610 also suppresses the number. An operator delivery dashboard is not part
-  of this release; use Twilio logs and restricted delivery records for review.
-- No message body or raw provider error is retained in the delivery tables.
+  21610 also suppresses the number. Communications → Texts → Activity shows
+  these records; Twilio logs remain available for provider-side investigation.
+- Exact message bodies are retained in private delivery records for operations
+  review. Raw provider errors are never retained or logged.
   Suppression records are private and must survive contact edits to honor opt-out.
 - A STOP cannot recall a request already accepted by Twilio. Consent is rechecked
   immediately before dispatch and concurrent changes wait for the short dispatch.
@@ -299,6 +329,17 @@ transport. It adds a nullable private message-body column and a history index;
 older deployments remain compatible. Preserve the column and its records if
 rolling the application back. Validate admin-only, read-only access, exact
 body storage, forecast eligibility, delivery statuses, and history pagination.
+
+For one-off texts, apply `20261102231559_member_sms_one_off_reviews.sql`
+before deploying the composer. It adds private review/audit evidence and hourly
+limits, and permits the `one_off` delivery kind. Existing automatic senders
+remain compatible. Reviews expire after 15 minutes; each administrator can
+prepare up to 30 reviews and request up to 30 sends per clock hour. Keep review and
+attempt records when rolling back so an interrupted request cannot be replayed.
+Validate consent/identity changes between review and send, administrator
+revocation, duplicate requests, ambiguous provider responses, and visibility of
+claimed requests that have no provider attempt. Use a fake provider for send
+tests; a production browser check can stop at the review screen.
 
 Run consent, SMS-preferences API, registration, public-page, transport,
 automation, and signed-webhook tests, lint/typecheck, CI, and desktop/mobile form

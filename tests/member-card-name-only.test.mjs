@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import ts from "typescript";
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
+
+// Use the production artwork fonts so layout and pixels do not depend on fonts
+// installed on the test runner.
+for (const [file, family] of [
+  ["IvyOraText-Regular.ttf", "IvyOra Text"],
+  ["Inter-Variable-Latin.woff2", "Inter Variable"],
+  ["CadeHandy2.otf", "CadeHandy2"],
+]) {
+  assert.ok(GlobalFonts.registerFromPath(fileURLToPath(new URL(`../public/fonts/${file}`, import.meta.url)), family), `Bundled artwork font ${family} must load.`);
+}
 
 function load(path, dependencies = {}) {
   const output = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -35,7 +46,7 @@ function rendererHarness() {
       return surface;
     },
     loadImage: async url => { requests.push(url); return null; },
-    loadFonts: async () => {}, handwritingFamily: () => "serif", editionYear: () => 2026,
+    loadFonts: async () => {}, handwritingFamily: () => '"CadeHandy2"', editionYear: () => 2026,
   });
   return { ...renderer, requests };
 }

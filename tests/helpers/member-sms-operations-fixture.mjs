@@ -38,7 +38,7 @@ function sqlBridge(engine, queries, readOnly = false) {
 export async function operationsFixture() {
   const db = new PGlite();
   await db.exec(`create role anon; create role authenticated; create schema private;
-    create table ruined_members(id uuid primary key,person_id uuid,membership_state text,deleted_at timestamptz);
+    create table ruined_members(id uuid primary key,person_id uuid,membership_state text,deleted_at timestamptz,email_normalized text default 'fixture@example.test');
     create table people(id uuid primary key,status text);
     create table person_private_profiles(person_id uuid primary key,mobile_e164 text);
     create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
@@ -67,6 +67,7 @@ export async function operationsFixture() {
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
+  await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
 
   await db.exec("create table person_profiles(person_id uuid primary key,display_name text)");
   const queries = [], sql = sqlBridge(db, queries);
@@ -87,7 +88,7 @@ export async function operationsFixture() {
   const ago = minutes => new Date(Date.now() - minutes * 60_000).toISOString();
   async function member() {
     const memberId = id(serial++), personId = id(serial++), authId = id(serial++), phone = `+1202555${String(serial).padStart(4, "0")}`;
-    await db.query("insert into ruined_members values($1,$2,'active',null)", [memberId, personId]);
+    await db.query("insert into ruined_members(id,person_id,membership_state,deleted_at) values($1,$2,'active',null)", [memberId, personId]);
     await db.query("insert into people values($1,'active')", [personId]);
     await db.query("insert into person_private_profiles values($1,$2)", [personId, phone]);
     await db.query("insert into person_profiles values($1,'Test Member')", [personId]);

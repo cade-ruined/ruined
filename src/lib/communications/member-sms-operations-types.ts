@@ -1,3 +1,4 @@
+import type { MemberSmsOneOffRequestRecord } from "./member-sms-one-off-model";
 import type { CommunicationItem } from "./communications-catalog";
 
 /** Read-only operations projections. Forecasts are rechecked by the sender. */
@@ -43,7 +44,8 @@ export type MemberSmsUpcomingItem = {
 };
 export type MemberSmsHistoryItem = {
   id: string;
-  kind: "opt_in_confirmation" | "call_reminder" | "membership_reminder";
+  kind: "opt_in_confirmation" | "call_reminder" | "membership_reminder" | "one_off";
+  actorName?: string | null;
   reminderKey: string;
   recipient: MemberSmsOperationRecipient;
   call: MemberSmsOperationCall | null;
@@ -95,5 +97,6 @@ export type MemberSmsOperationsOverview = {
     currentOptIns: number;
   };
   jobs: { items: MemberSmsOperationJob[]; truncated: boolean };
+  oneOffRequests?: { items: MemberSmsOneOffRequestRecord[]; truncated: boolean };
   history: { items: MemberSmsHistoryItem[]; nextCursor: string | null };
 };

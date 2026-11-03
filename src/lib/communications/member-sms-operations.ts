@@ -14,6 +14,7 @@ import { memberSmsReminderBody, type MemberSmsReminder } from "./member-sms-mode
 import { getMemberSmsTemplatePreviews, memberSmsOperationNoticeMinutes } from "./member-sms-operations-model";
 import { getCommunicationsChannelCatalog } from "./communications-channel-catalog";
 import { getManualCommunicationCatalog } from "./communications-catalog";
+import type { MemberSmsOneOffRequestRecord } from "./member-sms-one-off-model";
 import type { MemberSmsHistoryItem, MemberSmsOperationCall, MemberSmsOperationJob, MemberSmsOperationRecipient, MemberSmsOperationsOverview, MemberSmsUpcomingItem } from "./member-sms-operations-types";
 
 const ORIGIN = "https://members.theruinedproject.com";
@@ -169,20 +170,23 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
 type HistoryRow = { id: string; memberId: string; name: string; phone: string; sharedPhone: boolean; kind: MemberSmsHistoryItem["kind"];
   reminderKey: string; consentId: string | null; status: MemberSmsHistoryItem["status"]; createdAt: Date | string; updatedAt: Date | string;
   deliveryStatus: string | null; deliveryUpdatedAt: Date | string | null; deliveryErrorCode: number | null; blockedReason: string | null; messageSid: string | null;
-  bodyText: string | null; bodySha256: string; cursorCreatedAt: string; event: Event | null };
+  actorName: string | null; bodyText: string | null; bodySha256: string; cursorCreatedAt: string; event: Event | null };
 async function readHistory(tx: TransactionSql, cursor: ReturnType<typeof parseMemberSmsHistoryCursor>): Promise<MemberSmsOperationsOverview["history"]> {
   const rows = await tx<HistoryRow[]>`select attempt.id,attempt.member_id as "memberId",coalesce(nullif(btrim(display.display_name),''),'Member') as name,
       attempt.destination_e164 as phone,exists(select 1 from person_private_profiles other where other.mobile_e164=attempt.destination_e164 and other.person_id<>member.person_id) as "sharedPhone",
       attempt.reminder_kind as kind,attempt.reminder_key as "reminderKey",attempt.consent_id::text as "consentId",attempt.status,
       attempt.created_at as "createdAt",to_char(attempt.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "cursorCreatedAt",attempt.updated_at as "updatedAt",attempt.delivery_status as "deliveryStatus",attempt.delivery_updated_at as "deliveryUpdatedAt",
       attempt.delivery_error_code as "deliveryErrorCode",attempt.blocked_reason as "blockedReason",attempt.twilio_message_sid as "messageSid",
-      attempt.body_text as "bodyText",attempt.body_sha256 as "bodySha256",
+      attempt.body_text as "bodyText",attempt.body_sha256 as "bodySha256",one_off.actor_name as "actorName",
       case when event.id is null then null else jsonb_build_object('id',event.id,'title',event.title,'startsAt',event.starts_at,'timeZone',event.timezone,
         'foundations01',coalesce(binding.kind='foundations_01',false),'visibility',event.visibility,'registration_mode',event.registration_mode,
         'meetings',(select jsonb_agg(link.metadata) from integration_entity_links link where link.provider='google' and link.local_entity_type='experience'
           and link.local_entity_id=event.id::text and link.external_entity_type='meet_space' and link.livemode=${googleCommunicationLivemode()})) end as event
     from private.member_sms_delivery_attempts attempt join ruined_members member on member.id=attempt.member_id
     left join person_profiles display on display.person_id=member.person_id
+    left join private.member_sms_one_off_reviews one_off on one_off.id=case
+      when attempt.reminder_kind='one_off' and attempt.reminder_key ~ '^one-off:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      then split_part(attempt.reminder_key,':',2)::uuid else null end and one_off.member_id=attempt.member_id
     left join experiences event on event.id=case when attempt.reminder_key ~ '^call:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}:[0-9]{10,16}:60m$'
       then split_part(attempt.reminder_key,':',2)::uuid else null end
     left join private.member_email_cadence_event_bindings binding on binding.experience_id=event.id
@@ -206,7 +210,7 @@ async function readHistory(tx: TransactionSql, cursor: ReturnType<typeof parseMe
       }
     } catch { /* Historical metadata is not evidence unless its rendered hash matches. */ }
     const snapshot = row.bodyText !== null && digest(row.bodyText) === row.bodySha256 ? row.bodyText : null;
-    return { id: row.id, kind: row.kind, reminderKey: row.reminderKey, recipient: recipient(row), call,
+    return { id: row.id, kind: row.kind, actorName: row.actorName, reminderKey: row.reminderKey, recipient: recipient(row), call,
       createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt), status: row.status, deliveryStatus: row.deliveryStatus,
       deliveryUpdatedAt: row.deliveryUpdatedAt ? iso(row.deliveryUpdatedAt) : null, deliveryErrorCode: row.deliveryErrorCode,
       blockedReason: row.blockedReason, messageSid: row.messageSid, body: snapshot ?? reconstructed,
@@ -240,6 +244,20 @@ async function readJobsWithoutAttempts(tx: TransactionSql): Promise<MemberSmsOpe
     dueAt: iso(row.dueAt), expiresAt: iso(row.expiresAt), createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt), status: row.status, outcome: row.outcome })) };
 }
 
+async function readOneOffRequests(tx:TransactionSql):Promise<{items:MemberSmsOneOffRequestRecord[];truncated:boolean}> {
+  const rows=await tx<Array<{id:string;memberId:string;name:string;phone:string;sharedPhone:boolean;body:string;actorName:string;
+    createdAt:Date|string;claimedAt:Date|string|null;status:"claimed"|"finished";outcome:string|null}>>`
+    select review.id,review.member_id as "memberId",review.recipient_name as name,review.destination_e164 as phone,
+      review.shared_phone as "sharedPhone",review.body_text as body,review.actor_name as "actorName",review.created_at as "createdAt",
+      review.claimed_at as "claimedAt",review.status,review.outcome
+    from private.member_sms_one_off_reviews review where review.status in ('claimed','finished')
+      and not exists(select 1 from private.member_sms_delivery_attempts attempt where attempt.member_id=review.member_id
+        and attempt.reminder_kind='one_off' and attempt.reminder_key='one-off:'||review.id::text)
+    order by (review.status='claimed') desc,review.created_at desc,review.id desc limit 51`;
+  return {truncated:rows.length>50,items:rows.slice(0,50).map(row=>({id:row.id,recipient:{...recipient(row),consentState:"opted_in"},
+    body:row.body,actorName:row.actorName,createdAt:iso(row.createdAt),claimedAt:row.claimedAt?iso(row.claimedAt):null,status:row.status,outcome:row.outcome}))};
+}
+
 export async function getMemberSmsOperationsOverview(actor: string, options: { cursor?: string | null } = {}): Promise<MemberSmsOperationsOverview> {
   const cursor = parseMemberSmsHistoryCursor(options.cursor);
   return getApplicationDatabase().begin("isolation level repeatable read read only", async tx => {
@@ -260,8 +278,9 @@ export async function getMemberSmsOperationsOverview(actor: string, options: { c
     const upcoming = await readUpcoming(tx, generatedAt, automation.activatedAt);
     const history = await readHistory(tx, cursor);
     const jobs = await readJobsWithoutAttempts(tx);
+    const oneOffRequests = await readOneOffRequests(tx);
     return { generatedAt, automation: { enabled, transportEnabled: config.enabled, automationEnabled: automation.enabled, ready,
       activatedAt: automation.activatedAt, state, missing, callReady, warnings, schedule: "Every five minutes; each send window lasts ten minutes.", batchSize: MEMBER_SMS_AUTOMATION_BATCH_SIZE },
-      templates: getMemberSmsTemplatePreviews(ORIGIN), communications: [...getCommunicationsChannelCatalog(), ...getManualCommunicationCatalog()].filter(item => item.channel === "texts"), upcoming, history, jobs };
+      templates: getMemberSmsTemplatePreviews(ORIGIN), communications: [...getCommunicationsChannelCatalog(), ...getManualCommunicationCatalog()].filter(item => item.channel === "texts"), upcoming, history, jobs, oneOffRequests };
   });
 }
