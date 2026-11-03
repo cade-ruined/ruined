@@ -8,6 +8,7 @@ import { NextResponse } from "next/server.js";
 import React from "react";
 import ts from "typescript";
 import { json, serializeJsonBindings } from "./helpers/postgres-json-bindings.mjs";
+import { taggedSqlBridge } from "./helpers/postgres-fragments.mjs";
 
 const require = createRequire(import.meta.url);
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -21,9 +22,10 @@ function load(path, dependencies = {}, globals = {}) {
   return mod.exports;
 }
 const model = load("src/lib/membership/member-communication-preferences-model.ts");
-const preferences = load("src/lib/membership/member-communication-preferences.ts", { "server-only": {}, "node:crypto": crypto, "./member-communication-preferences-model": model });
+const smsConsent = load("src/lib/membership/member-sms-consent.ts", { "./member-communication-preferences-model": model });
+const preferences = load("src/lib/membership/member-communication-preferences.ts", { "server-only": {}, "node:crypto": crypto, "./member-communication-preferences-model": model, "./member-sms-consent": smsConsent });
 function bridge(client) {
-  const sql = async (strings, ...values) => (await client.query(strings.reduce((query, part, index) => query + (index ? `$${index}` : "") + part, ""), serializeJsonBindings(strings, values))).rows;
+  const sql = taggedSqlBridge(async (query, values, strings) => (await client.query(query, serializeJsonBindings(strings, values))).rows);
   sql.json = json; sql.begin = callback => client.transaction(tx => callback(bridge(tx))); return sql;
 }
 async function fixture(t) {

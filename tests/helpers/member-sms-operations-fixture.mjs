@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { configuration, id, loader, read } from "./member-sms-fixture.mjs";
+import { installMemberSmsFundingFixture } from "./member-sms-funding-fixture.mjs";
 import { installCircleRevealFunction } from "./circle-reveal-fixture.mjs";
 import { installOperatorFundingFunctions } from "./operator-funding-fixture.mjs";
 function sqlBridge(engine, queries, readOnly = false) {
@@ -63,6 +64,7 @@ export async function operationsFixture() {
   const start = profileMigration.indexOf("create function private.ruined_member_profile_released(");
   await db.exec(profileMigration.slice(start, profileMigration.indexOf("$$;", start) + 3));
   await installOperatorFundingFunctions(db);
+  await installMemberSmsFundingFixture(db);
   await installCircleRevealFunction(db);
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));

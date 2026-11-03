@@ -73,7 +73,7 @@ test("legacy completed registration that later pays shows received despite its s
     paymentMethodState: "removed", paymentConfirmed: true, billingArranged: true, paidCheckoutAvailable: true }));
   assert.equal(paid.label,"Payment received");
   assert.match(paid.detail,/profile held/);
-  assert.equal(paid.next,"Operator opens the profile when ready.");
+  assert.equal(paid.next,"Verified payment opens the profile automatically; review access if it remains pending.");
 });
 
 test("uncertain legacy proof requires review before asking for another charge", () => {

@@ -5,6 +5,7 @@ import test from "node:test";
 import ts from "typescript";
 import { parse } from "parse5";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
+import { taggedSqlBridge } from "./helpers/postgres-fragments.mjs";
 
 async function load(path,dependencies={}) {
   const source=await readFile(new URL(`../${path}`,import.meta.url),"utf8");
@@ -24,8 +25,9 @@ const email=await load("src/lib/membership/registration-email.ts", {
   "./profile-ready-email":profileReadyEmail,
 });
 const consentModel=await load("src/lib/membership/member-communication-preferences-model.ts");
+const smsConsent=await load("src/lib/membership/member-sms-consent.ts",{"./member-communication-preferences-model":consentModel});
 const preferences=await load("src/lib/membership/member-communication-preferences.ts",{"server-only":{},"node:crypto":crypto,
-  "./member-communication-preferences-model":consentModel});
+  "./member-communication-preferences-model":consentModel,"./member-sms-consent":smsConsent});
 const foundationsCall={startsAt:schedules.foundationsBillingScheduleForMonth("2026-11","monthly").callStartsAt[0],timeZone:"America/Denver"};
 const confirmedFoundingPricing = {confirmed:true,awardedAt:"2026-10-02T18:00:00.000Z",
   monthlyAmountCents:34900,annualAmountCents:349000,currency:"usd"};
@@ -67,7 +69,7 @@ test("paid welcome discloses verified payment, exact accepted dates, tax and the
       /11 further monthly installments/,/totaling \$4,188 USD before tax/,/November 5, 2027 at 4:00 PM MT/,
       /full refund of this payment, including tax/,/lower of \$1,500 USD or its remaining unpaid installments/,
       /does not waive its remaining installments/,/renew[s]? monthly at \$349 USD/,/continuously active/,
-      /Profile access opens separately/,/\/membership\/agreement\/ruined_membership-v3/,/\/my\/activate/]) assert.match(output,pattern);
+      /profile opens automatically after verified payment/,/\/membership\/agreement\/ruined_membership-v3/,/\/my\/activate/]) assert.match(output,pattern);
     assert.doesNotMatch(output,/Nothing has been charged|confirm checkout before billing begins|\$0 today|card was saved/);
   }
   assert.equal(result.subject,"Welcome to RU/NED");
@@ -352,6 +354,8 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card",befo
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,member_id uuid,status text,source text);
     create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text);`);
   const followupMigration=await readFile(new URL("../db/migrations/20261021190000_cade_registration_followup.sql",import.meta.url),"utf8");
+  const releaseMigration=await readFile(new URL("../db/migrations/20261103021417_member_paid_profile_release.sql",import.meta.url),"utf8");
+  await pg.exec(releaseMigration.slice(0,releaseMigration.indexOf("create function private.ruined_paid_profile_release_ready"))+"commit;");
   if (!beforeMigration) await pg.exec(followupMigration);
   await pg.query("insert into people values($1,'active')",[ids.person]);
   await pg.query("insert into ruined_members values($1,$2,'alex@example.test',null)",[ids.member,ids.person]);
@@ -374,12 +378,11 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card",befo
   await consent();
   const sends=[],responses=[],faults=[],hooks=[],committed=[],rendered=[],providerChecks=[],providerErrors=[],providerSlots=[],slotErrors=[];
   function wrap(client) {
-    const sql=(strings,...params)=>{
-      const query=strings.reduce((text,part,index)=>text+(index?`$${index}`:"")+part,"");
+    const sql=taggedSqlBridge((query,params)=>{
       const fault=faults.findIndex(pattern=>query.includes(pattern));
       if(fault>=0){faults.splice(fault,1);throw new Error("Injected database failure");}
       return client.query(query,params).then(result=>result.rows);
-    };
+    });
     sql.json=JSON.stringify;
     sql.begin=async operation=>{
       const result=await client.transaction(tx=>operation(wrap(tx)));
@@ -496,6 +499,17 @@ test("paid welcome uses the bound proof once, never today's catalog or saved-car
   assert.match(f.sends[0].payload.text,/November 30/);
   assert.doesNotMatch(f.sends[0].payload.text,/Nothing has been charged/);
   assert.equal(f.rendered.length,1);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("automatic payment release preserves the receipt and sends profile access once",async t=>{
+  const f=await paidFixture(t);
+  await f.pg.query("update member_registration_access set profile_activated_at=now(),profile_payment_reservation_id=$2 where member_id=$1",[f.ids.member,f.reservation]);
+  await f.pg.query("insert into member_registration_messages(member_id,kind) values($1,'profile_ready')",[f.ids.member]);
+  assert.equal((await f.worker.processRegistrationMessageBatch()).sent,2);
+  assert.equal(f.sends.filter(send=>send.payload.text.includes("$375.18 USD paid")).length,1);
+  assert.equal(f.sends.filter(send=>send.payload.subject==="Your Ruined profile is ready").length,1);
+  assert.match(f.sends.find(send=>send.payload.text.includes("$375.18 USD paid")).payload.text,/profile opens automatically after verified payment/);
   assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
 });
 

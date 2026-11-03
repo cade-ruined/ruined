@@ -114,7 +114,7 @@ for (const change of ["withdrawal", "admin_role", "recipient_role", "review_body
     };
     const result = await f.send(reviewed); assert.equal(result.status, "blocked"); assert.equal(f.calls.length, 0);
     const attempt = (await f.db.query("select status,blocked_reason from private.member_sms_delivery_attempts")).rows[0];
-    assert.equal(attempt.status, "blocked"); assert.equal(attempt.blocked_reason, change === "withdrawal" ? "no_current_consent" : "source_ineligible");
+    assert.equal(attempt.status, "blocked"); assert.equal(attempt.blocked_reason, change === "withdrawal" ? "no_current_consent" : change === "recipient_role" ? "member_inactive" : "source_ineligible");
   });
 }
 

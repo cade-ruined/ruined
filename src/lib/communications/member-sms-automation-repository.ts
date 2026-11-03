@@ -3,7 +3,8 @@ import "server-only";
 import type { Sql, TransactionSql } from "postgres";
 import { googleCommunicationLivemode, googleCommunicationUrlFromMetadata } from "@/lib/google/communications";
 import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
-import { MEMBER_COMMUNICATION_NOTICE_VERSION, MEMBER_SMS_TERMS_VERSION } from "@/lib/membership/member-communication-preferences-model";
+import { acceptedMemberSmsConsentSql } from "@/lib/membership/member-sms-consent";
+import { memberSmsFundedEligibilitySql } from "./member-sms-eligibility";
 import type { MemberSmsReminder } from "./member-sms-model";
 import { memberSmsCallReminderKey, type MemberSmsAutomationConfiguration } from "./member-sms-automation-model";
 
@@ -25,8 +26,8 @@ export async function enqueueMemberSmsAutomation(sql: Sql, config: MemberSmsAuto
     await tx`set local statement_timeout = '10s'`;
     const inserted = await tx<Array<{ id: string }>>`
       with consent_candidates as (
-        select member.id as member_id,member.person_id,member.membership_state,lifecycle.account_state,
-          consent.id as consent_id,consent.accepted_at
+        select member.id as member_id,member.person_id,${memberSmsFundedEligibilitySql(tx,tx`member.id`)} as funded_eligible,
+          sms_decision.id as consent_id,sms_decision.accepted_at
         from ruined_members member
         join member_lifecycle lifecycle on lifecycle.member_id=member.id
         join person_private_profiles profile on profile.person_id=member.person_id
@@ -36,14 +37,10 @@ export async function enqueueMemberSmsAutomation(sql: Sql, config: MemberSmsAuto
             and decision.evidence->>'context'='member_communication_preferences_v1'
             and decision.evidence->>'purpose'='membership_updates' and decision.evidence->>'channel'='sms'
           order by decision.id desc limit 1
-        ) consent on true
+        ) sms_decision on true
         where member.deleted_at is null and lifecycle.account_state in ('provisional','invited','active')
           and profile.mobile_e164 ~ '^[+][1-9][0-9]{1,14}$'
-          and consent.decision='accepted' and consent.policy_version=${MEMBER_COMMUNICATION_NOTICE_VERSION}
-          and consent.source='member' and consent.actor_auth_user_id is not null
-          and consent.evidence->>'destination'=profile.mobile_e164 and consent.evidence->>'requested'='true'
-          and consent.evidence->>'action'='sms_checkbox_checked' and consent.evidence->>'marketingConsent'='false'
-          and consent.evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}
+          and ${acceptedMemberSmsConsentSql(tx,tx`profile.mobile_e164`)}
           and not exists(select 1 from private.member_sms_phone_suppressions stop where stop.phone_e164=profile.mobile_e164)
       ), occurrences as (
         select consent.member_id,'opt_in_confirmation'::text as kind,'consent:'||consent.consent_id::text as reminder_key,
@@ -62,8 +59,7 @@ export async function enqueueMemberSmsAutomation(sql: Sql, config: MemberSmsAuto
         left join private.member_email_cadence_event_bindings binding on binding.experience_id=experience.id
         cross join lateral (select case when binding.kind='foundations_01' and experience.visibility='invite_only'
           and experience.registration_mode='internal' then 150 else 60 end as minutes) notice
-        where consent.membership_state='active' and consent.account_state='active'
-          and private.ruined_member_profile_released(consent.member_id)
+        where consent.funded_eligible
           and experience.kind in ('weekly_call','circle_meeting','academy_session','member_event','public_event')
           and experience.status='published' and experience.cancelled_at is null
           and experience.starts_at-make_interval(mins=>notice.minutes)>=${config.activatedAt}::timestamptz

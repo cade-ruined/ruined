@@ -71,7 +71,9 @@ export function operatorMemberJourney(row: OperatorRegistrationProgress): Operat
       : row.paidCheckoutAvailable === false ? "Paid checkout is not open. Keep the payment follow-up on hold."
       : "Member reviews the price and terms, then pays through Stripe at /my/activate. No separate card-saving step.", actor: "Member" };
   else if (!granted && (!row.registeredAt || !row.ready)) next = { key: "review", label: "Review registration completion", detail: "Payment is confirmed or not required, but registration is not ready for profile access. Check the remaining registration record.", actor: "Support" };
-  else if (!granted) next = { key: "profile", label: "Grant profile access", detail: "An Administrator opens the profile when ready. This sends the profile-access email and does not charge the member.", actor: "Operator" };
+  else if (!granted) next = { key: "profile", label: paid ? "Review automatic profile access" : "Grant profile access", detail: paid
+    ? "Verified payment opens a completed profile automatically. If access is still pending, review the registration and current payment before granting access."
+    : "An Administrator opens the profile when ready. This sends the profile-access email and does not charge the member.", actor: "Operator" };
   else next = { key: "complete", label: "Onboarding complete", detail: "All required checkpoints are complete.", actor: "Operator" };
   return { checkpoints, next, attention: attention ?? (next.key === "review" ? next.detail : null) };
 }
@@ -96,7 +98,7 @@ export function operatorRegistrationStatus(row: OperatorRegistrationProgress): O
     const start = row.serviceStartsAt && Number.isFinite(Date.parse(row.serviceStartsAt))
       ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Denver" }).format(new Date(row.serviceStartsAt)) : null;
     return result("paid", "Payment received", `${profile}${start && row.billingState === "pending" ? ` · service starts ${start}` : ""}`,
-      row.state === "activated" ? "No payment follow-up needed." : row.registeredAt && row.ready ? "Operator opens the profile when ready." : "Support confirms the remaining registration checkpoint.",
+      row.state === "activated" ? "No payment follow-up needed." : row.registeredAt && row.ready ? "Verified payment opens the profile automatically; review access if it remains pending." : "Support confirms the remaining registration checkpoint.",
       row.registeredAt && row.ready || row.state === "activated" ? "Operator" : "Support");
   }
   if (!row.requiresInitialPayment && !row.requiresPaymentMethod) return result("complimentary", "Complimentary", `${profile} · no payment required`,

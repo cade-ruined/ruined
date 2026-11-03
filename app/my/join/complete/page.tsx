@@ -45,7 +45,7 @@ export default async function MembershipCheckoutCompletePage() {
           Confirmation in progress.
         </h1>
         <p className="mt-8 max-w-xl text-base leading-relaxed text-[var(--member-muted)]">
-          Stripe is confirming your checkout. Check Membership billing for the confirmed payment status. Your profile opens separately when Ruined releases it.
+          Stripe is confirming your checkout. Check Membership billing for the confirmed payment status. Your profile opens automatically after verified payment and completed registration.
         </p>
         <Link className="mt-10 inline-flex border-b border-[var(--member-rule)] pb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--member-muted)]" href="/my/activate">
           Check membership billing

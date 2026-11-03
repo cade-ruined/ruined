@@ -54,7 +54,7 @@ function sampleOverview(communications: CommunicationItem[] = []): MemberSmsOper
   const call = { eventId: "00000000-0000-4000-8000-000000000002", title: "Foundations 01 — sample call", startsAt: new Date(due.getTime() + 150 * 60000).toISOString(), timeZone: OPERATIONS_TIME_ZONE, foundations01: true };
   const body = memberSmsReminderBody({ memberId: recipient.memberId, kind: "call_reminder", reminderKey: "sample-only", callDetails: { ...call, meetingUrl: "https://meet.google.com/abc-defg-hij" } }, "https://members.example.test");
   return { generatedAt: now.toISOString(), automation: { enabled: false, transportEnabled: false, automationEnabled: false, ready: false, callReady: false, warnings: [], activatedAt: null, state: "disabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates, communications,
-    upcoming: { horizonEnd: new Date(now.getTime() + 14 * 86400000).toISOString(), truncated: false, label: "Fictional sample schedule", currentOptIns: 1, items: [{ id: "sample-upcoming", kind: "call_reminder", reminderKey: "sample-only", recipient, call, dueAt: due.toISOString(), expiresAt: new Date(due.getTime() + 600000).toISOString(), body, source: "forecast", confirmation: "required", confirmationBody: templates[0].body, confirmationStatus: null, blockedReason: null }] },
+    upcoming: { horizonEnd: new Date(now.getTime() + 14 * 86400000).toISOString(), truncated: false, label: "Fictional sample schedule", currentOptIns: 1, eligibleOptIns: 1, items: [{ id: "sample-upcoming", kind: "call_reminder", reminderKey: "sample-only", recipient, call, dueAt: due.toISOString(), expiresAt: new Date(due.getTime() + 600000).toISOString(), body, source: "forecast", confirmation: "required", confirmationBody: templates[0].body, confirmationStatus: null, blockedReason: null }] },
     jobs: { items: [], truncated: false }, history: { nextCursor: null, items: [{ id: "sample-delivery", kind: "opt_in_confirmation", reminderKey: "sample-only", recipient, call: null, createdAt: now.toISOString(), updatedAt: now.toISOString(), status: "accepted", deliveryStatus: "delivered", deliveryUpdatedAt: now.toISOString(), deliveryErrorCode: null, blockedReason: null, messageSid: null, body: templates[0].body, bodySource: "snapshot" }] } };
 }
 
@@ -133,7 +133,14 @@ export default function OperatorSmsOperations({ preview = false, previewCommunic
     <OperatorSmsOneOffComposer open={composerOpen} preview={preview} onClose={() => setComposerOpen(false)} onActivity={() => { setComposerOpen(false); setQuery(""); onNavigate({view:"activity"}); void load(); }} onBusyChange={onComposerBusyChange} />
     {!composerOpen ? <>
     {preview ? <p className={styles.note}>Sample workspace. Names, schedules, and deliveries below are fictional. Nothing is saved or sent.</p> : null}
-    {overview ? <div className={`operator-glass ${styles.readiness}`}><strong>{stateLabel}</strong><p>Checked every five minutes.</p><p>{overview.upcoming.currentOptIns} current {overview.upcoming.currentOptIns === 1 ? "opt-in" : "opt-ins"}.</p></div> : null}
+    {overview ? <div className={`operator-glass ${styles.readiness}`}>
+      <div><strong>{stateLabel}</strong><p>Checked every five minutes.</p></div>
+      <dl className={styles.recipientCounts} aria-label="Text recipients">
+        <div><dt>Eligible opted-in members</dt><dd>{overview.upcoming.eligibleOptIns}</dd></div>
+        <div><dt>Current opt-ins in total</dt><dd>{overview.upcoming.currentOptIns}</dd></div>
+      </dl>
+      <p className={styles.countExplanation}>Eligible members have current paid or complimentary access and an open profile. Each text still checks its audience and sending requirements.</p>
+    </div> : null}
     <nav className={`operator-glass ${styles.nav}`} aria-label="Text views">{([['catalog','Messages'],['upcoming','Upcoming'],['activity','Activity']] as const).map(([value,label]) => <button key={value} type="button" aria-current={section === value ? "page" : undefined} onClick={() => { setQuery(""); onNavigate({view:value}); }}>{label}</button>)}</nav>
     {error ? <div className={styles.error} role="alert"><p>{error}</p>{overview ? <p>Showing the last successfully loaded records. Refresh to check the current state.</p> : null}</div> : null}
     {!overview ? <p role="status" className={styles.note}>{pending ? "Loading text operations…" : "Text records could not be loaded."}</p> : <>

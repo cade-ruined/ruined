@@ -28,7 +28,7 @@ export async function runMemberSmsAutomation(): Promise<MemberSmsAutomationSumma
     try {
       const input = await memberSmsAutomationReminder(sql, job);
       if (input?.kind === "call_reminder" && !await memberSmsConfirmationAccepted(sql, input)) {
-        // Existing explicit v2 consent receives its confirmation only when an
+        // Existing current consent receives its confirmation only when an
         // authorized call becomes due, never as a bulk historical enrollment.
         const confirmation = { ...input, kind: "opt_in_confirmation" as const, reminderKey: `consent:${input.expectedConsentId}` };
         const result = await sendMemberSmsReminder(confirmation, {

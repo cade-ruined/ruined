@@ -40,7 +40,7 @@ const text = node => node == null || typeof node === 'boolean' ? '' : Array.isAr
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const recipient = { memberId: 'member-1', name: 'Alex Example', maskedPhone: '••• ••• 0123', sharedPhone: false };
 const attempt = (patch = {}) => ({ id: 'attempt-1', kind: 'opt_in_confirmation', reminderKey: 'consent:1', recipient, call: null, createdAt: '2026-11-02T19:00:00Z', updatedAt: '2026-11-02T19:00:01Z', status: 'accepted', deliveryStatus: null, deliveryUpdatedAt: null, deliveryErrorCode: null, blockedReason: null, messageSid: null, body: templates[0].body, bodySource: 'snapshot', ...patch });
-const overview = (patch = {}) => ({ generatedAt: '2026-11-02T19:00:00Z', automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: '2026-11-01T00:00:00Z', state: 'enabled', missing: [], schedule: '*/5 * * * *', batchSize: 100 }, templates, communications: [], jobs: { items: [], truncated: false }, upcoming: { items: [], horizonEnd: '2026-11-16T19:00:00Z', truncated: false, label: 'Current eligibility forecast.', currentOptIns: 7 }, history: { items: [attempt()], nextCursor: null }, ...patch });
+const overview = (patch = {}) => ({ generatedAt: '2026-11-02T19:00:00Z', automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: '2026-11-01T00:00:00Z', state: 'enabled', missing: [], schedule: '*/5 * * * *', batchSize: 100 }, templates, communications: [], jobs: { items: [], truncated: false }, upcoming: { items: [], horizonEnd: '2026-11-16T19:00:00Z', truncated: false, label: 'Current eligibility forecast.', currentOptIns: 7, eligibleOptIns: 5 }, history: { items: [attempt()], nextCursor: null }, ...patch });
 const props = (patch = {}) => ({ view: 'catalog', bucket: null, onNavigate() {}, ...patch });
 function button(tree, name) { const value = nodes(expanded(tree)).find(node => node.type === 'button' && text(node) === name); assert.ok(value, `Missing ${name}`); return value; }
 
@@ -78,8 +78,21 @@ test('delivery labels distinguish acceptance, carrier handoff, delivery, failure
   assert.equal(smsDeliveryLabel(attempt({ status: 'blocked', blockedReason: 'phone_suppressed' })).label, 'Blocked');
 });
 
+test('recipient counts distinguish current permissions from eligible members even without upcoming messages', async () => {
+  const h = harness(async () => ({ ok: true, json: async () => overview() }));
+  h.render(props()); await settle();
+  const tree = expanded(h.render(props()));
+  const counts = nodes(tree).find(node => node.type === 'dl' && node.props['aria-label'] === 'Text recipients');
+  assert.ok(counts);
+  assert.deepEqual(nodes(counts).filter(node => node.type === 'dt').map(text), ['Eligible opted-in members', 'Current opt-ins in total']);
+  assert.deepEqual(nodes(counts).filter(node => node.type === 'dd').map(text), ['5', '7']);
+  assert.match(text(tree), /current paid or complimentary access and an open profile/);
+  assert.match(text(tree), /Each text still checks its audience and sending requirements/);
+  h.cleanup();
+});
+
 test('upcoming texts show window, recipient, confirmation dependency and limited forecast caveat', async () => {
-  const data = overview({ upcoming: { items: [{ id: 'next', kind: 'call_reminder', reminderKey: 'call:1', recipient, call: { eventId: 'event-1', title: 'Foundations 01', startsAt: '2026-11-03T22:00:00Z', timeZone: 'America/Denver', foundations01: true }, dueAt: '2026-11-03T19:30:00Z', expiresAt: '2026-11-03T19:40:00Z', body: 'Prepared call text', source: 'forecast', confirmation: 'required', confirmationBody: 'Confirmation first', confirmationStatus: null, blockedReason: null }], horizonEnd: '2026-11-16T19:00:00Z', truncated: true, label: 'Current eligibility forecast.', currentOptIns: 7 } });
+  const data = overview({ upcoming: { items: [{ id: 'next', kind: 'call_reminder', reminderKey: 'call:1', recipient, call: { eventId: 'event-1', title: 'Foundations 01', startsAt: '2026-11-03T22:00:00Z', timeZone: 'America/Denver', foundations01: true }, dueAt: '2026-11-03T19:30:00Z', expiresAt: '2026-11-03T19:40:00Z', body: 'Prepared call text', source: 'forecast', confirmation: 'required', confirmationBody: 'Confirmation first', confirmationStatus: null, blockedReason: null }], horizonEnd: '2026-11-16T19:00:00Z', truncated: true, label: 'Current eligibility forecast.', currentOptIns: 7, eligibleOptIns: 5 } });
   const h = harness(async () => ({ ok: true, json: async () => data }));
   h.render(props({ view: 'upcoming' })); await settle();
   const tree = expanded(h.render(props({ view: 'upcoming' }))), rendered = text(tree);

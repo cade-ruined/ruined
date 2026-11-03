@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { installMemberSmsFundingFixture } from "./helpers/member-sms-funding-fixture.mjs";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { configuration, id, sid, loader, read, sqlFor } from "./helpers/member-sms-fixture.mjs";
@@ -41,6 +42,7 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
   await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
   await db.exec("create table platform_users(auth_user_id uuid primary key); create table people(id uuid primary key)");
   await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
+  await installMemberSmsFundingFixture(db);
   const sql = sqlFor(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true" }, calls = [];
   let failProvider = false, providerErrorCode;
   const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql }, twilio: (account, token, options) => {
@@ -58,7 +60,12 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
     const n = next++, memberId = id(n), person = id(n + 100), destination = phone ?? `+1202555${String(n).padStart(4, "0")}`;
     await db.query("insert into ruined_members(id,person_id,membership_state) values($1,$2,'active')", [memberId, person]);
     await db.query("insert into person_private_profiles values($1,$2)", [person, destination]);
-    await db.query("insert into member_lifecycle values($1,'active')", [memberId]);
+    await db.query("insert into member_lifecycle(member_id,account_state) values($1,'active')", [memberId]);
+    await db.query("insert into people(id) values($1)", [person]);
+    const auth=id(n+2000);
+    await db.query("insert into platform_users(auth_user_id,member_id,person_id) values($1,$2,$3)", [auth,memberId,person]);
+    await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')", [auth]);
+    await db.query("insert into person_email_addresses(person_id,email_normalized,verification_state) values($1,'fixture@example.test','verified')", [person]);
     return { memberId, person, phone: destination, reminderKey: `call:${n}`, kind: "call_reminder" };
   }
   async function consent(m, overrides = {}) {
@@ -83,7 +90,7 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
   });
   await t.test("inactive membership and missing phone fail before any provider work", async () => {
     const inactive = await member(); await consent(inactive);
-    await db.query("update ruined_members set membership_state='ended' where id=$1", [inactive.memberId]);
+    await db.query("update member_lifecycle set billing_state='ended' where member_id=$1", [inactive.memberId]);
     assert.equal((await service.sendMemberSmsReminder(inactive)).reason, "member_inactive");
     const missing = await member(); await consent(missing);
     await db.query("update person_private_profiles set mobile_e164=null where person_id=$1", [missing.person]);
@@ -201,7 +208,7 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
     for (const state of ["provisional", "invited", "active"]) {
       const m = await member(); const consentId = await consent(m);
       await db.query("update ruined_members set membership_state='invited' where id=$1", [m.memberId]);
-      await db.query("update member_lifecycle set account_state=$2 where member_id=$1", [m.memberId, state]);
+      await db.query("update member_lifecycle set account_state=$2,billing_state='pending' where member_id=$1", [m.memberId, state]);
       const input = { ...m, kind: "opt_in_confirmation", expectedConsentId: consentId, reminderKey: `consent:${consentId}` };
       assert.equal((await service.sendMemberSmsReminder(input)).status, "accepted");
       assert.equal((await service.sendMemberSmsReminder(input)).status, "duplicate");

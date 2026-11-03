@@ -128,6 +128,134 @@ export async function reconcileMemberRegistration(tx: TransactionSql, memberId: 
   await tx`select private.ruined_confirm_registration_pricing(${memberId}::uuid)`;
   if (completed) await tx`insert into member_registration_messages(member_id,kind) values(${memberId}::uuid,'welcome')
     on conflict(member_id,kind) do nothing`;
+  await releasePaidMemberProfile(tx, memberId);
+}
+
+export type PaidMemberProfileRelease = {
+  memberId: string; version: number; paymentReservationId: string | null;
+  profileActivatedAt: string | null; eligible: boolean;
+};
+
+async function readPaidMemberProfileRelease(tx: TransactionSql, memberId: string): Promise<PaidMemberProfileRelease | null> {
+  const [row] = await tx<Array<{ memberId: string; version: number | string; paymentReservationId: string | null;
+    profileActivatedAt: Date | string | null; eligible: boolean }>>`
+    select registration.member_id as "memberId",registration.version,
+      private.ruined_member_paid_reservation(registration.member_id) as "paymentReservationId",
+      registration.profile_activated_at as "profileActivatedAt",
+      private.ruined_paid_profile_release_ready(registration.member_id) as eligible
+    from member_registration_access registration
+    join member_lifecycle lifecycle on lifecycle.member_id=registration.member_id
+    where registration.member_id=${memberId}::uuid`;
+  return row ? { ...row, version: Number(row.version), profileActivatedAt: iso(row.profileActivatedAt) } : null;
+}
+
+/** Caller holds funding/member locks. Payment and identity are rechecked after
+ * locking their evidence; release, its provenance, email and audit commit together. */
+async function releasePaidMemberProfile(tx: TransactionSql, memberId: string): Promise<boolean> {
+  const before = await readPaidMemberProfileRelease(tx, memberId);
+  if (!before?.eligible || !before.paymentReservationId) return false;
+  const identity = await tx`
+    select member.id from ruined_members member
+    join people person on person.id=member.person_id and person.status='active'
+    join platform_users account on account.person_id=member.person_id and account.status='active'
+      and (account.member_id is null or account.member_id=member.id) and account.email_normalized=member.email_normalized
+    join platform_role_grants grant_row on grant_row.auth_user_id=account.auth_user_id and grant_row.role_slug='member' and grant_row.revoked_at is null
+    join person_email_addresses email on email.person_id=member.person_id and email.email_normalized=member.email_normalized
+      and email.verification_state='verified' and email.retired_at is null
+    join person_private_profiles profile on profile.person_id=member.person_id
+    join member_onboardings onboarding on onboarding.member_id=member.id and onboarding.profile_completed_at is not null
+    join member_lifecycle lifecycle on lifecycle.member_id=member.id
+    where member.id=${memberId}::uuid and member.deleted_at is null
+    for share of person,account,grant_row,email,profile,onboarding,lifecycle`;
+  if (!identity.length) return false;
+  await tx`select member_id from member_registration_access where member_id=${memberId}::uuid for update`;
+  const payment = await tx`
+    select proof.reservation_id from stripe_membership_prepaid_proofs proof
+    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
+    join membership_commercial_participants participant on participant.reservation_id=reservation.id and participant.member_id=${memberId}::uuid
+    join stripe_checkout_attempts attempt on attempt.id=reservation.id
+    join stripe_membership_commitments contract on contract.id=proof.contract_id
+    join stripe_invoices invoice on invoice.id=proof.stripe_invoice_id
+    join stripe_subscriptions subscription on subscription.id=proof.stripe_subscription_id
+    join member_lifecycle payer on payer.member_id=reservation.payer_member_id
+    where proof.reservation_id=${before.paymentReservationId}::uuid
+    for share of proof,reservation,participant,attempt,contract,invoice,subscription,payer`;
+  if (!payment.length) return false;
+  await tx`select reservation_id from membership_enrollment_episodes
+    where reservation_id=${before.paymentReservationId}::uuid and member_id=${memberId}::uuid for share`;
+  await tx`select checkout.id from stripe_checkout_sessions checkout
+    join stripe_checkout_attempts attempt on attempt.stripe_session_id=checkout.id
+    where attempt.id=${before.paymentReservationId}::uuid for share of checkout`;
+  await tx`select payment.attempt_id from operator_membership_saved_payments payment
+    where payment.attempt_id=${before.paymentReservationId}::uuid for share`;
+  await tx`select authority.id from operator_membership_authorizations authority
+    join stripe_checkout_attempts attempt on attempt.operator_authorization_id=authority.id
+    where attempt.id=${before.paymentReservationId}::uuid for share of authority`;
+  const current = await readPaidMemberProfileRelease(tx, memberId);
+  if (!current?.eligible || current.paymentReservationId !== before.paymentReservationId) return false;
+  const [released] = await tx`update member_registration_access
+    set profile_activated_at=clock_timestamp(),profile_payment_reservation_id=${current.paymentReservationId}::uuid,
+      version=version+1,updated_at=clock_timestamp()
+    where member_id=${memberId}::uuid and profile_activated_at is null returning member_id`;
+  if (!released) return false;
+  await tx`insert into member_registration_messages(member_id,kind) values(${memberId}::uuid,'profile_ready')
+    on conflict(member_id,kind) do nothing`;
+  await tx`insert into operator_audit_events(action,subject_type,subject_id,member_id,before_snapshot,after_snapshot,metadata,dedupe_key)
+    values('member.profile_automatically_activated','member',${memberId},${memberId}::uuid,
+      ${tx.json({ profileActivated: false })},${tx.json({ profileActivated: true, billingChanged: false })},
+      ${tx.json({ source: "verified_membership_payment", paymentReservationId: current.paymentReservationId })},${`registration-payment-activation:${memberId}`})
+    on conflict(dedupe_key) do nothing`;
+  return true;
+}
+
+function selectedMemberIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length<1 || value.length>25 || value.some(id=>typeof id!=="string" || !UUID.test(id))
+    || new Set(value).size!==value.length) throw new MemberRegistrationError(400,"Select 1 to 25 distinct members.");
+  return [...value].sort();
+}
+
+/** Read-only preview for an explicitly selected set; never selects additional members. */
+export async function previewPaidMemberProfileReleases(actor: string, memberIds: string[]): Promise<PaidMemberProfileRelease[]> {
+  const ids=selectedMemberIds(memberIds);
+  return getApplicationDatabase().begin("isolation level repeatable read read only",async tx=>{
+    await requireAdministrator(tx,actor,false);
+    const rows:PaidMemberProfileRelease[]=[];
+    for (const id of ids) {
+      const row=await readPaidMemberProfileRelease(tx,id);
+      if (!row) throw new MemberRegistrationError(404,"A selected registration is unavailable.");
+      rows.push(row);
+    }
+    return rows;
+  });
+}
+
+/** Current version and exact reviewed payment are mandatory for a bounded repair. */
+export async function reconcileSelectedPaidMemberProfileReleases(actor: string,
+  expected: Array<{ memberId: string; version: number; paymentReservationId: string }>): Promise<PaidMemberProfileRelease[]> {
+  if (!Array.isArray(expected) || expected.some(row=>!row || typeof row!=="object" || Array.isArray(row)
+    || Object.keys(row).sort().join(",")!=="memberId,paymentReservationId,version"
+    || !Number.isSafeInteger(row.version) || row.version<1 || typeof row.paymentReservationId!=="string" || !UUID.test(row.paymentReservationId))) {
+    throw new MemberRegistrationError(400,"Use the reviewed registration version and payment.");
+  }
+  const ids=selectedMemberIds(expected.map(row=>row.memberId));
+  return getApplicationDatabase().begin(async tx=>{
+    await tx`set local lock_timeout='3s'`;
+    await tx`set local statement_timeout='10s'`;
+    await requireAdministrator(tx,actor);
+    for (const id of ids) await tx`select private.ruined_lock_member_complimentary_funding(${id}::uuid)`;
+    for (const id of ids) await tx`select id from ruined_members where id=${id}::uuid for update`;
+    const results:PaidMemberProfileRelease[]=[];
+    for (const id of ids) {
+      const reviewed=expected.find(row=>row.memberId===id)!;
+      const current=await readPaidMemberProfileRelease(tx,id);
+      if (!current || current.version!==reviewed.version || current.paymentReservationId!==reviewed.paymentReservationId || !current.eligible) {
+        throw new MemberRegistrationError(409,"A selected registration or payment changed. Review it again.");
+      }
+      if (!await releasePaidMemberProfile(tx,id)) throw new MemberRegistrationError(409,"A selected registration is no longer eligible.");
+      results.push((await readPaidMemberProfileRelease(tx,id))!);
+    }
+    return results;
+  });
 }
 
 async function lockRegistrationMember(tx: TransactionSql, memberId: string) {
@@ -152,12 +280,16 @@ export async function completeMemberRegistration(authUserId: string): Promise<Me
   }
 }
 
-async function requireAdministrator(tx: TransactionSql, actor: string) {
+async function requireAdministrator(tx: TransactionSql, actor: string, lock = true) {
   validId(actor);
-  const [authorized] = await tx`select identity.auth_user_id from platform_users identity
+  const [authorized] = lock ? await tx`select identity.auth_user_id from platform_users identity
     join platform_role_grants grant_row on grant_row.auth_user_id=identity.auth_user_id
       and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
-    where identity.auth_user_id=${actor}::uuid and identity.status='active' for share of identity,grant_row`;
+    where identity.auth_user_id=${actor}::uuid and identity.status='active' for share of identity,grant_row`
+    : await tx`select identity.auth_user_id from platform_users identity
+      join platform_role_grants grant_row on grant_row.auth_user_id=identity.auth_user_id
+        and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
+      where identity.auth_user_id=${actor}::uuid and identity.status='active'`;
   if (!authorized) throw new MemberRegistrationError(403, "Operations administrator access is required.");
 }
 
@@ -363,7 +495,7 @@ export async function activateMemberRegistration(actor: string, memberId: string
 
 /** Runs after provider projection commits, including replays. Acquiring funding
  * locks before member locks avoids inverting the commercial projection order.
- * This records completion and queues one welcome; it never grants profile access.
+ * This records completion and releases a profile only against current verified payment.
  */
 export async function reconcilePaidMemberRegistrations(subscriptionId: string): Promise<void> {
   if (!/^sub_[A-Za-z0-9_]+$/.test(subscriptionId)) return;

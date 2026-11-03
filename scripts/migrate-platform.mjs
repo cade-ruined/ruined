@@ -134,6 +134,7 @@ const migrations = [
   "../db/migrations/20261102160000_operator_task_dismissal.sql",
   "../db/migrations/20261102201731_member_sms_body_snapshot.sql",
   "../db/migrations/20261102231559_member_sms_one_off_reviews.sql",
+  "../db/migrations/20261103021417_member_paid_profile_release.sql",
 ];
 
 function migrationBody(migration, migrationName) {

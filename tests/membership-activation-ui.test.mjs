@@ -246,7 +246,7 @@ test("annual prepaid offer charges the complete year now and renews on its accep
   assert.doesNotMatch(html, /11 further monthly|Eleven further|\$0 today|Nothing is charged today/);
 });
 
-test("persisted prepaid receipt shows paid coverage with future service and keeps the held profile separate", async () => {
+test("persisted prepaid receipt shows paid coverage and automatic profile access before future service", async () => {
   const h = hooks();
   const Component = (await load("src/components/membership/MemberActivation.tsx", { react: h.react, "next/link": Link, "@/components/membership/JoinForm": Stub, "@/components/membership/MembershipCancellation": Stub, "@/lib/membership/pricing": pricing },
     { fetch: async () => ({ ok: true, json: async () => ({ commitment: { startsAt: prepaidSchedule.serviceStartsAt, initialTermEndsAt: prepaidSchedule.initialTermEndsAt, plan: "monthly", installmentDues: 34900, billingSchedule: prepaidSchedule, status: "scheduled", canCancelBeforeStart: true } }) }) })).default;
@@ -255,7 +255,7 @@ test("persisted prepaid receipt shows paid coverage with future service and keep
   assert.match(visible(tree), /first period is paid/);
   assert.match(visible(tree), /Service begins November 5, 2026 at 3:00 PM Mountain Time/);
   assert.match(visible(tree), /December 5, 2026 at 3:00 PM/);
-  assert.match(visible(tree), /profile opens separately when Ruined releases it/);
+  assert.match(visible(tree), /profile opens automatically after verified payment and completed registration/);
   assert.doesNotMatch(visible(tree), /Nothing is charged before|first payment is scheduled/);
 });
 

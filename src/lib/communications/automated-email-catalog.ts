@@ -38,7 +38,7 @@ export function getAutomatedEmailCatalog(): AutomatedEmailWorkflow[] {
       id: "registration",
       title: "Welcome and profile-ready emails",
       ...configurationState(registration),
-      trigger: "A welcome is queued when registration becomes complete. A profile-ready email is queued when an administrator releases the member’s profile access.",
+      trigger: "A welcome is queued when registration becomes complete. A profile-ready email is queued when verified payment automatically opens a completed profile, or an administrator grants access separately.",
       timing: "Once per registration milestone, after its requirements are met. Pending messages are checked every five minutes.",
       recipients: "The registered member at their current verified email address. Registration and profile readiness are checked again before delivery.",
       management: { href: "/ops/registrations", label: "Open registrations" },
