@@ -133,7 +133,9 @@ test("email, information, payment and profile tasks advance one checkpoint at a 
   assert.deepEqual(await f.reconcile(), { created: 1, updated: 0, resolved: 1 });
   const tasks = await f.tasks(member.id), closedPayment = tasks.find(row => row.id === before.id);
   assert.equal(closedPayment.status, "completed"); assert.equal(closedPayment.assigned_to_auth_user_id, member.auth);
-  assert.equal(tasks.find(row => row.status === "open").title, "Grant profile access");
+  const pendingProfile = tasks.find(row => row.status === "open");
+  assert.equal(pendingProfile.title, "Review automatic profile access");
+  assert.match(pendingProfile.description, /Verified payment opens a completed profile automatically/);
   assert.equal((await f.db.query("select progress->>'state' state from member_registration_access where member_id=$1", [member.id])).rows[0].state, "collecting", "queue did not grant access");
   await f.update(member, { profileGranted: true, state: "activated" });
   assert.deepEqual(await f.reconcile(), { created: 0, updated: 0, resolved: 1 });
@@ -219,7 +221,11 @@ test("complimentary members skip payment tasks and shared billing does not ask t
   const f = await fixture(t), comp = await f.member({ paymentExempt: true, requiresInitialPayment: false, requiresPaymentMethod: false, registeredAt: "2026-10-08T12:00:00Z", ready: true });
   const partner = await f.member({ paymentByPartner: true });
   await f.reconcile();
-  assert.equal((await f.tasks(comp.id))[0].task_type, "registration.checkpoint.profile");
+  const [complimentaryProfile] = await f.tasks(comp.id);
+  assert.equal(complimentaryProfile.task_type, "registration.checkpoint.profile");
+  assert.equal(complimentaryProfile.title, "Grant profile access");
+  assert.match(complimentaryProfile.description, /An Administrator opens the profile when ready/);
+  assert.equal((await f.db.query("select progress->>'state' state from member_registration_access where member_id=$1", [comp.id])).rows[0].state, "collecting", "complimentary profile remains held for manual release");
   assert.equal((await f.tasks(partner.id)).length, 0, "only the canonical payer receives a payment obligation");
   await f.update(partner, { profileComplete: false }); await f.reconcile();
   assert.equal((await f.tasks(partner.id))[0].task_type, "registration.checkpoint.information");
