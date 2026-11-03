@@ -202,3 +202,28 @@ test("operator consent enters normal confirmation and permitted-call automation 
   await automation.runMemberSmsAutomation(); assert.equal(sends.length, 2, "no duplicate confirmation or call");
   assert.deepEqual((await f.db.query("select membership_state from ruined_members where id=$1", [m.memberId])).rows, [{ membership_state: "pending" }]);
 });
+
+
+test("transport chooses numeric latest consent across digit boundaries, never the id text output alias", async t => {
+  const f = await fixture(t), accepted = await f.member();
+  await f.db.exec("alter table member_consents alter column id restart with 9");
+  assert.equal(await f.consent(accepted, { version: "membership-reminders-v1" }), "9");
+  await f.db.exec("alter table member_consents alter column id restart with 100");
+  const result = await f.attest(await f.batch([accepted]));
+  assert.equal(result.recorded[0].consentId, "100");
+  // PGlite executes PostgreSQL's output-alias ORDER BY semantics, not a SQL mock.
+  assert.equal((await f.db.query("select id::text from member_consents where member_id=$1 order by id desc limit 1", [accepted.memberId])).rows[0].id, "9");
+  const confirmation = { memberId: accepted.memberId, kind: "opt_in_confirmation", expectedConsentId: "100", reminderKey: "consent:100" };
+  const reservation = await f.repository.reserveMemberSmsAttempt(f.sql, confirmation, "Fixture confirmation");
+  assert.equal(reservation.consentId, "100", "numeric 100 must outrank text-sorted 9");
+  assert.equal((await f.repository.dispatchReservedMemberSms(f.sql, confirmation, reservation, async () => sid(500))).status, "accepted");
+
+  const withdrawn = await f.member();
+  await f.db.exec("alter table member_consents alter column id restart with 99");
+  assert.equal(await f.consent(withdrawn), "99");
+  await f.db.exec("alter table member_consents alter column id restart with 101");
+  assert.equal(await f.consent(withdrawn, { decision: "withdrawn", evidence: { requested: false } }), "101");
+  assert.equal((await f.repository.reserveMemberSmsAttempt(f.sql,
+    { memberId: withdrawn.memberId, kind: "call_reminder", reminderKey: "numeric-order-withdrawal" }, "Fixture call")).reason, "no_current_consent",
+    "numeric 101 withdrawal must outrank old text-sorted 99 acceptance");
+});

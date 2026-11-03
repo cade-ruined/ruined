@@ -43,7 +43,7 @@ async function eligibleMember(tx: TransactionSql, input: MemberSmsReminder, lock
     select id::text, ${acceptedMemberSmsConsentSql(tx, tx`${phone}::text`)} as allowed
     from member_consents sms_decision where member_id=${memberId}::uuid and consent_type='communications'
       and evidence->>'context'=${CONTEXT} and evidence->>'purpose'='membership_updates'
-      and evidence->>'channel'='sms' order by id desc limit 1`;
+      and evidence->>'channel'='sms' order by sms_decision.id desc limit 1`;
   if (!consent?.allowed || (input.expectedConsentId !== undefined && consent.id !== input.expectedConsentId)
     || (confirmation && (!/^[1-9][0-9]*$/.test(input.expectedConsentId ?? "") || input.reminderKey !== `consent:${input.expectedConsentId}`))) return { reason: "no_current_consent" };
   return { phone, consentId: consent.id };
