@@ -2,7 +2,9 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
-import { MEMBER_COMMUNICATION_NOTICE_VERSION, MEMBER_SMS_TERMS_VERSION } from "../membership/member-communication-preferences-model";
+import { MEMBER_COMMUNICATION_NOTICE_VERSION } from "../membership/member-communication-preferences-model";
+import { acceptedMemberSmsConsentSql } from "../membership/member-sms-consent";
+import { lockMemberSmsFunding, memberSmsFundedEligible } from "./member-sms-eligibility";
 import type { MemberSmsBlockedReason, MemberSmsInbound, MemberSmsReminder, MemberSmsSendResult } from "./member-sms-model";
 
 const CONTEXT = "member_communication_preferences_v1";
@@ -22,10 +24,11 @@ async function eligibleMember(tx: TransactionSql, input: MemberSmsReminder, lock
   const confirmation = input.kind === "opt_in_confirmation";
   const [member] = await tx<Array<{ personId: string | null; state: string; deleted: boolean }>>`
     select person_id as "personId",membership_state as state,deleted_at is not null as deleted from ruined_members where id=${memberId}::uuid for no key update`;
-  if (!member || member.deleted || (!confirmation && member.state !== "active")) return { reason: "member_inactive" };
+  if (!member || member.deleted) return { reason: "member_inactive" };
   const [lifecycle] = await tx<Array<{ accountState: string }>>`select account_state as "accountState"
     from member_lifecycle where member_id=${memberId}::uuid for share`;
   if (!lifecycle || !(confirmation ? ["provisional", "invited", "active"] : ["active"]).includes(lifecycle.accountState)) return { reason: "member_inactive" };
+  if (!confirmation && !await memberSmsFundedEligible(tx,memberId)) return { reason: "member_inactive" };
   if (!member.personId) return { reason: "phone_missing" };
   const [profile] = await tx<Array<{ phone: string | null }>>`select mobile_e164 as phone
     from person_private_profiles where person_id=${member.personId}::uuid for share`;
@@ -37,12 +40,8 @@ async function eligibleMember(tx: TransactionSql, input: MemberSmsReminder, lock
   // Inspect the latest decision first. Filtering accepted/v2 before ordering
   // would let an older opt-in override a withdrawal or invalidation.
   const [consent] = await tx<Array<{ id: string; allowed: boolean }>>`
-    select id::text, (decision='accepted' and policy_version=${MEMBER_COMMUNICATION_NOTICE_VERSION}
-      and source='member' and actor_auth_user_id is not null
-      and evidence->>'destination'=${phone} and evidence->>'requested'='true'
-      and evidence->>'action'='sms_checkbox_checked' and evidence->>'marketingConsent'='false'
-      and evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}) as allowed
-    from member_consents where member_id=${memberId}::uuid and consent_type='communications'
+    select id::text, ${acceptedMemberSmsConsentSql(tx, tx`${phone}::text`)} as allowed
+    from member_consents sms_decision where member_id=${memberId}::uuid and consent_type='communications'
       and evidence->>'context'=${CONTEXT} and evidence->>'purpose'='membership_updates'
       and evidence->>'channel'='sms' order by id desc limit 1`;
   if (!consent?.allowed || (input.expectedConsentId !== undefined && consent.id !== input.expectedConsentId)
@@ -62,6 +61,7 @@ export async function reserveMemberSmsAttempt(sql: Sql, input: MemberSmsReminder
     const phone = profile?.phone;
     if (!phone || !phonePattern.test(phone)) return { status: "blocked" as const, reason: "phone_missing" as const };
     await lockPhone(tx, phone);
+    if (input.kind !== "opt_in_confirmation") await lockMemberSmsFunding(tx,input.memberId);
     const gate = await eligibleMember(tx, input, phone);
     if ("reason" in gate) return { status: "blocked" as const, reason: gate.reason };
     if (options.guard && !await options.guard(tx)) return { status: "blocked" as const, reason: "source_ineligible" as const };
@@ -92,6 +92,7 @@ export async function dispatchReservedMemberSms(sql: Sql, input: MemberSmsRemind
     await tx`set local lock_timeout='3s'`;
     await tx`set local statement_timeout='10s'`;
     await lockPhone(tx, reservation.phone);
+    if (input.kind !== "opt_in_confirmation") await lockMemberSmsFunding(tx,input.memberId);
     const gate = await eligibleMember(tx, input, reservation.phone);
     const [attempt] = await tx<Array<{ status: string }>>`select status from private.member_sms_delivery_attempts
       where id=${reservation.attemptId}::uuid for update`;

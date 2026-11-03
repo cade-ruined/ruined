@@ -36,6 +36,39 @@ test("SMS operations enforces current administrator access and makes only read-o
   await assert.rejects(f.view(), error => error.status === 403);
 });
 
+test("recipient counts separate eligible paid or complimentary members from other current permissions", async t => {
+  const f = await fixture(t), funded = await f.member(), unfunded = await f.member(), held = await f.member();
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [unfunded.memberId]);
+  await f.db.query("insert into member_registration_access(member_id) values($1)", [held.memberId]);
+  await f.consent(unfunded); await f.consent(held);
+  const { MEMBER_SMS_OPERATOR_ATTESTATION_VERSION, MEMBER_SMS_OPERATOR_ATTESTATION_ACTION } = f.load("src/lib/membership/member-sms-consent.ts");
+  await f.db.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
+    values($1,'communications',$2,'accepted',$3,'ops',$4,$5)`, [funded.memberId, MEMBER_SMS_OPERATOR_ATTESTATION_VERSION, f.ago(30), f.admin, JSON.stringify({
+    context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "sms", destination: funded.phone,
+    requested: true, marketingConsent: false, action: MEMBER_SMS_OPERATOR_ATTESTATION_ACTION,
+    operatorApproved: true, permissionConfirmed: true, memberAffirmed: false,
+    approvalReference: "isolated-test-approval", permissionStatement: "The member explicitly permitted membership texts to this number.",
+    batchId: id(9000), originalConsentId: null, originalPolicyVersion: null,
+  })]);
+  let result = await f.view();
+  assert.equal(result.upcoming.currentOptIns, 3);
+  assert.equal(result.upcoming.eligibleOptIns, 1);
+  assert.equal(result.upcoming.items.length, 0, "Recipient counts are independent of scheduled messages");
+
+  await f.db.query("update ruined_members set membership_state='pending' where id=$1", [funded.memberId]);
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [funded.memberId]);
+  await f.db.query("insert into member_complimentary_grants(member_id) values($1)", [funded.memberId]);
+  result = await f.view();
+  assert.equal(result.upcoming.currentOptIns, 3);
+  assert.equal(result.upcoming.eligibleOptIns, 1, "Current complimentary funding counts without a paid membership_state");
+
+  await f.consent(funded, { decision: "withdrawn" });
+  result = await f.view();
+  assert.equal(result.upcoming.currentOptIns, 2, "A later member withdrawal supersedes the operator attestation");
+  assert.equal(result.upcoming.eligibleOptIns, 0);
+  assert.ok(f.queries.every(query => !/for\s+(share|update)|ruined_lock_|\b(insert|update|delete)\b/i.test(query)));
+});
+
 test("forecasts follow latest consent, phone, suppression, hold, registration and current event eligibility", async t => {
   const f = await fixture(t), m = await f.member(); await f.consent(m); const e = await f.event();
   assert.equal((await f.view()).upcoming.items.length, 1);

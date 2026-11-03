@@ -5,7 +5,8 @@ import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { memberEligibleForExperienceSnapshot } from "@/lib/platform/experience-member-access";
 import { googleCommunicationLivemode, googleCommunicationUrlFromMetadata } from "@/lib/google/communications";
-import { MEMBER_COMMUNICATION_NOTICE_VERSION, MEMBER_SMS_TERMS_VERSION } from "@/lib/membership/member-communication-preferences-model";
+import { acceptedMemberSmsConsentSql } from "@/lib/membership/member-sms-consent";
+import { memberSmsFundedEligibilitySql } from "./member-sms-eligibility";
 import { requireAdminEmailActor } from "./admin-email-repository";
 import { AdminEmailError } from "./admin-email-model";
 import { readMemberSmsConfiguration } from "./member-sms-config";
@@ -39,7 +40,7 @@ export function parseMemberSmsHistoryCursor(value?: string | null): { createdAt:
 }
 
 type Member = { memberId: string; personId: string; name: string; phone: string; sharedPhone: boolean;
-  consentId: string; acceptedAt: Date | string; membershipState: string; accountState: string; released: boolean; total: number };
+  consentId: string; acceptedAt: Date | string; fundedEligible: boolean; total: number; eligibleTotal: number };
 type Event = { id: string; title: string; startsAt: Date | string; timeZone: string; foundations01: boolean;
   visibility: string; registration_mode: string; circle_id: string | null; block_id: string | null; progression_level_slug: string | null; meetings: unknown[] | null };
 type Attempt = { kind: string; memberId: string; reminderKey: string; consentId: string | null; status: string; deliveryStatus: string | null };
@@ -61,20 +62,18 @@ async function readMembers(tx: TransactionSql): Promise<Member[]> {
   return tx<Member[]>`select member.id as "memberId",member.person_id as "personId",
       coalesce(nullif(btrim(display.display_name),''),'Member') as name,profile.mobile_e164 as phone,
       exists(select 1 from person_private_profiles other where other.mobile_e164=profile.mobile_e164 and other.person_id<>member.person_id) as "sharedPhone",
-      consent.id::text as "consentId",consent.accepted_at as "acceptedAt",member.membership_state as "membershipState",lifecycle.account_state as "accountState",
-      private.ruined_member_profile_released(member.id) as released,count(*) over()::int as total
+      sms_decision.id::text as "consentId",sms_decision.accepted_at as "acceptedAt",
+      ${memberSmsFundedEligibilitySql(tx,tx`member.id`)} as "fundedEligible",count(*) over()::int as total,
+      count(*) filter(where ${memberSmsFundedEligibilitySql(tx,tx`member.id`)}) over()::int as "eligibleTotal"
     from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id=member.id
     join person_private_profiles profile on profile.person_id=member.person_id
     left join person_profiles display on display.person_id=member.person_id
     join lateral(select * from member_consents decision where decision.member_id=member.id and decision.consent_type='communications'
       and decision.evidence->>'context'='member_communication_preferences_v1' and decision.evidence->>'purpose'='membership_updates'
-      and decision.evidence->>'channel'='sms' order by decision.id desc limit 1) consent on true
+      and decision.evidence->>'channel'='sms' order by decision.id desc limit 1) sms_decision on true
     where member.deleted_at is null and lifecycle.account_state in ('provisional','invited','active')
-      and profile.mobile_e164 ~ '^[+][1-9][0-9]{1,14}$' and consent.decision='accepted'
-      and consent.policy_version=${MEMBER_COMMUNICATION_NOTICE_VERSION} and consent.source='member' and consent.actor_auth_user_id is not null
-      and consent.evidence->>'destination'=profile.mobile_e164 and consent.evidence->>'requested'='true'
-      and consent.evidence->>'action'='sms_checkbox_checked' and consent.evidence->>'marketingConsent'='false'
-      and consent.evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}
+      and profile.mobile_e164 ~ '^[+][1-9][0-9]{1,14}$'
+      and ${acceptedMemberSmsConsentSql(tx,tx`profile.mobile_e164`)}
       and not exists(select 1 from private.member_sms_phone_suppressions suppression where suppression.phone_e164=profile.mobile_e164)
     order by member.id limit ${MEMBER_LIMIT + 1}`;
 }
@@ -99,11 +98,12 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
   const horizonEnd = new Date(Date.parse(now) + 7 * 86400_000).toISOString();
   const members = await readMembers(tx);
   const total = members[0]?.total ?? 0;
+  const eligibleOptIns = members[0]?.eligibleTotal ?? 0;
   let truncated = members.length > MEMBER_LIMIT;
   members.splice(MEMBER_LIMIT);
   const items: MemberSmsUpcomingItem[] = [];
   const label = "Forecast for the next seven days, based on current consent and call access. Times are send windows, not promised delivery. The sender checks eligibility again; shared numbers can receive one message per eligible member.";
-  if (!activatedAt) return { items, horizonEnd, truncated, currentOptIns: total, label: "An activation time is required to calculate automatic send windows." };
+  if (!activatedAt) return { items, horizonEnd, truncated, currentOptIns: total, eligibleOptIns, label: "An activation time is required to calculate automatic send windows." };
   const events = await readEvents(tx, now, horizonEnd, activatedAt);
   truncated ||= events.length > EVENT_LIMIT; events.splice(EVENT_LIMIT);
   const memberIds = members.map(member => member.memberId);
@@ -142,7 +142,7 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
   }
   let examined = 0;
   outer: for (const event of events) for (const member of members) {
-    if (member.membershipState !== "active" || member.accountState !== "active" || !member.released) continue;
+    if (!member.fundedEligible) continue;
     const registration = registrationMap.get(`${event.id}:${member.personId}`);
     if ((registration && registration !== "registered") || ((event.registration_mode !== "none" || ["invite_only", "public"].includes(event.visibility)) && registration !== "registered")) continue;
     const input = reminder(member.memberId, member.consentId, event);
@@ -164,7 +164,7 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
   }
   items.sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.id.localeCompare(b.id));
   truncated ||= items.length > UPCOMING_LIMIT;
-  return { items: items.slice(0, UPCOMING_LIMIT), horizonEnd, truncated, currentOptIns: total, label };
+  return { items: items.slice(0, UPCOMING_LIMIT), horizonEnd, truncated, currentOptIns: total, eligibleOptIns, label };
 }
 
 type HistoryRow = { id: string; memberId: string; name: string; phone: string; sharedPhone: boolean; kind: MemberSmsHistoryItem["kind"];

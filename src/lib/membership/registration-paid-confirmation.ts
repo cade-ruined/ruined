@@ -67,7 +67,7 @@ export function registrationPaidConfirmation(payment?: RegistrationPaidMembershi
       ? "Turning off renewal of a prepaid year has no early-exit charge."
       : `After service begins, early exit from the initial monthly commitment costs the lower of ${money(payment.buyoutCapCents)} USD or its remaining unpaid installments, plus any required tax. This replaces those installments; it does not buy access for the rest of the year.`,
     founding: founding ? "Your Founding rate stays with you while your membership remains continuously active. If you leave after service begins, rejoining requires a new eligibility check." : null,
-    profile: "Your registration is complete. Profile access opens separately; we’ll email you when it is ready.",
+    profile: "Your registration is complete. Your profile opens automatically after verified payment; we’ll email your access details.",
     responsibility: couple && !payment.isPayer ? "Your partner authorized and manages the couples payment. This email does not create a separate charge for you." : null,
     calls: schedule.callStartsAt.map(call => date(call, true)),
     firstCall,

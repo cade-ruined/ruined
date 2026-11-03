@@ -149,8 +149,9 @@ test("operators must review the named recipients before activating, with each ro
   assert.equal(f.button("Open profiles & queue email"), undefined);
 });
 
-test("the row's operator action reviews only that ready profile before any release", async () => {
-  const f = await uiFixture();
+test("the row's operator action reviews only that ready complimentary profile before any release", async () => {
+  const f = await uiFixture({ rows: [row(memberA, { completionBasis: "complimentary", requiresPaymentMethod: false,
+    progress: { ...defaultProgress, completionBasis: "complimentary", requiresPaymentMethod: false, paymentConfirmed: false } }), row(memberB)] });
   await f.click("Review profile access");
   const review = nodes(f.render()).find(node => node.props["aria-labelledby"] === "profile-release-review");
   assert.match(text(review), /Cherry Hill · cherry@example.test/);

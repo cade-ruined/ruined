@@ -499,7 +499,7 @@ test("paid registration receipt uses confirmed amount and cohort without claimin
   const props = { email:"paid@example.test", registeredAt:"2026-10-06T18:00:00Z", requiresPaymentMethod:false,
     initialPayment:{amountPaid:37000,installmentDues:34900,plan:"monthly",currency:"usd",offerId:"founding_individual_monthly",billingSchedule:schedule,paidAt:"2026-10-06T18:00:00Z",isPayer:true} };
   const html = renderToStaticMarkup(React.createElement(Receipt, props));
-  for (const phrase of ["$370 paid", "$349 plus applicable tax", "November 5, 2026", "December 5, 2026", "November 5, 2027", "Eleven further monthly installments", "full refund", "$1,500", "Founding rate stays protected", "profile stays closed"]) assert.ok(html.includes(phrase), phrase);
+  for (const phrase of ["$370 paid", "$349 plus applicable tax", "November 5, 2026", "December 5, 2026", "November 5, 2027", "Eleven further monthly installments", "full refund", "$1,500", "Founding rate stays protected", "profile opens automatically"]) assert.ok(html.includes(phrase), phrase);
   assert.doesNotMatch(html, /Nothing has been charged|Your card is saved|complimentary registration|Registering with your partner/);
   const withTax = renderToStaticMarkup(React.createElement(Receipt, {...props,initialPayment:{...props.initialPayment,amountPaid:37518}}));
   assert.match(withTax, /\$375\.18 paid/);

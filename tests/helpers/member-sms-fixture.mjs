@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { taggedSqlBridge } from "./postgres-fragments.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -38,7 +39,7 @@ export function loader(env = {}, overrides = {}) {
   return load;
 }
 export function sqlFor(db) {
-  const sql = async (parts, ...values) => (await db.query(parts.reduce((text, part, i) => text + (i ? `$${i}` : "") + part, ""), values)).rows;
+  const sql = taggedSqlBridge(async (query, values) => (await db.query(query, values)).rows);
   sql.json = JSON.stringify;
   sql.begin = run => db.transaction(tx => run(sqlFor(tx)));
   return sql;

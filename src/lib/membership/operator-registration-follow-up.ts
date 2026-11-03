@@ -40,6 +40,7 @@ export function operatorRegistrationFollowUp(row: OpsMemberRegistration, journey
           : "Ask them to review the price and membership terms, then pay through Stripe. This link also works if they already saved a card.",
         "/my/activate", "Complete your Ruined membership checkout. You'll review the price and membership terms before paying securely through Stripe.");
     case "profile":
+      if (row.progress?.paymentConfirmed) return review("Review automatic profile access", "Verified payment opens a completed profile automatically. Review this registration if access is still pending.");
       return { kind: "release", title: "Review and grant profile access", detail: "When you're ready, review this member and open their profile. The profile-access email is sent automatically after you confirm.", operatorHref };
     case "complete":
       return { kind: "complete", title: "No onboarding follow-up needed", detail: "All five checkpoints are complete and their profile is open.", operatorHref };

@@ -8,7 +8,8 @@ import { AdminEmailError } from "./admin-email-model";
 import { readMemberSmsConfiguration } from "./member-sms-config";
 import { sendMemberSmsReminder } from "./member-sms-service";
 import type { MemberSmsReminder } from "./member-sms-model";
-import { MEMBER_COMMUNICATION_NOTICE_VERSION, MEMBER_SMS_TERMS_VERSION } from "../membership/member-communication-preferences-model";
+import { acceptedMemberSmsConsentSql } from "../membership/member-sms-consent";
+import { memberSmsFundedEligibilitySql } from "./member-sms-eligibility";
 import { isMemberSmsOneOffBody, MemberSmsOneOffError, renderMemberSmsOneOffBody,
   type MemberSmsOneOffConfiguration, type MemberSmsOneOffRecipient, type MemberSmsOneOffReviewResponse,
   type MemberSmsOneOffSearch, type MemberSmsOneOffSendResult } from "./member-sms-one-off-model";
@@ -51,7 +52,7 @@ async function recipients(tx:TransactionSql, memberId:string|null, search:string
   const rows=await tx<Recipient[]>`select member.id as "memberId",member.person_id as "personId",account.auth_user_id as "authUserId",
       member.email_normalized as email,coalesce(nullif(btrim(display.display_name),''),'Member') as name,profile.mobile_e164 as phone,
       exists(select 1 from person_private_profiles other where other.mobile_e164=profile.mobile_e164 and other.person_id<>member.person_id) as "sharedPhone",
-      consent.id::text as "consentId"
+      sms_decision.id::text as "consentId"
     from ruined_members member join people person on person.id=member.person_id and person.status='active'
     join platform_users account on account.person_id=member.person_id and account.status='active'
       and (account.member_id is null or account.member_id=member.id) and account.email_normalized=member.email_normalized
@@ -61,13 +62,10 @@ async function recipients(tx:TransactionSql, memberId:string|null, search:string
     left join person_profiles display on display.person_id=member.person_id
     join lateral(select * from member_consents decision where decision.member_id=member.id and decision.consent_type='communications'
       and decision.evidence->>'context'='member_communication_preferences_v1' and decision.evidence->>'purpose'='membership_updates'
-      and decision.evidence->>'channel'='sms' order by decision.id desc limit 1) consent on true
-    where member.deleted_at is null and member.membership_state='active' and private.ruined_member_profile_released(member.id)
-      and profile.mobile_e164 ~ '^[+][1-9][0-9]{7,14}$' and consent.decision='accepted'
-      and consent.policy_version=${MEMBER_COMMUNICATION_NOTICE_VERSION} and consent.source='member' and consent.actor_auth_user_id is not null
-      and consent.evidence->>'destination'=profile.mobile_e164 and consent.evidence->>'requested'='true'
-      and consent.evidence->>'action'='sms_checkbox_checked' and consent.evidence->>'marketingConsent'='false'
-      and consent.evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}
+      and decision.evidence->>'channel'='sms' order by decision.id desc limit 1) sms_decision on true
+    where ${memberSmsFundedEligibilitySql(tx,tx`member.id`)}
+      and profile.mobile_e164 ~ '^[+][1-9][0-9]{7,14}$'
+      and ${acceptedMemberSmsConsentSql(tx,tx`profile.mobile_e164`)}
       and exists(select 1 from person_email_addresses email where email.person_id=member.person_id and email.email_normalized=member.email_normalized
         and email.verification_state='verified' and email.retired_at is null)
       and not exists(select 1 from private.member_sms_phone_suppressions suppression where suppression.phone_e164=profile.mobile_e164)

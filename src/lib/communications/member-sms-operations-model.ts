@@ -9,22 +9,22 @@ import type { MemberSmsOperationTemplate } from "./member-sms-operations-types";
 export const MEMBER_SMS_OPERATION_RULES = {
   opt_in_confirmation: {
     title: "Text opt-in confirmation",
-    trigger: "A member explicitly opts in to membership texts after automation activation.",
-    audience: "Members with current, supported SMS consent for their present phone number.",
+    trigger: "A member opts in, or an administrator records the member’s explicit permission, after automatic texts are enabled.",
+    audience: "Members with current text permission for their present phone number.",
     timing: `Within ${MEMBER_SMS_AUTOMATION_LOOKBACK_MINUTES} minutes of a new opt-in, checked every five minutes. Older consent is confirmed only when an eligible call reminder becomes due.`,
     noticeMinutes: null,
   },
   call_reminder: {
     title: "Standard call reminder",
     trigger: "An eligible published call with a working Google Meet link enters its reminder window.",
-    audience: "Active members with released profile access, current SMS consent, and access to that call.",
+    audience: "Members with current paid or complimentary access, an open profile, current text permission, and access to that call.",
     timing: `${MEMBER_SMS_CALL_NOTICE_MINUTES} minutes before the call, checked every five minutes. The send window expires after ${MEMBER_SMS_AUTOMATION_LOOKBACK_MINUTES} minutes.`,
     noticeMinutes: MEMBER_SMS_CALL_NOTICE_MINUTES,
   },
   foundations_01: {
     title: "Foundations 01 reminder",
     trigger: "A published call explicitly assigned to Foundations 01, with invite-only visibility, internal registration, and a working Google Meet link, enters its reminder window.",
-    audience: "Active members with released profile access, current SMS consent, and confirmed registration and access to that Foundations 01 call.",
+    audience: "Members with current paid or complimentary access, an open profile, current text permission, and confirmed registration and access to that Foundations 01 call.",
     timing: `${MEMBER_SMS_FOUNDATIONS_01_NOTICE_MINUTES} minutes (2½ hours) before the call, checked every five minutes. The send window expires after ${MEMBER_SMS_AUTOMATION_LOOKBACK_MINUTES} minutes.`,
     noticeMinutes: MEMBER_SMS_FOUNDATIONS_01_NOTICE_MINUTES,
   },

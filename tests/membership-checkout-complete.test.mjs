@@ -40,7 +40,7 @@ test("existing members preserve payment confirmation and activated home behavior
   const html = renderToStaticMarkup(await pending.page());
   assert.match(html, /Stripe is confirming your checkout/);
   assert.match(html, /Returning from Checkout does not itself confirm payment or open profile access/);
-  assert.match(html, /Your profile opens separately when Ruined releases it/);
+  assert.match(html, /Your profile opens automatically after verified payment and completed registration/);
   assert.match(html, /href="\/my\/activate"/);
   const active = await fixture({ billingState: "active" });
   await assert.rejects(active.page, error => error.href === "/my");

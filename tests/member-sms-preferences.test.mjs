@@ -7,6 +7,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { NextResponse } from "next/server.js";
 import ts from "typescript";
 import { json, serializeJsonBindings } from "./helpers/postgres-json-bindings.mjs";
+import { taggedSqlBridge } from "./helpers/postgres-fragments.mjs";
 
 const require = createRequire(import.meta.url);
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -19,11 +20,26 @@ function load(path, dependencies = {}, globals = {}) {
   return mod.exports;
 }
 const model = load("src/lib/membership/member-communication-preferences-model.ts");
-const preferences = load("src/lib/membership/member-communication-preferences.ts", { "server-only": {}, "node:crypto": crypto, "./member-communication-preferences-model": model });
+const smsConsent = load("src/lib/membership/member-sms-consent.ts", { "./member-communication-preferences-model": model });
+const preferences = load("src/lib/membership/member-communication-preferences.ts", { "server-only": {}, "node:crypto": crypto, "./member-communication-preferences-model": model, "./member-sms-consent": smsConsent });
 function bridge(client) {
-  const sql = async (strings, ...values) => (await client.query(strings.reduce((query, part, index) => query + (index ? `$${index}` : "") + part, ""), serializeJsonBindings(strings, values))).rows;
+  const sql = taggedSqlBridge(async (query, values, strings) => (await client.query(query, serializeJsonBindings(strings, values))).rows);
   sql.json = json; sql.begin = callback => client.transaction(tx => callback(bridge(tx))); return sql;
 }
+test("preference SQL bridge keeps nested queries lazy and preserves JSON parameter types", async t => {
+  const pg = new PGlite(); t.after(() => pg.close());
+  let executions = 0;
+  const sql = bridge({ query: (...args) => { executions++; return pg.query(...args); } });
+  const label = sql`${sql`${"sms"}`}::text`;
+  const explicitJson = sql`${sql.json({ destination: "+12025550123", requested: true })}`;
+  const inferredJson = sql`${{ channel: "sms", requested: false }}`;
+  const query = sql`select ${label} as label, ${explicitJson}::jsonb as explicit, ${inferredJson}::jsonb as inferred, ${17}::int as tail`;
+  assert.equal(executions, 0, "Building nested fragments must not execute them");
+  const expected = [{ label: "sms", explicit: { destination: "+12025550123", requested: true }, inferred: { channel: "sms", requested: false }, tail: 17 }];
+  assert.deepEqual(await query, expected);
+  assert.deepEqual(await query, expected);
+  assert.equal(executions, 1, "Reusing an awaited query must not execute it twice");
+});
 async function fixture(t) {
   const pg = new PGlite(); t.after(() => pg.close());
   await pg.exec(`create schema private; create role anon; create role authenticated;

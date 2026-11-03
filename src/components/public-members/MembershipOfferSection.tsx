@@ -60,7 +60,7 @@ export default function MembershipOfferSection({ plan, onPlanChange, mode, disab
           ? registrationOnly ? <><strong>$0 today.</strong> Save a card to complete registration. Profiles open later by email. You’ll review and confirm payment separately before paid membership begins.</> : <><strong>$0 today.</strong> Saving a card is optional. No charge or active membership until you review your offer and explicitly confirm payment.</>
           : <><strong>Free to join the waitlist.</strong> Paid membership begins only if you choose to join when it opens.</>}
       </p>
-      {prepaidRegistration ? <p>Cancel before service begins for a full refund, including tax. Your profile opens separately by email.</p> : null}
+      {prepaidRegistration ? <p>Cancel before service begins for a full refund, including tax. Your completed profile opens automatically after verified payment.</p> : null}
       <p><strong>12-month initial commitment.</strong> Monthly early exit costs the lower of $1,500 or the remaining unpaid installments, replacing those installments.</p>
     </div>
 

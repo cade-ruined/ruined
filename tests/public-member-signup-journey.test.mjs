@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import Stripe from "stripe";
 import ts from "typescript";
+import { taggedSqlBridge } from "./helpers/postgres-fragments.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const requirePackage = createRequire(new URL("../package.json", import.meta.url));
@@ -34,10 +35,9 @@ class OfflineStripe extends Stripe {
 }
 
 function sqlFor(engine) {
-  const sql = async (strings, ...values) => {
-    const text = strings.reduce((result, part, index) => result + (index ? `$${index}` : "") + part, "");
+  const sql = taggedSqlBridge(async (text, values) => {
     return (await engine.query(text, values.map(value => value instanceof Date ? value.toISOString() : value))).rows;
-  };
+  });
   sql.json = value => JSON.stringify(value);
   sql.begin = callback => engine.transaction(transaction => callback(sqlFor(transaction)));
   return sql;

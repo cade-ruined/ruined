@@ -95,6 +95,7 @@ export type MemberSmsOperationsOverview = {
     truncated: boolean;
     label: string;
     currentOptIns: number;
+    eligibleOptIns: number;
   };
   jobs: { items: MemberSmsOperationJob[]; truncated: boolean };
   oneOffRequests?: { items: MemberSmsOneOffRequestRecord[]; truncated: boolean };
