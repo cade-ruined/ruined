@@ -223,9 +223,9 @@ test("complimentary members skip payment tasks and shared billing does not ask t
   await f.reconcile();
   const [complimentaryProfile] = await f.tasks(comp.id);
   assert.equal(complimentaryProfile.task_type, "registration.checkpoint.profile");
-  assert.equal(complimentaryProfile.title, "Grant profile access");
-  assert.match(complimentaryProfile.description, /An Administrator opens the profile when ready/);
-  assert.equal((await f.db.query("select progress->>'state' state from member_registration_access where member_id=$1", [comp.id])).rows[0].state, "collecting", "complimentary profile remains held for manual release");
+  assert.equal(complimentaryProfile.title, "Review automatic profile access");
+  assert.match(complimentaryProfile.description, /Current complimentary membership opens a completed profile/);
+  assert.equal((await f.db.query("select progress->>'state' state from member_registration_access where member_id=$1", [comp.id])).rows[0].state, "collecting", "task reconciliation only reports registration evidence; it does not release profiles");
   assert.equal((await f.tasks(partner.id)).length, 0, "only the canonical payer receives a payment obligation");
   await f.update(partner, { profileComplete: false }); await f.reconcile();
   assert.equal((await f.tasks(partner.id))[0].task_type, "registration.checkpoint.information");

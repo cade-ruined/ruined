@@ -149,17 +149,15 @@ test("operators must review the named recipients before activating, with each ro
   assert.equal(f.button("Open profiles & queue email"), undefined);
 });
 
-test("the row's operator action reviews only that ready complimentary profile before any release", async () => {
+test("the complimentary row explains automatic access without launching a manual profile release", async () => {
   const f = await uiFixture({ rows: [row(memberA, { completionBasis: "complimentary", requiresPaymentMethod: false,
     progress: { ...defaultProgress, completionBasis: "complimentary", requiresPaymentMethod: false, paymentConfirmed: false } }), row(memberB)] });
-  await f.click("Review profile access");
-  const review = nodes(f.render()).find(node => node.props["aria-labelledby"] === "profile-release-review");
-  assert.match(text(review), /Cherry Hill · cherry@example.test/);
-  assert.doesNotMatch(text(review), /Alex Rivera/);
+  const article=nodes(f.render()).find(node=>node.type==="article" && text(node).includes("Cherry Hill"));
+  assert.match(text(article), /Review automatic profile access/);
+  assert.match(text(article), /Current complimentary membership opens a completed profile automatically/);
+  assert.equal(f.button("Review profile access"),undefined);
+  assert.equal(nodes(f.render()).find(node=>node.props["aria-labelledby"]==="profile-release-review"),undefined);
   assert.deepEqual(f.calls, []);
-  await f.click("Open profiles & queue email");
-  assert.equal(f.calls.length, 1);
-  assert.equal(f.calls[0].url, `/api/ops/members/${memberA}/registration`);
 });
 
 test("registrations show exact member links and operator instructions instead of internal paths", async () => {

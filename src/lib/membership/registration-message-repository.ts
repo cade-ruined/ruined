@@ -110,7 +110,8 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
           and registration.completion_basis in ('saved_card','complimentary','paid_membership')
           and exists(select 1 from person_email_addresses email where email.person_id=member.person_id
             and email.email_normalized=member.email_normalized and email.verification_state='verified' and email.retired_at is null)
-          and case when message.kind='welcome' then (registration.profile_activated_at is null or registration.profile_payment_reservation_id is not null)
+          and case when message.kind='welcome' then (registration.profile_activated_at is null or registration.profile_payment_reservation_id is not null
+              or registration.profile_complimentary_grant_id is not null or registration.profile_operator_grant_id is not null)
             when message.kind='profile_ready' then registration.profile_activated_at is not null else true end,false) as eligible
       from member_registration_messages message
       left join ruined_members member on member.id=message.member_id
