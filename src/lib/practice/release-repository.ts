@@ -146,7 +146,7 @@ export async function reviewPracticeDeckRelease(actor: string, course: unknown):
   });
   const title = course === "f2" ? "Foundations 2" : "Foundations 3";
   return { token: review.token, kind: "deck", title, course, eligible: 0, excluded: 0, expiresAt: review.expiresAt.toISOString(), subject: title + " · Release the deck",
-    text: "Make the complete supporting deck available in members’ Practice center after this call.\n\nThe assignment remains to be announced. This action does not send a recap email, award a badge, or create an assignment." };
+    text: "Make the complete supporting deck available in The Work after this call.\n\nThe assignment remains to be announced. This action does not send a recap email, award a badge, or create an assignment." };
 }
 export async function releasePracticeDeck(actor: string, token: unknown) {
   if (typeof token !== "string" || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(token)) throw new AdminEmailError(400, "Review this deck release first.");

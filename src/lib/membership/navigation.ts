@@ -7,7 +7,7 @@ export const MEMBER_DESTINATIONS = [
   { href: "/my/timeline", label: "Timeline", group: "Your record", keywords: "public moments story reflections draft" },
   { href: "/my/circle", label: "Circle", group: "Your membership", keywords: "people shaper chat google meet group" },
   { href: "/my/experiences", label: "Calendar", group: "Your membership", keywords: "events experiences calendar meetings calls rsvp attend" },
-  { href: "/my/practice", label: "Practice", group: "Your membership", keywords: "foundations monthly time assignment progress course reflection MY 168" },
+  { href: "/my/practice", label: "The Work", group: "Your membership", keywords: "practice foundations monthly time assignment progress course reflection MY 168" },
   { href: "/my/learn", label: "Academy", group: "Your membership", keywords: "learn training videos library lessons courses" },
   { href: "/my/updates", label: "Updates", group: "Your membership", keywords: "notifications announcements unread messages inbox" },
   { href: "/my/profile", label: "Edit profile", group: "Your account", keywords: "photo portrait name bio privacy visibility location timezone" },
@@ -30,7 +30,7 @@ export function findMemberDestinations(query: string) {
 export const MEMBER_PRIMARY_DESTINATIONS = [
   { href: "/my", label: "Profile", icon: "person" },
   { href: "/my/circle", label: "My Circle", icon: "circle" },
-  { href: "/my/practice", label: "Practice", icon: "book" },
+  { href: "/my/practice", label: "The Work", icon: "book" },
   { href: "/my/experiences", label: "Calendar", icon: "calendar" },
 ] as const;
 

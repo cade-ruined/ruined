@@ -28,7 +28,7 @@ export async function authorizePracticeDeck(rawCourse: string): Promise<DeckAcce
     return { allowed: false, status: 404 };
   }
   const course = rawCourse as PracticeCourse;
-  const context = await getMembershipPageContext(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Practice");
+  const context = await getMembershipPageContext(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "The Work");
   if (context.state === "signed_out") return { allowed: false, status: 401 };
   if (!context.data || !["authenticated", "preview"].includes(context.state)) return { allowed: false, status: 403 };
   const ownerId = context.state === "authenticated" ? context.viewer?.authUserId : null;

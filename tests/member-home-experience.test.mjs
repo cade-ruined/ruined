@@ -30,7 +30,7 @@ new Function("require", "module", "exports", compiled)((name) => {
   if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: ({badges}) => React.createElement("div", {"data-earned-badges": true}, badges.map(badge => React.createElement("span", {key:badge.key}, badge.label))) };
   if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: ({variant}) => React.createElement("section", {"data-profile-install": variant}, "Install Ruined") };
   if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: JournalStub };
-  if (name === "@/components/membership/MemberPracticeCard") return { __esModule: true, default: ({ ownerId }) => React.createElement("a", { href: "/my/practice", "data-practice-owner": ownerId }, "Practice") };
+  if (name === "@/components/membership/MemberPracticeCard") return { __esModule: true, default: ({ ownerId }) => React.createElement("a", { href: "/my/practice", "data-practice-owner": ownerId }, "The Work") };
   if (name === "@/components/membership/MemberWelcome") return { __esModule: true, default: WelcomeStub };
   if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
   if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }) };
@@ -214,7 +214,7 @@ function interactiveProfile(hash = "#journal", props = {}) {
     if (name === "@/components/membership/MemberBadges") return { __esModule: true, default: () => null };
     if (name === "@/components/membership/InstallRuined") return { __esModule: true, default: () => null };
     if (name === "@/components/membership/MemberJournal") return { __esModule: true, default: Journal };
-    if (name === "@/components/membership/MemberPracticeCard") return { __esModule: true, default: ({ ownerId }) => React.createElement("a", { href: "/my/practice", "data-practice-owner": ownerId }, "Practice") };
+    if (name === "@/components/membership/MemberPracticeCard") return { __esModule: true, default: ({ ownerId }) => React.createElement("a", { href: "/my/practice", "data-practice-owner": ownerId }, "The Work") };
   if (name === "@/components/membership/MemberWelcome") return { __esModule: true, default: WelcomeStub };
     if (name === "@/components/membership/MemberPortraitState") return { useMemberPortrait: avatarUrl => ({ avatarUrl }) };
     if (name === "@/lib/membership/access-policy") return { memberCan: (access, capability) => access.capabilities.includes(capability) };
