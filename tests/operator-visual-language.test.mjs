@@ -80,8 +80,8 @@ test("operator navigation and member records avoid stacked utility rails and div
   assert.match(memberRecord, /Member record actions/);
   const disclosures = [...memberRecord.matchAll(/<details\b[\s\S]*?<\/details>/g)].map(match => match[0]);
   assert.deepEqual(disclosures.map(disclosure => disclosure.match(/aria-labelledby="([^"]+)"/)?.[1]),
-    ["member-next-step-guidance", "member-service-details", "member-state-details"],
-    "only next-step explanation, secondary service setup and diagnostic states use disclosure");
+    ["member-next-step-guidance", "member-service-details", "member-state-details", "member-deletion-heading"],
+    "next-step explanation, service setup, diagnostic states and permanent deletion use disclosure");
   assert.match(disclosures[1], /open=\{!registration\}/, "service setup stays open when no canonical registration checkpoints exist");
   for (const disclosure of disclosures) assert.doesNotMatch(disclosure, /OperatorMemberCheckpoints|new-member-task|new-member-note|OperatorOverrideAction|<Link/,
     "the five checkpoints and work actions remain visible outside disclosures");

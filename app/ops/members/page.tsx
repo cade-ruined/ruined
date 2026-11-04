@@ -8,6 +8,7 @@ import OperatorMemberDirectory from "@/components/platform/OperatorMemberDirecto
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorPeopleWorkspace from "@/components/platform/OperatorPeopleWorkspace";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
+import { normalizeOperatorMemberArchive, normalizeOperatorMemberSort, sortOperatorMembers } from "@/lib/platform/operator-member-directory";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { getOperatorPageContext } from "@/lib/platform/page-data";
 import { getPendingMemberInvitations, type PendingMemberInvitationPage } from "@/lib/platform/ops-member-invitation-repository";
@@ -40,13 +41,29 @@ function requestedFilter(value: string | undefined): OperatorMemberDirectoryFilt
 
 function previewDirectory(
   members: OperatorMemberSummary[],
-  input: { filter?: string; page?: number; query?: string },
+  input: { filter?: string; page?: number; query?: string; sort?: string; archive?: string },
 ): OperatorMemberDirectoryPage {
   const filter = requestedFilter(input.filter);
   const query = (input.query ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   const needle = query.toLowerCase();
-  const pageSize = 25;
-  const matches = members.filter((member) => {
+  const sort = normalizeOperatorMemberSort(input.sort);
+  const archive = normalizeOperatorMemberArchive(input.archive);
+  // Preview-only examples demonstrate each sort without reading or changing real members.
+  const previewMembers = members.map((member, index): OperatorMemberSummary => {
+    const createdAt = member.createdAt ?? ["2026-10-01T15:00:00Z", "2026-10-15T15:00:00Z", "2026-11-03T15:00:00Z", "2026-09-01T15:00:00Z"][index % 4];
+    const complete = member.billingState === "active";
+    const information = member.accountState !== "invited";
+    return { ...member, createdAt, registration: member.registration ?? {
+      state: complete ? "activated" : "collecting", registeredAt: complete ? createdAt : null,
+      profileComplete: information, ready: complete, requiresInitialPayment: true, requiresPaymentMethod: true,
+      completionBasis: complete ? "paid_membership" : null, emailVerified: true,
+      paymentMethodState: information ? "saved" : "missing", paymentConfirmed: complete,
+      billingArranged: complete, billingState: member.billingState, serviceStartsAt: complete ? "2026-11-05T22:00:00Z" : null,
+      profileGranted: complete,
+    } };
+  });
+  const matches = previewMembers.filter((member) => {
+    if (archive === "current" && member.archivedAt || archive === "archived" && !member.archivedAt) return false;
     const matchesFilter = filter === "all"
       || (filter === "attention" && (
         member.billingState === "attention_required"
@@ -60,15 +77,15 @@ function previewDirectory(
     return [member.name, member.email, member.circleName ?? "", member.blockName ?? ""]
       .some((value) => value.toLowerCase().includes(needle));
   });
-  const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
-  const page = Math.min(input.page ?? 1, pageCount);
-  const offset = (page - 1) * pageSize;
   return {
     filter,
-    members: matches.slice(offset, offset + pageSize),
-    page,
-    pageCount,
-    pageSize,
+    sort,
+    archive,
+    canViewArchived: true,
+    members: sortOperatorMembers(matches, sort),
+    page: 1,
+    pageCount: 1,
+    pageSize: Math.max(1, matches.length),
     query,
     totalResults: matches.length,
   };
@@ -87,7 +104,8 @@ export default async function OperationsMembersPage({
 
   const input = {
     filter: firstSearchValue(params.filter),
-    page: requestedPage(firstSearchValue(params.page)),
+    sort: firstSearchValue(params.sort),
+    archive: firstSearchValue(params.archive),
     query: firstSearchValue(params.q),
   };
   let directory: OperatorMemberDirectoryPage | null = null;
@@ -118,7 +136,7 @@ export default async function OperationsMembersPage({
     try { directInvitations = await getOpsDirectInvitations(context.viewer.authUserId, { query: firstSearchValue(params.directInvitationQ), page: requestedPage(firstSearchValue(params.directInvitationPage)) }); }
     catch (error) { console.error("Direct invitations could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" }); }
   }
-  const directoryParams = { q: directory.query, filter: directory.filter, page: String(directory.page) };
+  const directoryParams = { q: directory.query, filter: directory.filter, sort: directory.sort ?? "alphabetical", archive: directory.archive ?? "current" };
   const actions = context.role === "ops_admin" && (context.state === "preview" || context.viewer)
     ? <OperatorMemberInvitations data={pendingInvitations} directoryParams={directoryParams} preview={context.state === "preview"} showAdd={false} />
     : undefined;

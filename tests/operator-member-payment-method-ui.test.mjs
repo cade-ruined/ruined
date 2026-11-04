@@ -128,7 +128,7 @@ test("member record exposes card setup only to administrators and carries target
     "@/components/platform/OperatorMemberCheckout": { __esModule: true, default: Checkout },
     "@/components/platform/OperatorSavedMemberPayment": { __esModule: true, default: () => null },
   };
-  for (const name of ["OperatorMemberDeleteAction", "OperatorMemberCheckpoints", "CirclePlacementRecommendations", "OperatorPageFrame", "OperatorMemberSetup", "OperatorProfileSupport", "OperatorProgress", "OperatorMemberAvatar", "OperatorMemberReferrals", "OperatorMemberWorkspace", "StateLabel"]) deps[`@/components/platform/${name}`] = { __esModule: true, default: blank };
+  for (const name of ["OperatorMemberArchiveAction", "OperatorMemberDeleteAction", "OperatorMemberCheckpoints", "CirclePlacementRecommendations", "OperatorPageFrame", "OperatorMemberSetup", "OperatorProfileSupport", "OperatorProgress", "OperatorMemberAvatar", "OperatorMemberReferrals", "OperatorMemberWorkspace", "StateLabel"]) deps[`@/components/platform/${name}`] = { __esModule: true, default: blank };
   const Record = load("src/components/platform/OperatorMemberRecord.tsx", deps).default;
   const record = load("src/lib/platform/ops-preview.ts").getPreviewOpsMemberRecord("preview-01");
   for (const role of ["ops_admin", "ops_support", "circle_leader", "guide"]) {

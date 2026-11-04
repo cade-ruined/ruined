@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -18,6 +19,7 @@ function load(path, dependencies = {}, request = noNetwork) {
   } }).outputText;
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", "fetch", "FormData", output)((name) => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "next/link") return link;
     if (name === "@/components/platform/CirclePlacementRecommendations" || name === "@/components/platform/CirclePlacementReviewQueue") return { __esModule: true, default: () => null };
@@ -456,8 +458,7 @@ function directoryHarness(role = "ops_admin", rows = []) {
     assert.match(statement, /\? = 'ops_admin'[\s\S]*or exists[\s\S]*circle_staff_assignments[\s\S]*member_assignment\.member_id = member\.id/);
     assert.ok(parameters.includes(role), "normal role scope is preserved alongside the exact-ID restriction");
     if (statement.includes("select count(*)")) return [{ total_results: rows.length }];
-    assert.match(statement, /limit \?[\s\S]*offset \?/);
-    assert.deepEqual(parameters.slice(-2), [25, 0]);
+    assert.doesNotMatch(statement, /offset \?/);
     return rows;
   };
   sql.begin = async (mode, callback) => {
@@ -482,7 +483,7 @@ function directoryHarness(role = "ops_admin", rows = []) {
   return { lookup: repository.getOperatorMemberDirectoryPage, queries, progressReads };
 }
 
-test("exact member directory lookup preserves permission predicates, pagination and lifecycle fields", async () => {
+test("exact member directory lookup preserves permission predicates and lifecycle fields", async () => {
   const row = {
     member_id: member.memberId, display_name: member.name, email: member.email,
     account_state: "suspended", billing_state: "active", program_state: "paused",
@@ -496,7 +497,7 @@ test("exact member directory lookup preserves permission predicates, pagination 
   assert.equal(result.members[0].accountState, "suspended");
   assert.equal(result.members[0].programState, "paused");
   assert.match(getCirclePlacementIssue(result.members[0]), /currently suspended.*currently paused/);
-  assert.equal(admin.queries.length, 3);
+  assert.equal(admin.queries.length, 2);
   assert.deepEqual(admin.progressReads, [{ actor: "admin-fixture", memberIds: [member.memberId] }]);
   const scoped = directoryHarness("circle_leader", []);
   assert.deepEqual((await scoped.lookup("shaper-fixture", { memberId: member.memberId })).members, []);

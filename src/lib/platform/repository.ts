@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizeOperatorMemberArchive, normalizeOperatorMemberSort, sortOperatorMembers, type OperatorMemberArchiveView, type OperatorMemberDirectorySort } from "@/lib/platform/operator-member-directory";
 import { readOperatorRegistrationProgress } from "@/lib/membership/registration-repository";
 
 import {
@@ -38,6 +39,9 @@ export type OperatorMemberDirectoryFilter =
   | "unassigned";
 
 export type OperatorMemberDirectoryPage = {
+  sort?: OperatorMemberDirectorySort;
+  archive?: OperatorMemberArchiveView;
+  canViewArchived?: boolean;
   filter: OperatorMemberDirectoryFilter;
   members: OperatorMemberSummary[];
   page: number;
@@ -668,6 +672,8 @@ export async function getOperatorRole(authUserId: string): Promise<OperatorRole 
 }
 
 type OperatorMemberRow = {
+  created_at?: Date | string | null;
+  archived_at?: Date | string | null;
   complimentary_funded?: boolean;
   operator_funded?: boolean;
   shared_billing_state?: BillingState | null;
@@ -690,14 +696,14 @@ type OperatorMemberRow = {
   program_state: ProgramState;
 };
 
-const OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE = 25;
-
 function operatorMemberSummary(
   row: OperatorMemberRow,
   includeOperationalContact = true,
 ): OperatorMemberSummary {
   const foundationsProgress = Math.min(100, Math.max(0, Number(row.foundations_progress ?? 0)));
   return {
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    archivedAt: row.archived_at ? new Date(row.archived_at).toISOString() : null,
     ...(row.membership_state ? { membershipState: row.membership_state } : {}),
     membershipFunding: row.operator_funded ? "operator" : row.complimentary_funded ? "complimentary" : row.shared_billing_state ? "couple" : "self",
     administrativeOnboardingState: row.administrative_onboarding_state,
@@ -742,17 +748,14 @@ function normalizeOperatorMemberDirectoryFilter(
   return "all";
 }
 
-function normalizeOperatorMemberDirectoryPage(page: number | undefined): number {
-  if (!Number.isSafeInteger(page) || !page || page < 1) return 1;
-  return page;
-}
-
 export async function getOperatorMemberDirectoryPage(
   authUserId: string,
   input: {
     filter?: string;
     memberId?: string;
     page?: number;
+    sort?: string;
+    archive?: string;
     query?: string;
   } = {},
 ): Promise<OperatorMemberDirectoryPage | null> {
@@ -762,7 +765,7 @@ export async function getOperatorMemberDirectoryPage(
   const memberId = input.memberId ?? null;
   const filter = normalizeOperatorMemberDirectoryFilter(input.filter);
   const query = (input.query ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
-  const requestedPage = normalizeOperatorMemberDirectoryPage(input.page);
+  const sort = normalizeOperatorMemberSort(input.sort);
 
   return sql.begin("isolation level repeatable read read only", async (tx) => {
     const roleRows = await tx<Array<{ role_slug: OperatorRole }>>`
@@ -783,83 +786,13 @@ export async function getOperatorMemberDirectoryPage(
     `;
     const role = roleRows[0]?.role_slug;
     if (!role) return null;
-
-    const countRows = await tx<Array<{ total_results: number | string }>>`
-      select count(*) as total_results
-      from ruined_members member
-      join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
-      left join platform_users platform_user on platform_user.member_id = member.id
-      left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
-      left join person_profiles person_profile on person_profile.person_id = member.person_id
-      left join person_private_profiles private_profile
-        on private_profile.person_id = member.person_id and ${role} = 'ops_admin'
-      left join lateral (
-        select assignment.circle_id
-        from circle_member_assignments assignment
-        where assignment.member_id = member.id and assignment.ended_at is null
-        order by assignment.assigned_at desc
-        limit 1
-      ) active_circle on true
-      left join circles circle on circle.id = active_circle.circle_id
-      left join block_circle_assignments block_assignment
-        on block_assignment.circle_id = active_circle.circle_id
-        and block_assignment.ended_at is null
-      left join membership_blocks membership_block
-        on membership_block.id = block_assignment.block_id
-      where (
-        ${role} = 'ops_admin'
-        or exists (
-          select 1
-          from circle_staff_assignments staff_assignment
-          join circle_member_assignments member_assignment
-            on member_assignment.circle_id = staff_assignment.circle_id
-            and member_assignment.member_id = member.id
-            and member_assignment.ended_at is null
-          where staff_assignment.auth_user_id = ${authUserId}::uuid
-            and staff_assignment.ended_at is null
-        )
-      )
-        and (${memberId}::uuid is null or member.id = ${memberId}::uuid)
-        and (
-          ${query}::text = ''
-          or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
-          or strpos(lower(coalesce(person_profile.preferred_name, '')), lower(${query}::text)) > 0
-          or strpos(lower(coalesce(person_profile.display_name, '')), lower(${query}::text)) > 0
-          or (${role} = 'ops_admin' and strpos(lower(coalesce(private_profile.legal_name, '')), lower(${query}::text)) > 0)
-          or (${role} = 'ops_admin' and strpos(lower(member.email), lower(${query}::text)) > 0)
-          or strpos(lower(coalesce(circle.name, '')), lower(${query}::text)) > 0
-          or strpos(lower(coalesce(membership_block.name, '')), lower(${query}::text)) > 0
-        )
-        and (
-          ${filter}::text = 'all'
-          or (
-            ${filter}::text = 'attention'
-            and (
-              lifecycle.billing_state = 'attention_required'
-              or lifecycle.account_state = 'suspended'
-              or lifecycle.standing_state in ('paused', 'cancellation_requested')
-            )
-          )
-          or (${filter}::text = 'foundations' and lifecycle.foundations_state <> 'completed')
-          or (
-            ${filter}::text = 'unassigned'
-            and lifecycle.account_state = 'active'
-            and lifecycle.administrative_onboarding_state = 'completed'
-            and (lifecycle.billing_state = 'active' or private.ruined_member_has_complimentary_funding(member.id))
-            and (lifecycle.standing_state = 'active' or (lifecycle.standing_state = 'cancellation_requested' and lifecycle.cancellation_effective_at > now()))
-            and lifecycle.program_state in ('onboarding', 'active')
-            and active_circle.circle_id is null
-          )
-        )
-    `;
-    const totalResults = Number(countRows[0]?.total_results ?? 0);
-    const pageCount = Math.max(1, Math.ceil(totalResults / OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE));
-    const page = Math.min(requestedPage, pageCount);
-    const offset = (page - 1) * OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE;
+    const archive = role === "ops_admin" ? normalizeOperatorMemberArchive(input.archive) : "current";
 
     const rows = await tx<Array<OperatorMemberRow>>`
       select
         member.id as member_id,
+        member.created_at,
+        directory_archive.archived_at,
         member.email,
         member.membership_state,
         private.ruined_member_has_operator_funding(member.id) as operator_funded,
@@ -881,6 +814,7 @@ export async function getOperatorMemberDirectoryPage(
         enrollment.progress_percent as foundations_progress
       from ruined_members member
       join member_lifecycle lifecycle on lifecycle.member_id = member.id and member.deleted_at is null
+      left join member_directory_archives directory_archive on directory_archive.member_id = member.id
       left join platform_users platform_user on platform_user.member_id = member.id
       left join user_profiles profile on profile.auth_user_id = platform_user.auth_user_id
       left join person_profiles person_profile on person_profile.person_id = member.person_id
@@ -926,6 +860,12 @@ export async function getOperatorMemberDirectoryPage(
       )
         and (${memberId}::uuid is null or member.id = ${memberId}::uuid)
         and (
+          (${memberId}::uuid is not null and ${role} = 'ops_admin')
+          or ${archive}::text = 'all'
+          or (${archive}::text = 'archived' and directory_archive.archived_at is not null)
+          or (${archive}::text = 'current' and directory_archive.archived_at is null)
+        )
+        and (
           ${query}::text = ''
           or strpos(lower(coalesce(profile.display_name, '')), lower(${query}::text)) > 0
           or strpos(lower(coalesce(person_profile.preferred_name, '')), lower(${query}::text)) > 0
@@ -960,21 +900,29 @@ export async function getOperatorMemberDirectoryPage(
         case lifecycle.billing_state when 'attention_required' then 0 else 1 end,
         member.created_at asc,
         member.id asc
-      limit ${OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE}
-      offset ${offset}
     `;
 
-    const registrations = role === "ops_admin"
-      ? await readOperatorRegistrationProgress(tx, authUserId, rows.map(row => row.member_id)) : new Map();
+    const registrations = new Map<string, NonNullable<OperatorMemberSummary["registration"]>>();
+    if (role === "ops_admin") {
+      // The progress reader accepts at most 200 IDs. Load every batch before sorting.
+      for (let offset = 0; offset < rows.length; offset += 200) {
+        const batch = await readOperatorRegistrationProgress(tx, authUserId, rows.slice(offset, offset + 200).map(row => row.member_id));
+        for (const [id, registration] of batch) registrations.set(id, registration);
+      }
+    }
+    const members = sortOperatorMembers(rows.map(row => ({ ...operatorMemberSummary(row, role === "ops_admin"),
+      ...(registrations.has(row.member_id) ? { registration: registrations.get(row.member_id) } : {}) })), sort);
     return {
       filter,
-      members: rows.map((row) => ({ ...operatorMemberSummary(row, role === "ops_admin"),
-        ...(registrations.has(row.member_id) ? { registration: registrations.get(row.member_id) } : {}) })),
-      page,
-      pageCount,
-      pageSize: OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE,
+      sort,
+      archive,
+      canViewArchived: role === "ops_admin",
+      members,
+      page: 1,
+      pageCount: 1,
+      pageSize: Math.max(1, members.length),
       query,
-      totalResults,
+      totalResults: members.length,
     };
   });
 }

@@ -12,6 +12,7 @@ import OperatorProfileSupport from "@/components/platform/OperatorProfileSupport
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
 import OperatorMemberDeleteAction from "@/components/platform/OperatorMemberDeleteAction";
+import OperatorMemberArchiveAction from "@/components/platform/OperatorMemberArchiveAction";
 import OperatorMemberReferrals from "@/components/platform/OperatorMemberReferrals";
 import OperatorMemberWorkspace from "@/components/platform/OperatorMemberWorkspace";
 import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
@@ -160,6 +161,8 @@ export default function OperatorMemberRecord({
         <OperatorMemberCheckpoints journey={registration} />
         {registration?.attention ? <p className="mt-3 border-l-2 border-[var(--color-poster)] pl-3 text-sm leading-relaxed"><strong>Attention:</strong> {registration.attention}</p> : null}
       </section> : null}
+
+      {canManageSetup ? <OperatorMemberArchiveAction key={header.memberId} memberId={header.memberId} preview={preview} /> : null}
 
       <OperatorMemberWorkspace>
 
@@ -494,7 +497,7 @@ export default function OperatorMemberRecord({
           <section aria-label="Member record actions" className="mt-3 grid gap-3 lg:grid-cols-2">
             {canManageTasks ? <div className="scroll-mt-36 operator-bento-card" id="new-member-task"><OperatorTaskCreateAction memberId={header.memberId} preview={preview} /></div> : null}
             {canOverride ? <div className="operator-bento-card lg:col-span-2"><OperatorOverrideAction lifecycleVersion={header.lifecycleVersion} memberId={header.memberId} preview={preview} /></div> : null}
-            {canOverride ? <div className="operator-bento-card lg:col-span-2"><OperatorMemberDeleteAction key={header.memberId} memberId={header.memberId} preview={preview} /></div> : null}
+            {canOverride ? <details className="operator-bento-card lg:col-span-2" aria-labelledby="member-deletion-heading"><summary className="min-h-11 cursor-pointer content-center text-sm font-medium" id="member-deletion-heading">Permanent account deletion</summary><p className="my-3 text-sm leading-relaxed text-[color:var(--operator-muted)]">For inactive members, use Archive above to keep the full record. Deletion permanently removes the account and personal content; only historical membership, billing, and audit records remain.</p><OperatorMemberDeleteAction key={header.memberId} memberId={header.memberId} preview={preview} /></details> : null}
           </section>
         ) : null}
 

@@ -32,6 +32,8 @@ export type MemberPlatformSnapshot = {
 };
 
 export type OperatorMemberSummary = {
+  createdAt?: string | null;
+  archivedAt?: string | null;
   registration?: OperatorRegistrationProgress;
   membershipFunding?: "self" | "operator" | "complimentary" | "couple";
   administrativeOnboardingState?: "completed" | "in_progress" | "not_started";

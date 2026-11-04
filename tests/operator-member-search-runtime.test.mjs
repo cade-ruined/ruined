@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { readFile } from "node:fs/promises";
@@ -14,13 +15,14 @@ async function load(path, dependencies) {
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", compiled)((name) => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency: ${name}`);
     return dependencies[name];
   }, cjsModule, cjsModule.exports);
   return cjsModule.exports;
 }
 
-test("member search uses saved names, visible statuses and paginated results without widening operator permissions", async (t) => {
+test("member search uses saved names, visible statuses and complete results without widening operator permissions", async (t) => {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   t.after(() => db.close());
@@ -30,6 +32,7 @@ test("member search uses saved names, visible statuses and paginated results wit
     create table platform_users (auth_user_id uuid primary key, member_id uuid, status text, person_id uuid);
     create table platform_role_grants (auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
     create table ruined_members (id uuid primary key, person_id uuid, email text, membership_state text, deleted_at timestamptz, created_at timestamptz default now());
+    create table member_directory_archives (member_id uuid primary key, archived_at timestamptz);
     create table member_lifecycle (member_id uuid primary key, account_state text, billing_state text, standing_state text, program_state text, foundations_state text, artifact_state text, administrative_onboarding_state text default 'completed', cancellation_effective_at timestamptz);
     create table user_profiles (auth_user_id uuid primary key, display_name text);
     create table person_profiles (person_id uuid primary key, preferred_name text, display_name text);
@@ -74,7 +77,7 @@ test("member search uses saved names, visible statuses and paginated results wit
     "@/lib/membership/public-signup-admission": {},
     "@/lib/membership/registration-repository": { readOperatorRegistrationProgress: async (_tx, actor, memberIds) => {
       assert.equal(actor, admin, "scoped operators never read private registration progress");
-      assert.ok(memberIds.length <= 25, "progress reads stay bounded to the selected page");
+      assert.ok(memberIds.length <= 200, "progress reads stay within the evidence reader batch limit");
       return new Map();
     } },
     "@/lib/identity/repository": {}, "@/lib/platform/calendar-audience-invalidation": {},
@@ -103,14 +106,33 @@ test("member search uses saved names, visible statuses and paginated results wit
     await db.query("update circles set status='forming' where id=$1", [circle]);
     assert.equal((await search("tae", { filter: "unassigned" })).totalResults, 0, "a member already placed in a forming Circle is not unassigned");
   });
-  await t.test("count and pages use the same filter and names", async () => {
+  await t.test("every matching member is on one page, including old pagination URLs", async () => {
     const first = await search("example.test");
     const second = await search("example.test", { page: 2 });
     assert.equal(first.totalResults, 30);
-    assert.equal(first.pageCount, 2);
-    assert.equal(first.members.length, 25);
-    assert.equal(second.members.length, 5);
-    assert.equal(new Set([...first.members, ...second.members].map((member) => member.memberId)).size, 30);
+    assert.equal(first.pageCount, 1);
+    assert.equal(first.members.length, 30);
+    assert.equal(second.page, 1);
+    assert.deepEqual(second.members, first.members);
+  });
+  await t.test("archive filter preserves records and only administrators can browse them", async () => {
+    await db.query("insert into member_directory_archives values($1,now())", [id(1)]);
+    assert.equal((await search("tae")).totalResults, 0);
+    const archived = await search("tae", { archive: "archived" });
+    assert.equal(archived.members[0].memberId, id(1));
+    assert.ok(archived.members[0].archivedAt);
+    assert.equal((await search("", { archive: "all" })).totalResults, 30);
+    assert.equal((await search("", { memberId: id(1) })).members[0].memberId, id(1), "Admin can still open the archived record");
+    await db.query("insert into circle_staff_assignments values($1,$2,null)", [circle, guide]);
+    const scoped = await search("tae", { archive: "all" }, guide);
+    assert.equal(scoped.members.length, 0, "a scoped operator cannot broaden their assigned Circle roster to archives");
+    assert.equal(scoped.canViewArchived, false);
+    assert.equal(scoped.archive, "current");
+    assert.equal((await search("", { memberId: id(1), archive: "archived" }, guide)).totalResults, 0);
+    await db.query("delete from circle_staff_assignments where auth_user_id=$1", [guide]);
+    await db.query("update member_directory_archives set archived_at=null where member_id=$1", [id(1)]);
+    assert.equal((await search("tae")).totalResults, 1);
+    assert.equal((await search("", { archive: "archived" })).totalResults, 0);
   });
   await t.test("scoped operators cannot infer private names, emails or people outside their Circle", async () => {
     assert.equal((await search("tae", {}, guide)).totalResults, 0);

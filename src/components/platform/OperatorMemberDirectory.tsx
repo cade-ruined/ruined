@@ -1,27 +1,16 @@
 import Link from "next/link";
 
+import OperatorMemberDirectoryControls from "@/components/platform/OperatorMemberDirectoryControls";
 import OperatorProgress from "@/components/platform/OperatorProgress";
 import OperatorMemberAvatar from "@/components/platform/OperatorMemberAvatar";
 import OperatorMemberCheckpoints from "@/components/platform/OperatorMemberCheckpoints";
 import StateLabel from "@/components/platform/StateLabel";
-import {
-  OPERATOR_FIELD_CLASS,
-  OPERATOR_BUTTON_CLASS,
-} from "@/components/platform/operatorStyles";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
 import { guidanceForMemberSummary } from "@/lib/platform/operator-member-guidance";
 import { operatorMemberJourney } from "@/lib/membership/operator-registration-progress";
 import type {
-  OperatorMemberDirectoryFilter,
   OperatorMemberDirectoryPage,
 } from "@/lib/platform/repository";
-
-const FILTERS: Array<{ label: string; value: OperatorMemberDirectoryFilter }> = [
-  { label: "All members", value: "all" },
-  { label: "Needs attention", value: "attention" },
-  { label: "Moving through Foundations", value: "foundations" },
-  { label: "Without a Circle", value: "unassigned" },
-];
 
 type DirectoryProps = {
   directory: OperatorMemberDirectoryPage;
@@ -48,66 +37,24 @@ function normalizedDirectory(
 
 function directoryHref(
   directory: OperatorMemberDirectoryPage,
-  page: number,
 ): string {
   const params = new URLSearchParams();
   if (directory.query) params.set("q", directory.query);
   if (directory.filter !== "all") params.set("filter", directory.filter);
-  if (page > 1) params.set("page", String(page));
+  if (directory.sort && directory.sort !== "alphabetical") params.set("sort", directory.sort);
+  if (directory.archive && directory.archive !== "current") params.set("archive", directory.archive);
   const search = params.toString();
   return search ? `/ops/members?${search}` : "/ops/members";
 }
 
 export default function OperatorMemberDirectory(props: DirectoryProps | LegacyProps) {
   const directory = normalizedDirectory(props);
-  const firstResult = directory.totalResults === 0
-    ? 0
-    : (directory.page - 1) * directory.pageSize + 1;
-  const lastResult = directory.totalResults === 0
-    ? 0
-    : firstResult + directory.members.length - 1;
   const hasRefinement = Boolean(directory.query || directory.filter !== "all");
+  const clearHref = directoryHref({ ...directory, query: "", filter: "all" });
 
   return (
     <section className="mt-2" aria-labelledby="member-directory-heading">
-      <form
-        action="/ops/members"
-        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(10rem,0.5fr)]"
-        method="get"
-      >
-        <label className="min-w-0">
-          <span className="sr-only">Search members</span>
-          <input
-            className={`${OPERATOR_FIELD_CLASS} mt-0`}
-            defaultValue={directory.query}
-            maxLength={120}
-            name="q"
-            placeholder="Name, email, Circle, or Block"
-            type="search"
-          />
-        </label>
-        <button
-          aria-label="Find members"
-          className={OPERATOR_BUTTON_CLASS}
-          type="submit"
-        >
-          Find
-        </button>
-        <label className="col-span-2 min-w-0 sm:col-span-1">
-          <span className="sr-only">Show members</span>
-          <select
-            className={`${OPERATOR_FIELD_CLASS} mt-0`}
-            defaultValue={directory.filter}
-            name="filter"
-          >
-            {FILTERS.map((option) => (
-              <option className="bg-[var(--operator-surface)]" key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </form>
+      <OperatorMemberDirectoryControls directory={directory} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs text-[color:var(--operator-muted)]">
         <h2 className="sr-only" id="member-directory-heading">Member directory</h2>
@@ -115,14 +62,15 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
           <span>
             {directory.totalResults === 0
               ? "No matches"
-              : `${firstResult}–${lastResult} of ${directory.totalResults}`}
+              : `${directory.totalResults} ${directory.totalResults === 1 ? "member" : "members"} · all on one page`}
           </span>
           {hasRefinement ? (
-            <Link className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-[color:var(--operator-ink)]" href="/ops/members">
+            <Link className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-[color:var(--operator-ink)]" href={clearHref}>
               Clear search
             </Link>
           ) : null}
         </div>
+        {directory.sort === "status" ? <span>Most completed boxes first</span> : null}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -134,7 +82,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
           return (
           <Link
             className="operator-bento-card grid grid-cols-2 content-start gap-3 transition-colors hover:bg-[var(--operator-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--operator-focus)]"
-            href={`/ops/members/${member.memberId}?returnTo=${encodeURIComponent(directoryHref(directory, directory.page))}`}
+            href={`/ops/members/${member.memberId}?returnTo=${encodeURIComponent(directoryHref(directory))}`}
             aria-label={`Open ${member.name}’s member record`}
             key={member.memberId}
           >
@@ -144,6 +92,7 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
                 <h3 className="truncate text-base font-semibold leading-tight">
                   {member.name}
                 </h3>
+                {member.archivedAt ? <span className="mt-1 inline-block text-xs font-semibold text-[color:var(--operator-muted)]">Archived</span> : null}
                 {member.email ? <p className="mt-1 truncate text-xs text-[color:var(--operator-muted)]">{member.email}</p> : null}
               </div>
             </div>
@@ -175,32 +124,6 @@ export default function OperatorMemberDirectory(props: DirectoryProps | LegacyPr
         ) : null}
       </div>
 
-      {directory.pageCount > 1 ? (
-        <nav
-          aria-label="Member directory pages"
-          className="flex items-center justify-between py-5 text-sm font-medium"
-        >
-          {directory.page > 1 ? (
-            <Link
-              className="inline-flex min-h-11 items-center underline decoration-[color:var(--operator-ink)]/35 underline-offset-4 hover:decoration-[color:var(--operator-ink)]"
-              href={directoryHref(directory, directory.page - 1)}
-            >
-              ← Previous members
-            </Link>
-          ) : <span />}
-          <span className="text-[color:var(--operator-muted)]">
-            Page {directory.page} of {directory.pageCount}
-          </span>
-          {directory.page < directory.pageCount ? (
-            <Link
-              className="inline-flex min-h-11 items-center underline decoration-[color:var(--operator-ink)]/35 underline-offset-4 hover:decoration-[color:var(--operator-ink)]"
-              href={directoryHref(directory, directory.page + 1)}
-            >
-              Next members →
-            </Link>
-          ) : <span />}
-        </nav>
-      ) : null}
     </section>
   );
 }
