@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { installMemberSmsFundingFixture } from "./helpers/member-sms-funding-fixture.mjs";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { configuration, id, sid, loader, read } from "./helpers/member-sms-fixture.mjs";
+import { configuration, id, sid, loader, read, installMemberSmsTemplateFixture } from "./helpers/member-sms-fixture.mjs";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 
 // Lazy fragments reproduce postgres-js nested SQL without opening a network client.
-function sqlBridge(engine) {
+function sqlBridge(engine, testClock = () => null) {
   class Query {
     constructor(strings, values) { this.strings = strings; this.values = values; }
     compile(parameters) {
@@ -21,12 +21,17 @@ function sqlBridge(engine) {
     }
     then(resolve, reject) {
       const parameters = [];
-      return engine.query(this.compile(parameters), parameters).then(result => result.rows).then(resolve, reject);
+      let query = this.compile(parameters);
+      if (testClock() && query.includes("statement_timestamp()")) {
+        parameters.push(testClock());
+        query = query.replaceAll("statement_timestamp()", `$${parameters.length}::timestamptz`);
+      }
+      return engine.query(query, parameters).then(result => result.rows).then(resolve, reject);
     }
   }
   const sql = (strings, ...values) => new Query(strings, values);
   sql.json = JSON.stringify;
-  sql.begin = run => engine.transaction(tx => run(sqlBridge(tx)));
+  sql.begin = run => engine.transaction(tx => run(sqlBridge(tx, testClock)));
   return sql;
 }
 
@@ -86,7 +91,9 @@ test("durable SMS automation exercises current calendar access and no-retry beha
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
   await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
-  const sql = sqlBridge(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true", MEMBER_SMS_AUTOMATION_ENABLED: "true",
+  await installMemberSmsTemplateFixture(db);
+  let testNow = null;
+  const sql = sqlBridge(db, () => testNow), env = { ...configuration(), MEMBER_SMS_ENABLED: "true", MEMBER_SMS_AUTOMATION_ENABLED: "true",
     MEMBER_SMS_AUTOMATION_ACTIVATED_AT: new Date(Date.now() - 60 * 60_000).toISOString(), GOOGLE_COMMUNICATIONS_LIVEMODE: "true" };
   let providerFails = false; const sends = [];
   const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql },
@@ -138,7 +145,11 @@ test("durable SMS automation exercises current calendar access and no-retry beha
       private.member_sms_phone_suppressions,member_consents,ruined_members,people,person_private_profiles,person_email_addresses,platform_users,platform_role_grants,
       member_lifecycle,member_registration_access,circles,circle_member_assignments,membership_blocks,block_circle_assignments,
       experiences,experience_registrations,integration_entity_links,member_complimentary_grants,private.member_email_cadence_event_bindings cascade;`);
-    sends.length = 0; providerFails = false;
+    for (const template of load("src/lib/communications/member-sms-template-model.ts").defaultMemberSmsTemplates()) {
+      await db.query("insert into private.member_sms_templates(id,body,enabled,notice_minutes) values($1,$2,$3,$4)",
+        [template.id, template.body, template.enabled, template.noticeMinutes]);
+    }
+    sends.length = 0; providerFails = false; testNow = null;
   }
   async function nextReminder() {
     await repo.enqueueMemberSmsAutomation(sql, config);
@@ -170,6 +181,87 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     assert.match(sends[1].body, /TIME \/ SEE starts/); assert.match(sends[1].body, /\/my\/experiences/);
     assert.match(sends[1].body, /M[SD]T/);
     assert.equal((await automation.runMemberSmsAutomation()).processed, 0);
+  });
+  await t.test("optional day-before and short reminders have distinct durable identities and share one consent confirmation", async () => {
+    await reset(); const m = await member(); await consent(m); const e = await event({ startsAt: ago(-1438) });
+    assert.equal((await automation.runMemberSmsAutomation()).queued, 0, "day-before starts disabled");
+    await db.exec("update private.member_sms_templates set enabled=true where id='day_before'");
+    await db.query("update private.member_sms_templates set body=$1,effective_at=$2 where id='opt_in_confirmation'", ["Ruined: Your membership texts are ready.", ago(5)]);
+    const first = await automation.runMemberSmsAutomation();
+    assert.equal(first.accepted, 1); assert.equal(first.confirmationsAccepted, 1); assert.equal(sends.length, 2);
+    assert.match(sends[0].body, /^Ruined: Your membership texts are ready\./);
+    assert.match(sends[0].body, /Message frequency varies/);
+    assert.match(sends[1].body, /is tomorrow at/);
+    assert.equal((await automation.runMemberSmsAutomation()).processed, 0);
+    // Advance only the isolated SQL clock; the call identity and accepted records stay unchanged.
+    testNow = new Date(Date.parse(e.startsAt) - 58 * 60000).toISOString();
+    const second = await automation.runMemberSmsAutomation();
+    assert.equal(second.accepted, 1); assert.equal(second.confirmationsAccepted, 0); assert.equal(sends.length, 3);
+    assert.equal((await automation.runMemberSmsAutomation()).processed, 0);
+    const attempts = (await db.query("select reminder_key from private.member_sms_delivery_attempts where reminder_kind='call_reminder' order by reminder_key")).rows;
+    assert.deepEqual(attempts.map(row => row.reminder_key).sort(), [`call:${e.eventId}:${Date.parse(e.startsAt)}:24h`, `call:${e.eventId}:${Date.parse(e.startsAt)}:60m`].sort());
+  });
+  await t.test("saved short timing and wording apply to future windows without changing the legacy occurrence key", async () => {
+    await reset(); const m = await member(); await consent(m); const e = await event({ startsAt: ago(-88) });
+    await db.query("update private.member_sms_templates set notice_minutes=90,effective_at=$1,body=$2 where id='call_reminder'", [ago(5), "Ruined: {{call_title}} starts at {{call_time}}. Join: {{call_link}}."]);
+    assert.equal((await automation.runMemberSmsAutomation()).accepted, 1);
+    assert.match(sends[1].body, /TIME \/ SEE starts at/); assert.doesNotMatch(sends[1].body, /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),/);
+    assert.equal((await db.query("select reminder_key from private.member_sms_delivery_attempts where reminder_kind='call_reminder'")).rows[0].reminder_key, `call:${e.eventId}:${Date.parse(e.startsAt)}:60m`);
+    await db.query("update private.member_sms_templates set notice_minutes=60,effective_at=$1 where id='call_reminder'", [ago(1)]);
+    testNow = new Date(Date.parse(e.startsAt) - 58 * 60000).toISOString();
+    assert.equal((await automation.runMemberSmsAutomation()).processed, 0, "editing timing never replays the accepted short reminder");
+    assert.equal(sends.length, 2);
+  });
+  await t.test("confirmation edits hold an older call window only when its confirmation is still needed", async () => {
+    await reset(); const m = await member(); await consent(m); await event();
+    await db.query("update private.member_sms_templates set effective_at=$1 where id='opt_in_confirmation'", [ago(1)]);
+    const held = await automation.runMemberSmsAutomation();
+    assert.equal(held.accepted, 0); assert.equal(held.confirmationsAccepted, 0); assert.equal(held.blocked, 1); assert.equal(sends.length, 0);
+    await reset(); const confirmed = await member(); const c = await consent(confirmed); await acceptedConfirmation(confirmed,c); await event();
+    await db.query("update private.member_sms_templates set effective_at=$1 where id='opt_in_confirmation'", [ago(1)]);
+    const ready = await automation.runMemberSmsAutomation();
+    assert.equal(ready.accepted, 1); assert.equal(ready.confirmationsAccepted, 0); assert.equal(sends.length, 1);
+  });
+  await t.test("day-before respects the same explicit Foundations binding and confirmed audience", async () => {
+    await reset(); const m = await member(); await consent(m); const e = await event({ startsAt: ago(-1438), title: "Foundations 01" });
+    await db.exec("update private.member_sms_templates set enabled=true where id='day_before'");
+    await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')", [e.eventId]);
+    assert.equal((await automation.runMemberSmsAutomation()).queued, 0, "invalid Foundations binding cannot fall back to a public reminder");
+    await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1", [e.eventId]);
+    assert.equal((await automation.runMemberSmsAutomation()).accepted, 0, "confirmed invitation is required");
+    // That blocked occurrence is durable; use a newly scheduled occurrence after adding the roster.
+    await db.query("update experiences set starts_at=$2 where id=$1", [e.eventId, ago(-1437)]);
+    await db.query("insert into experience_registrations(experience_id,person_id,member_id,status,source) values($1,$2,$3,'registered','ops')", [e.eventId,m.personId,m.memberId]);
+    assert.equal((await automation.runMemberSmsAutomation()).accepted, 1);
+    assert.match(sends.at(-1).body, /Foundations 01 is tomorrow at/);
+    assert.doesNotMatch(sends.at(-1).body, /starts today/);
+  });
+  await t.test("new settings never backfill and changes invalidate an already reserved occurrence", async () => {
+    await reset(); const m = await member(); await consent(m); await event();
+    await db.query("update private.member_sms_templates set effective_at=$1 where id='call_reminder'", [ago(1)]);
+    assert.equal((await automation.runMemberSmsAutomation()).queued, 0, "a send window that opened before the edit is skipped");
+    for (const change of [
+      "update private.member_sms_templates set enabled=false where id='call_reminder'",
+      "update private.member_sms_templates set notice_minutes=90 where id='call_reminder'",
+      "update private.member_sms_templates set effective_at=now() where id='call_reminder'",
+      "update private.member_sms_automation_jobs set expires_at=expires_at+interval '1 minute'",
+    ]) {
+      await reset(); const recipient = await member(); const c = await consent(recipient); await acceptedConfirmation(recipient,c); await event();
+      const { input, options } = await nextReminder();
+      const body = load("src/lib/communications/member-sms-model.ts").memberSmsReminderBody(input, "https://members.theruinedproject.com");
+      const reserved = await transport.reserveMemberSmsAttempt(sql, input, body, options);
+      assert.ok(reserved.attemptId);
+      await db.exec(change);
+      const result = await transport.dispatchReservedMemberSms(sql, input, reserved, () => assert.fail("Stale occurrence must not send"), options);
+      assert.deepEqual(result, { status: "blocked", reason: "source_ineligible" });
+    }
+    await reset(); const recipient = await member(); const c = await consent(recipient); await acceptedConfirmation(recipient,c); await event({ startsAt: ago(-1438) });
+    await db.exec("update private.member_sms_templates set enabled=true where id='day_before'");
+    const { input, options } = await nextReminder();
+    assert.equal(input.callDetails.reminderStage, "day_before");
+    await db.exec("update private.member_sms_templates set enabled=false where id='day_before'");
+    assert.equal(await sql.begin(tx => repo.validateMemberSmsAutomationOccurrence(tx,input,config)), false);
+    assert.equal(options.guard instanceof Function, true);
   });
   await t.test("only explicit Foundations 01 sends at 150 minutes with approved copy and current Meet link", async () => {
     for (const minutes of [151,148,139,58]) {

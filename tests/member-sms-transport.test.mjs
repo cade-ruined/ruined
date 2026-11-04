@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { installMemberSmsFundingFixture } from "./helpers/member-sms-funding-fixture.mjs";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { configuration, id, sid, loader, read, sqlFor } from "./helpers/member-sms-fixture.mjs";
+import { configuration, id, sid, loader, read, sqlFor, installMemberSmsTemplateFixture } from "./helpers/member-sms-fixture.mjs";
 
 const modelPath = "src/lib/communications/member-sms-model.ts";
 const repoPath = "src/lib/communications/member-sms-repository.ts";
@@ -43,6 +43,7 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
   await db.exec("create table platform_users(auth_user_id uuid primary key); create table people(id uuid primary key)");
   await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
   await installMemberSmsFundingFixture(db);
+  await installMemberSmsTemplateFixture(db);
   const sql = sqlFor(db), env = { ...configuration(), MEMBER_SMS_ENABLED: "true" }, calls = [];
   let failProvider = false, providerErrorCode;
   const load = loader(env, { "@/lib/database/server": { getApplicationDatabase: () => sql }, twilio: (account, token, options) => {
@@ -246,7 +247,7 @@ test("private SMS ledger gates exact consent, idempotent delivery, STOP, and amb
   });
   await t.test("private transport tables enable RLS and reject browser roles", async () => {
     const rows = (await db.query("select relname,relrowsecurity from pg_class where relnamespace='private'::regnamespace and relkind='r'")).rows;
-    assert.equal(rows.length, 6); assert.ok(rows.every(row => row.relrowsecurity));
+    assert.equal(rows.length, 7); assert.ok(rows.every(row => row.relrowsecurity));
     for (const role of ["anon", "authenticated"]) {
       await db.exec(`set role ${role}`);
       await assert.rejects(() => db.query("select * from private.member_sms_phone_suppressions"));

@@ -44,3 +44,8 @@ export function sqlFor(db) {
   sql.begin = run => db.transaction(tx => run(sqlFor(tx)));
   return sql;
 }
+
+/** Apply the shipped private template schema in isolated PostgreSQL fixtures. */
+export async function installMemberSmsTemplateFixture(db) {
+  await db.exec(read("db/migrations/20261104162521_member_sms_templates.sql"));
+}

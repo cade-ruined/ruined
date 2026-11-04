@@ -5,13 +5,14 @@ import { id, loader } from "./helpers/member-sms-fixture.mjs";
 const load = loader();
 const { getMemberSmsTemplatePreviews: previews, memberSmsOperationNoticeMinutes: noticeMinutes } = load("src/lib/communications/member-sms-operations-model.ts");
 const { memberSmsReminderBody } = load("src/lib/communications/member-sms-model.ts");
+const { defaultMemberSmsTemplates, memberSmsTemplatePreview } = load("src/lib/communications/member-sms-template-model.ts");
 const { MEMBER_SMS_CALL_NOTICE_MINUTES, MEMBER_SMS_FOUNDATIONS_01_NOTICE_MINUTES, MEMBER_SMS_AUTOMATION_LOOKBACK_MINUTES } = load("src/lib/communications/member-sms-automation-model.ts");
 const origin = "https://members.theruinedproject.com";
 
 test("operations previews use the delivery renderer and distinguish fixed copy from fictional call values", () => {
   const rows = previews(origin);
-  assert.deepEqual(rows.map(row => row.id), ["opt_in_confirmation", "call_reminder", "foundations_01"]);
-  const [confirmation, standard, foundations] = rows;
+  assert.deepEqual(rows.map(row => row.id), ["opt_in_confirmation", "call_reminder", "foundations_01", "day_before"]);
+  const [confirmation, standard, foundations, dayBefore] = rows;
   assert.equal(confirmation.bodyIsExample, false);
   assert.deepEqual(confirmation.variables, []);
   assert.equal(confirmation.noticeMinutes, null);
@@ -32,6 +33,9 @@ test("operations previews use the delivery renderer and distinguish fixed copy f
   assert.match(foundations.body, /Foundations starts today at 12:00 PM.*meet\.google\.com\/abc-defg-hij/);
   assert.ok(rows.every(row => row.body.includes("STOP") && row.body.includes("HELP") && row.audience && row.trigger));
   assert.match(foundations.trigger, /explicitly assigned.*invite-only.*internal registration/);
+  assert.equal(dayBefore.enabled, false); assert.equal(dayBefore.noticeMinutes, 1440); assert.equal(dayBefore.bodyIsExample, true);
+  assert.equal(dayBefore.body, memberSmsTemplatePreview(defaultMemberSmsTemplates()[3]));
+  assert.match(dayBefore.body,/is tomorrow at/); assert.match(dayBefore.timing,/24 hours before/);
 });
 
 test("150-minute preview classification requires the explicit Foundations 01 assignment and matching access configuration", () => {

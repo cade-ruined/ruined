@@ -55,14 +55,14 @@ function channelCatalog({ connected, workerConfigured, invitationEmailReady, sms
     : !workerConfigured ? { status: "attention", statusLabel: "Worker recovery not configured" }
       : configured(true);
   const workflowDetail = "An existing in-app workflow. Relevant actions can process it immediately; scheduled recovery runs daily at 12:30 UTC. Configuration does not verify database migrations, worker activity, or delivery. Copy is maintained in the workflow.";
-  const smsDetail = "Requires both outbound SMS switches, transport setup, an elapsed activation time, and the scheduled worker. Current explicit SMS consent, matching phone, account eligibility, and opt-out suppression are checked before sending. Configuration does not prove carrier approval or delivery. Delivery switches and copy have no editor here.";
+  const smsDetail = "Requires both outbound SMS switches, transport setup, an elapsed activation time, and the scheduled worker. Current explicit SMS consent, matching phone, account eligibility, and opt-out suppression are checked before sending. Configuration does not prove carrier approval or delivery. This inventory shows default timing; see Texts → Messages → Edit text for saved wording, timing and enabled state. Saved changes apply to future send windows.";
   const smsCallReminder = {
     channel: "texts" as const,
     ...smsState,
     audience: MEMBER_SMS_OPERATION_RULES.call_reminder.audience,
-    timing: MEMBER_SMS_OPERATION_RULES.call_reminder.timing,
+    timing: `Default: ${MEMBER_SMS_OPERATION_RULES.call_reminder.timing} Check saved timing in Texts → Messages.`,
     detail: `Call reminders share the same consent and delivery checks. ${smsDetail} A successful opt-in confirmation is required before the call reminder. Call changes and access are checked again before delivery.`,
-    action: { label: "Review calls", href: "/ops/experiences" },
+    action: { label: "View text settings", href: "/ops/messages?mode=automations&channel=texts" },
   };
 
   return [
@@ -82,25 +82,33 @@ function channelCatalog({ connected, workerConfigured, invitationEmailReady, sms
       audience: MEMBER_SMS_OPERATION_RULES.opt_in_confirmation.audience,
       timing: MEMBER_SMS_OPERATION_RULES.opt_in_confirmation.timing,
       detail: smsDetail,
-      action: { label: "View text opt-in", href: "/membership/text-messages" },
+      action: { label: "View text settings", href: "/ops/messages?mode=automations&channel=texts" },
     },
     {
       ...smsCallReminder,
-      id: "sms:foundations-01-call-reminder", bucket: "foundations", title: `${MEMBER_SMS_OPERATION_RULES.foundations_01.noticeMinutes}-minute Foundations 01 reminder`,
+      id: "sms:foundations-01-call-reminder", bucket: "foundations", title: "Foundations 01 reminder",
       trigger: MEMBER_SMS_OPERATION_RULES.foundations_01.trigger,
       audience: MEMBER_SMS_OPERATION_RULES.foundations_01.audience,
-      timing: MEMBER_SMS_OPERATION_RULES.foundations_01.timing,
-      detail: `${smsCallReminder.detail} The earlier timing and direct Google Meet link apply only to a saved Foundations 01 call assignment with invite-only visibility and internal registration; the call title does not select this rule.`,
+      timing: `Default: ${MEMBER_SMS_OPERATION_RULES.foundations_01.timing} Check saved timing in Texts → Messages.`,
+      detail: `${smsCallReminder.detail} The Foundations 01-specific timing and default direct Google Meet link apply only to a saved Foundations 01 call assignment with invite-only visibility and internal registration; the call title does not select this rule.`,
     },
     {
       ...smsCallReminder,
-      id: "sms:foundations-call-reminder", bucket: "foundations", title: `${MEMBER_SMS_OPERATION_RULES.call_reminder.noticeMinutes}-minute Foundations reminder`,
-      trigger: "An eligible published Foundations call with a working Google Meet link is one hour away, excluding calls that qualify for the earlier Foundations 01 reminder.",
+      id: "sms:foundations-call-reminder", bucket: "foundations", title: "Standard Foundations reminder",
+      trigger: "An eligible published Foundations call with a working Google Meet link enters its saved reminder window, excluding calls that qualify for the Foundations 01-specific reminder.",
     },
     {
       ...smsCallReminder,
-      id: "sms:membership-call-reminder", bucket: "membership", title: `${MEMBER_SMS_OPERATION_RULES.call_reminder.noticeMinutes}-minute Membership / Circle reminder`,
-      trigger: "An eligible published Membership or Circle call with a working Google Meet link is one hour away.",
+      id: "sms:membership-call-reminder", bucket: "membership", title: "Standard Membership / Circle reminder",
+      trigger: "An eligible published Membership or Circle call with a working Google Meet link enters its saved reminder window.",
+    },
+    {
+      ...smsCallReminder,
+      id: "sms:day-before-call-reminder", bucket: "membership", title: "24-hour call reminder",
+      trigger: MEMBER_SMS_OPERATION_RULES.day_before.trigger,
+      audience: MEMBER_SMS_OPERATION_RULES.day_before.audience,
+      timing: MEMBER_SMS_OPERATION_RULES.day_before.timing,
+      detail: `Disabled by default. Check its saved enabled state in Texts → Messages. This additional stage includes eligible Foundations calls and does not replace the shorter reminder. ${smsCallReminder.detail}`,
     },
     {
       id: "email:personal-invitation", channel: "emails", bucket: "registration", title: "Personal invitation email",

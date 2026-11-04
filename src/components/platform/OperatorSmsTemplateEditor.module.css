@@ -1,0 +1,40 @@
+.editor { min-width: 0; margin: 1.25rem 0 2rem; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid var(--operator-line); color: var(--operator-ink); }
+.header, .actions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: .75rem 1.25rem; }
+.header { padding-bottom: 1.25rem; border-bottom: 1px solid var(--operator-line); }
+.header h3 { margin: .45rem 0 0; font-family: var(--font-body) !important; font-size: 1.4rem; font-weight: 650 !important; letter-spacing: -.025em; line-height: 1.25; }
+.header p:not(.eyebrow), .note { color: var(--operator-muted); max-width: 45rem; margin: .6rem 0 0; font-size: .8125rem; line-height: 1.55; }
+.textButton { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--operator-muted); font-size: .8125rem; text-decoration: underline; text-underline-offset: .2em; }
+.content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.75rem; padding-top: 1.5rem; }
+.fields { min-width: 0; border: 0; padding: 0; margin: 0; }
+.field { display: grid; gap: .5rem; min-width: 0; }
+.field > label { font-size: .8125rem; font-weight: 600; }
+.field input, .field textarea { min-width: 0; width: 100%; min-height: 2.75rem; border: 1px solid var(--operator-line); border-radius: 0; padding: .8rem; color: var(--operator-ink); background: var(--operator-surface); font-size: 1rem; }
+.field textarea { min-height: 12rem; resize: vertical; line-height: 1.6; }
+.field input[type="number"] { max-width: 10rem; }
+.counter { margin: .3rem 0 0; text-align: right; color: var(--operator-muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.tokens { display: flex; flex-wrap: wrap; gap: .45rem; margin: .75rem 0 1rem; }
+.tokens button { min-height: 2.75rem; padding: .45rem .65rem; border: 1px solid var(--operator-line); background: var(--operator-surface); font-size: .75rem; }
+.tokens button:hover { border-color: var(--operator-ink); }
+.footer { padding: 1rem 0; border-block: 1px solid var(--operator-line); margin-top: 1.25rem; }
+.footer p:not(.eyebrow) { font-size: .8125rem; line-height: 1.6; margin: .6rem 0 .25rem; }
+.footer small { color: var(--operator-muted); font-size: .75rem; }
+.settings { padding: 1.25rem 0 .5rem; }
+.settings h4, .discard h4 { margin: 0 0 .8rem; font-family: var(--font-body) !important; font-size: .9375rem; font-weight: 650 !important; }
+.check { display: flex; gap: .6rem; align-items: center; font-size: .875rem; min-height: 2.75rem; margin-bottom: .75rem; }
+.check input { width: 1.1rem; height: 1.1rem; accent-color: var(--operator-ink); }
+.preview { min-width: 0; padding: 1.25rem; background: var(--operator-surface-muted); align-self: start; }
+.eyebrow { margin: 0; text-transform: uppercase; letter-spacing: .08em; font-size: .7rem; color: var(--operator-muted); }
+.body { margin: .9rem 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9375rem; line-height: 1.65; }
+.actions { align-items: center; justify-content: flex-start; margin-top: 1.5rem; }
+.actions .note { margin: 0; }
+.primary { display: inline-flex; min-height: 2.85rem; align-items: center; justify-content: center; border: 1px solid var(--operator-ink); padding: .75rem 1.1rem; background: var(--operator-ink); color: var(--operator-surface); font-size: .875rem; font-weight: 600; }
+.alert { margin: 1rem 0; padding: .9rem 1rem; border-left: 2px solid var(--operator-danger); color: var(--operator-ink); background: var(--operator-surface-muted); font-size: .875rem; line-height: 1.5; }
+.recovery, .discard { padding: 1rem 1.25rem; margin-top: 1rem; border: 1px solid var(--operator-line); }
+.recovery p, .discard p { font-size: .875rem; line-height: 1.55; margin: 0 0 .8rem; }
+.facts { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin: 1rem 0 0; font-size: .8125rem; }
+.facts dt { color: var(--operator-muted); }
+.facts dd { margin: .25rem 0 0; }
+.empty { padding-block: 1.5rem; }
+.editor button:disabled { opacity: .45; cursor: not-allowed; }
+.editor button:focus-visible, .editor input:focus-visible, .editor textarea:focus-visible { outline: 2px solid var(--operator-focus); outline-offset: 3px; }
+@media (min-width: 960px) { .content { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 2rem; } }
