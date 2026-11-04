@@ -140,6 +140,7 @@ const migrations = [
   "../db/migrations/20261104190000_member_practice_release_emails.sql",
   "../db/migrations/20261104190000_paid_foundations_cohort_rollover.sql",
   "../db/migrations/20261104190000_complimentary_foundations_cohorts.sql",
+  "../db/migrations/20261104210000_member_directory_archives.sql",
 ];
 
 function migrationBody(migration, migrationName) {

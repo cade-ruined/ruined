@@ -6,10 +6,11 @@ async function source(relativePath) {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
 }
 
-const [repository, membersPage, directoryComponent] = await Promise.all([
+const [repository, membersPage, directoryComponent, controls] = await Promise.all([
   source("src/lib/platform/repository.ts"),
   source("app/ops/members/page.tsx"),
   source("src/components/platform/OperatorMemberDirectory.tsx"),
+  source("src/components/platform/OperatorMemberDirectoryControls.tsx"),
 ]);
 
 const directoryQuery = repository.slice(
@@ -34,8 +35,7 @@ test("the full member directory repeats operator authorization and Circle scope 
   );
 });
 
-test("search and filters are applied before an independent result count and page limit", () => {
-  assert.match(directoryQuery, /select count\(\*\) as total_results/);
+test("search and filters are applied to all records before global sorting", () => {
   assert.match(directoryQuery, /strpos\(lower\(coalesce\(profile\.display_name/);
   assert.match(directoryQuery, /strpos\(lower\(member\.email/);
   assert.match(directoryQuery, /strpos\(lower\(coalesce\(circle\.name/);
@@ -43,9 +43,10 @@ test("search and filters are applied before an independent result count and page
   assert.match(directoryQuery, /lifecycle\.billing_state = 'attention_required'/);
   assert.match(directoryQuery, /lifecycle\.foundations_state <> 'completed'/);
   assert.match(directoryQuery, /active_circle\.circle_id is null/);
-  assert.match(directoryQuery, /const totalResults = Number\(countRows\[0\]\?\.total_results/);
-  assert.match(directoryQuery, /const pageCount = Math\.max\(1, Math\.ceil\(totalResults/);
-  assert.match(directoryQuery, /limit \$\{OPERATOR_MEMBER_DIRECTORY_PAGE_SIZE\}[\s\S]*offset \$\{offset\}/);
+  assert.match(directoryQuery, /totalResults: members\.length/);
+  assert.match(directoryQuery, /sortOperatorMembers/);
+  assert.match(directoryQuery, /pageCount: 1/);
+  assert.doesNotMatch(directoryQuery, /offset \$\{|limit \$\{/);
   assert.doesNotMatch(directoryQuery, /limit 100/);
 });
 
@@ -65,11 +66,11 @@ test("the Members page owns URL-backed search while preserving access and admin 
 
 test("directory controls stay editorial and navigate the server-backed roster", () => {
   assert.doesNotMatch(directoryComponent, /"use client"|useMemo|useState/);
-  assert.match(directoryComponent, /<form[\s\S]*action="\/ops\/members"[\s\S]*method="get"/);
-  assert.match(directoryComponent, /name="q"/);
-  assert.match(directoryComponent, /name="filter"/);
-  assert.match(directoryComponent, /Previous members/);
-  assert.match(directoryComponent, /Next members/);
-  assert.match(directoryComponent, /Page \{directory\.page\} of \{directory\.pageCount\}/);
+  assert.match(controls, /<form[\s\S]*action="\/ops\/members"[\s\S]*method="get"/);
+  assert.match(controls, /name="q"/);
+  assert.match(controls, /name="filter"/);
+  assert.match(controls, /name="sort"/);
+  assert.match(controls, /requestSubmit/);
+  assert.doesNotMatch(directoryComponent, /Previous members|Next members/);
   assert.doesNotMatch(directoryComponent, /font-mono|tooltip|hover card|AI hint/i);
 });

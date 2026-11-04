@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -18,6 +19,7 @@ function load(path, dependencies = {}) {
   } }).outputText;
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", compiled)((name) => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime") return require(name);
     if (name === "react") return React;
@@ -357,7 +359,7 @@ test("preview demonstrates both steps and removal using sample identity without 
   assert.equal(calls.length, 0);
 });
 
-test("Members page keeps the compatible Add member anchor and exact Administrator/preview guards without changing directory inputs", async () => {
+test("Members page keeps the compatible Add member anchor and exact Administrator/preview guards while forwarding the directory sort and archive view", async () => {
   const directory = { members: [], filter: "all", page: 1, pageCount: 1, pageSize: 25, query: "", totalResults: 0 };
   const context = { state: "ready", role: "ops_admin", viewer: { authUserId: "admin" }, dashboard: { members: [] } };
   const calls = [];
@@ -374,13 +376,13 @@ test("Members page keeps the compatible Add member anchor and exact Administrato
     "@/lib/platform/page-data": { getOperatorPageContext: async () => context },
     "@/lib/platform/repository": { getOperatorMemberDirectoryPage: async (...input) => { calls.push(input); return directory; } },
   }).default;
-  const render = () => Page({ searchParams: Promise.resolve({ q: "name", page: "2", filter: "unassigned" }) });
+  const render = () => Page({ searchParams: Promise.resolve({ q: "name", page: "2", filter: "unassigned", sort: "newest", archive: "archived" }) });
   const admin = nodes(await render());
   assert.ok(admin.some((n) => n.props?.["data-people-workspace"]));
   assert.ok(admin.some((n) => n.props?.["data-allowance"]));
   assert.ok(admin.some((n) => n.props?.["data-direct-invitations"]));
   assert.match(source("src/components/platform/OperatorPeopleWorkspace.tsx"), /id="allow-member-email"/);
-  assert.deepEqual(calls[0], ["admin", { query: "name", page: 2, filter: "unassigned" }]);
+  assert.deepEqual(calls[0], ["admin", { query: "name", filter: "unassigned", sort: "newest", archive: "archived" }]);
   context.role = "circle_leader";
   assert.equal(nodes(await render()).some((n) => n.props?.["data-allowance"]), false);
   assert.equal(nodes(await render()).some((n) => n.props?.["data-direct-invitations"]), false);

@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -20,6 +21,7 @@ async function load(path, dependencies = {}) {
   }).outputText;
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", compiled)((name) => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
     return dependencies[name];
   }, cjsModule, cjsModule.exports);

@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
@@ -17,6 +18,7 @@ async function load(path, dependencies = {}) {
   const compiled = ts.transpileModule(await source(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const loaded = { exports: {} };
   new Function("require", "module", "exports", compiled)(name => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency ${name}`);
     return dependencies[name];
   }, loaded, loaded.exports);

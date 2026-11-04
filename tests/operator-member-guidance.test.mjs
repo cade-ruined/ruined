@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -15,6 +16,7 @@ function load(path, dependencies = {}) {
   } }).outputText;
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", output)((name) => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "react/jsx-runtime") return require(name);
     if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
@@ -52,6 +54,7 @@ const Record = load("src/components/platform/OperatorMemberRecord.tsx", {
   "@/components/platform/OperatorMemberAvatar": empty,
   "@/components/platform/OperatorPageFrame": { __esModule: true, default: ({ children }) => React.createElement("main", null, children) },
   "@/components/platform/OperatorMemberActions": { OperatorNoteAction: () => null, OperatorTaskCreateAction: () => null, OperatorOverrideAction: () => null },
+  "@/components/platform/OperatorMemberArchiveAction": { __esModule: true, default: () => null },
   "@/components/platform/OperatorMemberDeleteAction": { __esModule: true, default: () => null },
   "@/components/platform/OperatorProfileSupport": empty,
   "@/components/platform/OperatorProgress": empty,
@@ -352,9 +355,10 @@ test("directory uses actual states, explicitly names Billing, and has a single n
   assert.ok(nodes(tree).some((node) => attr(node, "class")?.includes("md:grid-cols-2 xl:grid-cols-3")), "the roster becomes a responsive card grid");
   assert.ok(nodes(tree).filter((node) => node.tagName === "label").every((node) => !attr(node, "class")?.includes("grid-cols")), "search fields keep their labels above each control");
   const search = nodes(tree).find((node) => node.tagName === "form");
-  assert.match(attr(search, "class"), /grid-cols-\[minmax\(0,1fr\)_auto\]/, "mobile search and Find share one row");
+  const searchRow = nodes(search).find((node) => node.tagName === "span" && attr(node, "class")?.includes("flex gap-2"));
+  assert.ok(searchRow, "mobile search and Find share one row");
   assert.ok(nodes(search).some((node) => node.tagName === "button" && attr(node, "aria-label") === "Find members" && attr(node, "type") === "submit"));
-  assert.equal(nodes(search).filter((node) => node.tagName === "label").length, 2, "both controls retain accessible labels");
+  assert.equal(nodes(search).filter((node) => node.tagName === "label").length, 3, "search, filter and sort retain accessible labels");
   assert.equal(links.every((link) => nodes(link).filter((node) => node.tagName === "a").length === 1), true);
 });
 

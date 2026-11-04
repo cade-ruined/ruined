@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -12,6 +13,7 @@ function load(path, dependencies = {}, logger = { error() {} }) {
   }).outputText;
   const cjsModule = { exports: {} };
   new Function("require", "module", "exports", "console", compiled)((name) => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     if (Object.hasOwn(dependencies, name)) return dependencies[name];
     if (name === "server-only") return {};
     if (name === "react/jsx-runtime") return require(name);
@@ -30,11 +32,11 @@ test("member return locations reject external, nested, encoded and malformed des
     assert.equal(operatorMemberReturnLocation(value), "/ops/members", String(value));
   }
   assert.equal(operatorMemberReturnLocation("/ops/members?redirectTo=https://evil.test&filter=admin&page=-3#private"), "/ops/members");
-  assert.equal(operatorMemberReturnLocation("/ops/members?q=A%26filter%3Dadmin&filter=attention&page=0002"), "/ops/members?q=A%26filter%3Dadmin&filter=attention&page=2");
+  assert.equal(operatorMemberReturnLocation("/ops/members?q=A%26filter%3Dadmin&filter=attention&page=0002"), "/ops/members?q=A%26filter%3Dadmin&filter=attention");
   assert.equal(operatorMemberReturnLocation(`/ops/members?q=${"x".repeat(130)}&page=Infinity`), `/ops/members?q=${"x".repeat(120)}`);
 });
 
-test("member directory records and pagination retain the canonical query, filter and page", () => {
+test("member directory records retain canonical search, filter, sort and archive without pagination", () => {
   const stub = { __esModule: true, default: () => null };
   const Directory = load("src/components/platform/OperatorMemberDirectory.tsx", {
     "@/lib/membership/operator-registration-progress": load("src/lib/membership/operator-registration-progress.ts"),
@@ -45,14 +47,14 @@ test("member directory records and pagination retain the canonical query, filter
     "@/components/platform/operatorStyles": {},
     "@/lib/platform/operator-member-guidance": { guidanceForMemberSummary: () => ({ status: "Ready", actor: "Operator", title: "Review" }) },
   }).default;
-  const directory = { query: "A & B / Circle", filter: "unassigned", page: 3, pageSize: 25, pageCount: 5, totalResults: 101, members: [{ memberId: "member-one", name: "Example", billingState: "active", foundationsProgress: 10 }] };
+  const directory = { query: "A & B / Circle", filter: "unassigned", sort: "status", archive: "archived", page: 1, pageSize: 101, pageCount: 1, totalResults: 101, members: [{ memberId: "member-one", name: "Example", billingState: "active", foundationsProgress: 10 }] };
   const links = nodes(Directory({ directory })).filter((node) => node.props?.href);
   const record = new URL(links.find((node) => node.props["aria-label"] === "Open Example’s member record").props.href, "https://operator.invalid");
   const returned = new URL(operatorMemberReturnLocation(record.searchParams.get("returnTo")), record.origin);
   assert.equal(returned.pathname, "/ops/members");
-  assert.deepEqual([...returned.searchParams], [["q", directory.query], ["filter", "unassigned"], ["page", "3"]]);
+  assert.deepEqual([...returned.searchParams], [["q", directory.query], ["filter", "unassigned"], ["sort", "status"], ["archive", "archived"]]);
   const pagination = links.map((node) => new URL(node.props.href, record.origin)).filter((url) => url.pathname === "/ops/members" && url.searchParams.has("page"));
-  assert.deepEqual(pagination.map((url) => url.searchParams.get("page")), ["2", "4"]);
+  assert.equal(pagination.length, 0);
   assert.ok(pagination.every((url) => url.searchParams.get("q") === directory.query && url.searchParams.get("filter") === "unassigned"));
 });
 

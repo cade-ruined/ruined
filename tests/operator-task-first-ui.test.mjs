@@ -264,6 +264,7 @@ test("member record action anchors have visible authorized destinations and neve
     "@/lib/platform/operator-return-location": load("src/lib/platform/operator-return-location.ts"),
     "@/lib/platform/operator-member-guidance": load("src/lib/platform/operator-member-guidance.ts"),
     "@/components/platform/OperatorMemberActions": { OperatorNoteAction: component, OperatorTaskCreateAction: component, OperatorOverrideAction: component },
+    "@/components/platform/OperatorMemberArchiveAction": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberDeleteAction": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberPaymentMethod": { __esModule: true, default: component },
     "@/components/platform/OperatorMemberCheckout": { __esModule: true, default: component },
@@ -292,7 +293,7 @@ test("member record action anchors have visible authorized destinations and neve
     assert.ok(list.some((node) => node.props?.id === id));
   }
   const disclosures = list.filter((node) => node.type === "details");
-  assert.deepEqual(disclosures.map((node) => node.props["aria-labelledby"]), ["member-next-step-guidance", "member-service-details", "member-state-details"], "guidance, service details and diagnostic states can collapse");
+  assert.deepEqual(disclosures.map((node) => node.props["aria-labelledby"]), ["member-next-step-guidance", "member-service-details", "member-state-details", "member-deletion-heading"], "guidance, service details, diagnostic states and permanent deletion can collapse");
   for (const disclosure of disclosures) {
     assert.equal(disclosure.props.open, disclosure.props["aria-labelledby"] === "member-service-details" ? true : undefined);
     assert.equal(nodes(disclosure).some((node) => ["new-member-task", "new-member-note"].includes(node.props?.id) || node.type === "a"), false, "work actions remain outside optional guidance");

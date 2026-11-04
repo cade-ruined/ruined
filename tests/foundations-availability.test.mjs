@@ -1,3 +1,4 @@
+import { directoryTestDependencies } from "./helpers/member-directory-fixture.mjs";
 import { existingMemberIntakeDependencies, existingMemberRegistration } from "./helpers/registration-access-fixture.mjs";
 import { loadFoundationsAvailability } from "./helpers/foundations-availability-fixture.mjs";
 import { loadPGliteForSchemaChecks } from "../scripts/check-support-schema.mjs";
@@ -14,6 +15,7 @@ async function load(path, dependencies = {}, environment = {}) {
   ).outputText);
   const loadedModule = { exports: {} };
   new Function("require", "module", "exports", "process", compiled.get(path))(name => {
+    if (Object.hasOwn(directoryTestDependencies, name)) return directoryTestDependencies[name];
     assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency ${name}`);
     return dependencies[name];
   }, loadedModule, loadedModule.exports, { env: environment });
