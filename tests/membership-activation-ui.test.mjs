@@ -183,6 +183,9 @@ test("prepaid monthly offer discloses four calls, payment now, eleven later inst
   assert.match(html, /November 5, 2027 at 4:00 PM/);
   assert.match(html, /11 further monthly installments/);
   assert.match(html, /full refund of your initial payment, including tax/);
+  assert.match(html, /Your profile opens automatically after verified payment and completed registration/);
+  assert.match(html, /Foundations starts on your assigned cohort date/);
+  assert.doesNotMatch(html, /profile opens separately|Paying does not open your profile|profile stays closed/);
   assert.doesNotMatch(html, /Nothing is charged today|\$0 today/);
   const consent = nodes(tree).find(node => node.props.name === "recurring-payment-accepted");
   assert.equal(consent.props.checked, false);
@@ -243,6 +246,8 @@ test("annual prepaid offer charges the complete year now and renews on its accep
   assert.match(html, /full initial year upfront/);
   assert.match(html, /November 5, 2027 at 4:00 PM/);
   assert.match(html, /annual renewals of \$3,490/);
+  assert.match(html, /Your profile opens automatically after verified payment and completed registration/);
+  assert.doesNotMatch(html, /profile opens separately|Paying does not open your profile|profile stays closed/);
   assert.doesNotMatch(html, /11 further monthly|Eleven further|\$0 today|Nothing is charged today/);
 });
 

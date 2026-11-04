@@ -312,6 +312,9 @@ test("prepaid registration explains verified payment and automatic profile acces
   assert.match(html, /payment completed at or after that cutoff carries forward to the next eligible monthly group/);
   assert.match(html, /service start and renewal dates moved together/);
   assert.match(html, /You keep your payment; you do not pay again to move groups/);
+  assert.match(html, /Your profile opens automatically after verified payment and completed registration/);
+  assert.match(html, /Foundations starts on your assigned cohort date/);
+  assert.doesNotMatch(html, /Paying does not open your profile|profile opens separately|profile stays closed/);
   assert.doesNotMatch(html, /\$0 today|No payment is taken|Nothing is charged during registration|Save a card to complete registration|No payment is due now/);
   const unavailable = renderToStaticMarkup(React.createElement(c.Overview, { ...props, signupEnabled: false }));
   assert.match(unavailable, /Join the waitlist/);

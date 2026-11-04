@@ -107,8 +107,9 @@ calendar month or one calendar year after service begins, respectively. Billing
 anniversaries preserve the service start's UTC time; their displayed Mountain Time
 hour can change with daylight saving time. Foundations calls remain at 3 p.m.
 Mountain Time. Your offer and billing page show all four call dates, the cutoff,
-service start, next charge and initial commitment end. Profile access opens
-separately when Ruined releases it; payment does not itself open a held profile.
+service start, next charge and initial commitment end. Your profile opens
+automatically after verified payment and completed registration, with access
+details by email. Foundations service begins on your assigned cohort date.
 
 **Cancel before service begins.** Use Membership billing on your activation page
 to cancel before the disclosed service start for a **full refund of your initial
