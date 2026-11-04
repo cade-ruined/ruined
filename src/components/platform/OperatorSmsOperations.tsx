@@ -6,12 +6,16 @@ import { COMMUNICATION_BUCKETS, type CommunicationBucket, type CommunicationNavi
 import { getMemberSmsTemplatePreviews } from "@/lib/communications/member-sms-operations-model";
 import { memberSmsReminderBody } from "@/lib/communications/member-sms-model";
 import type { MemberSmsHistoryItem, MemberSmsOperationsOverview, MemberSmsOperationTemplate, MemberSmsUpcomingItem, MemberSmsOperationJob } from "@/lib/communications/member-sms-operations-types";
+import type { MemberSmsOneOffRequestRecord } from "@/lib/communications/member-sms-one-off-model";
+import type { MemberSmsTemplateId } from "@/lib/communications/member-sms-template-model";
 import { OPERATOR_BUTTON_CLASS } from "./operatorStyles";
+import OperatorSmsOneOffComposer from "./OperatorSmsOneOffComposer";
+import OperatorSmsTemplateEditor from "./OperatorSmsTemplateEditor";
 import styles from "./OperatorSmsOperations.module.css";
 
 const API = "/api/ops/messages/texts";
 const OPERATIONS_TIME_ZONE = "America/Denver";
-type Props = { preview?: boolean; previewCommunications?: CommunicationItem[]; view: CommunicationNavigation["view"]; bucket: CommunicationBucket | null; onNavigate: (next: Partial<CommunicationNavigation>) => void };
+type Props = { preview?: boolean; previewCommunications?: CommunicationItem[]; view: CommunicationNavigation["view"]; bucket: CommunicationBucket | null; onNavigate: (next: Partial<CommunicationNavigation>) => void; onComposerBusyChange?: (busy: boolean) => void };
 
 export function smsOperationDate(value: string, timeZone = OPERATIONS_TIME_ZONE): string {
   const date = new Date(value);
@@ -34,7 +38,7 @@ export function smsDeliveryLabel(item: MemberSmsHistoryItem): { label: string; e
 
 function reason(value: string | null) {
   if (!value) return null;
-  const labels: Record<string, string> = { member_inactive: "The member is not currently eligible.", phone_missing: "No usable mobile number is saved.", no_current_consent: "Current text-message consent is missing.", phone_suppressed: "The mobile number has opted out.", source_ineligible: "The call, audience, or send window is no longer eligible.", shared_phone: "This phone number is shared with another member.", expired: "The send window has ended." };
+  const labels: Record<string, string> = { member_inactive: "The member is not currently eligible.", phone_missing: "No usable mobile number is saved.", no_current_consent: "Current text-message consent is missing.", phone_suppressed: "The mobile number has opted out.", source_ineligible: "The recipient or message no longer meets the sending requirements.", shared_phone: "This phone number is shared with another member.", expired: "The send window has ended." };
   return labels[value] ?? value.replaceAll("_", " ");
 }
 
@@ -52,16 +56,21 @@ function sampleOverview(communications: CommunicationItem[] = []): MemberSmsOper
   const call = { eventId: "00000000-0000-4000-8000-000000000002", title: "Foundations 01 — sample call", startsAt: new Date(due.getTime() + 150 * 60000).toISOString(), timeZone: OPERATIONS_TIME_ZONE, foundations01: true };
   const body = memberSmsReminderBody({ memberId: recipient.memberId, kind: "call_reminder", reminderKey: "sample-only", callDetails: { ...call, meetingUrl: "https://meet.google.com/abc-defg-hij" } }, "https://members.example.test");
   return { generatedAt: now.toISOString(), automation: { enabled: false, transportEnabled: false, automationEnabled: false, ready: false, callReady: false, warnings: [], activatedAt: null, state: "disabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates, communications,
-    upcoming: { horizonEnd: new Date(now.getTime() + 14 * 86400000).toISOString(), truncated: false, label: "Fictional sample schedule", currentOptIns: 1, items: [{ id: "sample-upcoming", kind: "call_reminder", reminderKey: "sample-only", recipient, call, dueAt: due.toISOString(), expiresAt: new Date(due.getTime() + 600000).toISOString(), body, source: "forecast", confirmation: "required", confirmationBody: templates[0].body, confirmationStatus: null, blockedReason: null }] },
+    upcoming: { horizonEnd: new Date(now.getTime() + 14 * 86400000).toISOString(), truncated: false, label: "Fictional sample schedule", currentOptIns: 1, eligibleOptIns: 1, items: [{ id: "sample-upcoming", kind: "call_reminder", reminderKey: "sample-only", recipient, call, dueAt: due.toISOString(), expiresAt: new Date(due.getTime() + 600000).toISOString(), body, source: "forecast", confirmation: "required", confirmationBody: templates[0].body, confirmationStatus: null, blockedReason: null }] },
     jobs: { items: [], truncated: false }, history: { nextCursor: null, items: [{ id: "sample-delivery", kind: "opt_in_confirmation", reminderKey: "sample-only", recipient, call: null, createdAt: now.toISOString(), updatedAt: now.toISOString(), status: "accepted", deliveryStatus: "delivered", deliveryUpdatedAt: now.toISOString(), deliveryErrorCode: null, blockedReason: null, messageSid: null, body: templates[0].body, bodySource: "snapshot" }] } };
 }
 
 function TextBody({ body, label = "Message" }: { body: string; label?: string }) { return <div><p className={styles.eyebrow}>{label}</p><p className={styles.body}>{body}</p></div>; }
 function Empty({ title, children }: { title: string; children: React.ReactNode }) { return <div className={`operator-glass ${styles.empty}`}><h3>{title}</h3><p>{children}</p></div>; }
+function messageName(item: MemberSmsUpcomingItem | MemberSmsHistoryItem | MemberSmsOperationJob) {
+  const dayBefore = item.reminderStage === "day_before" || item.call?.reminderStage === "day_before";
+  if (item.call) return `${item.call.title}${dayBefore ? " · 24-hour call reminder" : ""}`;
+  return item.kind === "opt_in_confirmation" ? "Text opt-in confirmation" : item.kind === "one_off" ? "One-off text" : item.kind === "call_reminder" ? dayBefore ? "24-hour call reminder" : "Call reminder" : "Membership reminder";
+}
 
 function UpcomingCard({ item }: { item: MemberSmsUpcomingItem }) {
   const state = item.blockedReason ? "Blocked" : item.source === "forecast" ? "Projected" : item.source === "queued" ? "Queued" : "Processing";
-  return <details className={`operator-glass ${styles.card}`}><summary aria-label={`${item.recipient.name}: ${item.call?.title ?? "Text opt-in confirmation"}`}><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {item.call?.title ?? "Text opt-in confirmation"}</p><p>{smsOperationDate(item.dueAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={item.blockedReason ? "attention" : undefined}>{state}</span></div></summary>
+  return <details className={`operator-glass ${styles.card}`}><summary aria-label={`${item.recipient.name}: ${messageName(item)}`}><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {messageName(item)}</p><p>{smsOperationDate(item.dueAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={item.blockedReason ? "attention" : undefined}>{state}</span></div></summary>
     <dl className={styles.facts}><div><dt>Send window begins</dt><dd>{smsOperationDate(item.dueAt, item.call?.timeZone)}</dd></div><div><dt>Send window ends</dt><dd>{smsOperationDate(item.expiresAt, item.call?.timeZone)}</dd></div>{item.call ? <div><dt>Call begins</dt><dd>{smsOperationDate(item.call.startsAt, item.call.timeZone)}</dd></div> : null}<div><dt>Recipient</dt><dd>{item.recipient.name} · {item.recipient.maskedPhone}{item.recipient.sharedPhone ? " · Shared phone" : ""}</dd></div></dl>
     {item.blockedReason ? <p className={styles.note}>{reason(item.blockedReason)}</p> : null}
     <TextBody body={item.body} label="Text prepared for this occurrence" />
@@ -71,9 +80,9 @@ function UpcomingCard({ item }: { item: MemberSmsUpcomingItem }) {
 
 function HistoryCard({ item }: { item: MemberSmsHistoryItem }) {
   const status = smsDeliveryLabel(item);
-  return <details className={`operator-glass ${styles.card}`}><summary aria-label={`${item.recipient.name}: ${status.label}`}><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {item.call?.title ?? (item.kind === "opt_in_confirmation" ? "Text opt-in confirmation" : item.kind === "call_reminder" ? "Call reminder" : "Membership reminder")}</p><p>{smsOperationDate(item.createdAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={status.tone}>{status.label}</span></div></summary>
+  return <details className={`operator-glass ${styles.card}`}><summary aria-label={`${item.recipient.name}: ${status.label}`}><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {messageName(item)}</p><p>{smsOperationDate(item.createdAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={status.tone}>{status.label}</span></div></summary>
     <p className={styles.note}>{status.explanation}</p>
-    <dl className={styles.facts}><div><dt>Attempt started</dt><dd>{smsOperationDate(item.createdAt, item.call?.timeZone)}</dd></div><div><dt>Last status update</dt><dd>{smsOperationDate(item.deliveryUpdatedAt ?? item.updatedAt, item.call?.timeZone)}</dd></div>{item.blockedReason ? <div><dt>Reason</dt><dd>{reason(item.blockedReason)}</dd></div> : null}{item.deliveryErrorCode ? <div><dt>Provider error</dt><dd>{item.deliveryErrorCode}</dd></div> : null}</dl>
+    <dl className={styles.facts}><div><dt>Attempt started</dt><dd>{smsOperationDate(item.createdAt, item.call?.timeZone)}</dd></div><div><dt>Last status update</dt><dd>{smsOperationDate(item.deliveryUpdatedAt ?? item.updatedAt, item.call?.timeZone)}</dd></div>{item.actorName ? <div><dt>Requested by</dt><dd>{item.actorName}</dd></div> : null}{item.blockedReason ? <div><dt>Reason</dt><dd>{reason(item.blockedReason)}</dd></div> : null}{item.deliveryErrorCode ? <div><dt>Provider error</dt><dd>{item.deliveryErrorCode}</dd></div> : null}</dl>
     {item.body ? <><TextBody body={item.body} label={item.bodySource === "snapshot" ? "Recorded message" : "Verified message wording"} /><p className={styles.messageNote}>{item.bodySource === "snapshot" ? "Saved with this send attempt." : "Verified against the original send record."}</p></> : <p className={styles.note}>Exact wording was not saved for this older attempt and cannot be verified. Its recorded delivery status is shown above.</p>}
   </details>;
 }
@@ -81,14 +90,23 @@ function HistoryCard({ item }: { item: MemberSmsHistoryItem }) {
 function JobCard({ item, checkedAt }: { item: MemberSmsOperationJob; checkedAt: string }) {
   const ended = Date.parse(item.expiresAt) <= Date.parse(checkedAt);
   const label = (item.status === "processing" && ended) || item.outcome === "unknown" ? "Needs review" : item.status === "processing" ? "Processing" : item.status === "queued" ? ended ? "Window ended" : "Queued" : item.outcome === "expired" ? "Expired" : "No send recorded";
-  return <details className={`operator-glass ${styles.card}`}><summary><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {item.call?.title ?? (item.kind === "call_reminder" ? "Call reminder" : "Text opt-in confirmation")}</p><p>{smsOperationDate(item.dueAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={label === "Needs review" ? "attention" : undefined}>{label}</span></div></summary><p className={styles.note}>No provider send attempt is recorded for this job.{item.status === "processing" && ended ? " Processing did not finish before the send window ended. It will not be automatically retried." : ""}</p><dl className={styles.facts}><div><dt>Send window</dt><dd>{smsOperationDate(item.dueAt, item.call?.timeZone)} – {smsOperationDate(item.expiresAt, item.call?.timeZone)}</dd></div><div><dt>Last update</dt><dd>{smsOperationDate(item.updatedAt, item.call?.timeZone)}</dd></div>{item.outcome ? <div><dt>Outcome</dt><dd>{reason(item.outcome)}</dd></div> : null}</dl></details>;
+  return <details className={`operator-glass ${styles.card}`}><summary><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · {messageName(item)}</p><p>{smsOperationDate(item.dueAt, item.call?.timeZone)}</p></div><span className={styles.status} data-tone={label === "Needs review" ? "attention" : undefined}>{label}</span></div></summary><p className={styles.note}>No provider send attempt is recorded for this job.{item.status === "processing" && ended ? " Processing did not finish before the send window ended. It will not be automatically retried." : ""}</p><dl className={styles.facts}><div><dt>Send window</dt><dd>{smsOperationDate(item.dueAt, item.call?.timeZone)} – {smsOperationDate(item.expiresAt, item.call?.timeZone)}</dd></div><div><dt>Last update</dt><dd>{smsOperationDate(item.updatedAt, item.call?.timeZone)}</dd></div>{item.outcome ? <div><dt>Outcome</dt><dd>{reason(item.outcome)}</dd></div> : null}</dl></details>;
 }
 
-export default function OperatorSmsOperations({ preview = false, previewCommunications = [], view, bucket, onNavigate }: Props) {
+function OneOffRequestCard({ item, checkedAt }: { item: MemberSmsOneOffRequestRecord; checkedAt: string }) {
+  const blocked = item.status === "finished" && item.outcome === "blocked";
+  const waiting = item.status === "claimed" && Date.parse(checkedAt) - Date.parse(item.claimedAt ?? item.createdAt) < 60_000;
+  return <details className={`operator-glass ${styles.card}`}><summary><div className={styles.rowHeading}><div className={styles.identity}><h3>{item.recipient.name}</h3><p>{item.recipient.maskedPhone} · One-off text</p><p>{smsOperationDate(item.claimedAt ?? item.createdAt)}</p></div><span className={styles.status} data-tone={!waiting ? "attention" : undefined}>{blocked ? "Not sent" : waiting ? "Awaiting result" : "Needs review"}</span></div></summary><p className={styles.note}>Requested by {item.actorName}. {blocked ? "Eligibility checks stopped this text before a provider send attempt." : "No provider send attempt is recorded and the outcome is not confirmed."} This request will not be automatically resent.</p><TextBody body={item.body} label="Reviewed text" /></details>;
+}
+
+export default function OperatorSmsOperations({ preview = false, previewCommunications = [], view, bucket, onNavigate, onComposerBusyChange }: Props) {
   const [overview, setOverview] = useState<MemberSmsOperationsOverview | null>(() => preview ? sampleOverview(previewCommunications) : null);
   const [pending, setPending] = useState<"loading" | "more" | null>(preview ? null : "loading");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [templateId, setTemplateId] = useState<MemberSmsTemplateId | null>(null);
+  const [composerBusy, setComposerBusy] = useState(false), [templateBusy, setTemplateBusy] = useState(false);
   const requestId = useRef(0), controller = useRef<AbortController | null>(null);
   const section = view === "upcoming" || view === "activity" ? view : "catalog";
   async function load(more = false) {
@@ -110,18 +128,30 @@ export default function OperatorSmsOperations({ preview = false, previewCommunic
   useEffect(() => { if (!preview) void load(); return cancelRequest; /* Initial request is intentionally independent of email configuration. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
+  useEffect(() => { onComposerBusyChange?.(composerBusy || templateBusy); return () => onComposerBusyChange?.(false); }, [composerBusy, templateBusy, onComposerBusyChange]);
   const needle = query.trim().toLocaleLowerCase();
-  const matches = (item: MemberSmsUpcomingItem | MemberSmsHistoryItem) => !needle || `${item.recipient.name} ${item.recipient.maskedPhone} ${item.call?.title ?? "Text opt-in confirmation"}`.toLocaleLowerCase().includes(needle);
+  const matches = (item: MemberSmsUpcomingItem | MemberSmsHistoryItem) => !needle || `${item.recipient.name} ${item.recipient.maskedPhone} ${messageName(item)} ${"actorName" in item ? item.actorName ?? "" : ""}`.toLocaleLowerCase().includes(needle);
   const upcoming = overview?.upcoming.items.filter(matches) ?? [], history = overview?.history.items.filter(matches) ?? [];
-  const jobs = overview?.jobs.items.filter(item => !needle || `${item.recipient.name} ${item.recipient.maskedPhone} ${item.call?.title ?? "Text opt-in confirmation"}`.toLocaleLowerCase().includes(needle)) ?? [];
+  const jobs = overview?.jobs.items.filter(item => !needle || `${item.recipient.name} ${item.recipient.maskedPhone} ${messageName(item)}`.toLocaleLowerCase().includes(needle)) ?? [];
+  const oneOffRequests = overview?.oneOffRequests?.items.filter(item => !needle || `${item.recipient.name} ${item.recipient.maskedPhone} ${item.actorName} one-off text`.toLocaleLowerCase().includes(needle)) ?? [];
   const templates = overview?.templates.filter(item => templateInBucket(item, bucket)) ?? [];
   const manual = overview?.communications.filter(item => item.channel === "texts" && !item.id.startsWith("sms:") && (!bucket || item.bucket === bucket)) ?? [];
   const state = overview?.automation.state;
   const stateLabel = preview ? "Sample · sending disabled" : state === "enabled" ? "Automatic texts enabled" : state === "disabled" ? "Automatic texts paused" : state === "not_activated" ? "Activation scheduled" : "Text delivery needs setup";
   return <section className={styles.workspace} aria-label="Text operations" aria-busy={pending !== null}>
-    <header className={styles.header}><div><h2 className="operator-page-heading">Texts</h2><p>See the wording, send windows, recipients, and delivery results for member texts.</p></div><button className={OPERATOR_BUTTON_CLASS} type="button" disabled={pending !== null} onClick={() => void load()}>Refresh texts</button></header>
+    <header className={styles.header}><div><h2 className="operator-page-heading">Texts</h2><p>See the wording, send windows, recipients, and delivery results for member texts.</p></div>{!templateId ? <div className={styles.headerActions}>{!composerOpen ? <button className={styles.sendEntry} type="button" onClick={() => setComposerOpen(true)}>Send a text</button> : null}<button className={OPERATOR_BUTTON_CLASS} type="button" disabled={pending !== null || composerOpen} onClick={() => void load()}>Refresh texts</button></div> : null}</header>
+    <OperatorSmsOneOffComposer open={composerOpen} preview={preview} onClose={() => setComposerOpen(false)} onActivity={() => { setComposerOpen(false); setQuery(""); onNavigate({view:"activity"}); void load(); }} onBusyChange={setComposerBusy} />
+    {templateId ? <OperatorSmsTemplateEditor key={templateId} templateId={templateId} preview={preview} onClose={() => { setTemplateId(null); setTemplateBusy(false); }} onSaved={() => void load()} onBusyChange={setTemplateBusy} /> : null}
+    {!composerOpen && !templateId ? <>
     {preview ? <p className={styles.note}>Sample workspace. Names, schedules, and deliveries below are fictional. Nothing is saved or sent.</p> : null}
-    {overview ? <div className={`operator-glass ${styles.readiness}`}><strong>{stateLabel}</strong><p>Checked every five minutes.</p><p>{overview.upcoming.currentOptIns} current {overview.upcoming.currentOptIns === 1 ? "opt-in" : "opt-ins"}.</p></div> : null}
+    {overview ? <div className={`operator-glass ${styles.readiness}`}>
+      <div><strong>{stateLabel}</strong><p>Checked every five minutes.</p></div>
+      <dl className={styles.recipientCounts} aria-label="Text recipients">
+        <div><dt>Eligible opted-in members</dt><dd>{overview.upcoming.eligibleOptIns}</dd></div>
+        <div><dt>Current opt-ins in total</dt><dd>{overview.upcoming.currentOptIns}</dd></div>
+      </dl>
+      <p className={styles.countExplanation}>Eligible members have current paid or complimentary access and an open profile. Each text still checks its audience and sending requirements.</p>
+    </div> : null}
     <nav className={`operator-glass ${styles.nav}`} aria-label="Text views">{([['catalog','Messages'],['upcoming','Upcoming'],['activity','Activity']] as const).map(([value,label]) => <button key={value} type="button" aria-current={section === value ? "page" : undefined} onClick={() => { setQuery(""); onNavigate({view:value}); }}>{label}</button>)}</nav>
     {error ? <div className={styles.error} role="alert"><p>{error}</p>{overview ? <p>Showing the last successfully loaded records. Refresh to check the current state.</p> : null}</div> : null}
     {!overview ? <p role="status" className={styles.note}>{pending ? "Loading text operations…" : "Text records could not be loaded."}</p> : <>
@@ -129,7 +159,7 @@ export default function OperatorSmsOperations({ preview = false, previewCommunic
       {overview.automation.warnings.length ? <aside className={`operator-emphasis ${styles.error}`} data-operator-tone="wait" aria-label="Text delivery notes">{overview.automation.warnings.map(warning => <p key={warning}>{warning}</p>)}</aside> : null}
       {section === "catalog" ? <>
         <div className={styles.toolbar}><h3>Automatic messages</h3><label>Member journey<select value={bucket ?? "all"} onChange={event => onNavigate({bucket:event.currentTarget.value === "all" ? null : event.currentTarget.value as CommunicationBucket})}><option value="all">All stages</option>{COMMUNICATION_BUCKETS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label></div>
-        <div className={styles.stack}>{templates.map(item => <article key={item.id} className={`operator-glass ${styles.card}`}><h3>{item.title}</h3><dl className={styles.facts}><div><dt>When it goes out</dt><dd>{item.timing}</dd></div><div><dt>Who receives it</dt><dd>{item.audience}</dd></div><div><dt>Trigger</dt><dd>{item.trigger}</dd></div></dl><TextBody body={item.body} label={item.bodyIsExample ? "Example with sample call details" : "Exact message wording"} />{item.bodyIsExample ? <p className={styles.messageNote}>The real call details replace these examples at sending time. {item.variables.length ? `Changes with each call: ${item.variables.join(", ")}.` : ""}</p> : null}</article>)}</div>
+        <div className={styles.stack}>{templates.map(item => <article key={item.id} className={`operator-glass ${styles.card}`}><div className={styles.rowHeading}><h3>{item.title}</h3><span className={styles.status}>{item.id === "opt_in_confirmation" ? "Always enabled" : item.enabled ? "Enabled" : "Off"}</span></div><dl className={styles.facts}><div><dt>When it goes out</dt><dd>{item.timing}</dd></div><div><dt>Who receives it</dt><dd>{item.audience}</dd></div><div><dt>Trigger</dt><dd>{item.trigger}</dd></div></dl><TextBody body={item.body} label={item.bodyIsExample ? "Example with sample call details" : "Exact message wording"} />{item.bodyIsExample ? <p className={styles.messageNote}>The real call details replace these examples at sending time. {item.variables.length ? `Changes with each call: ${item.variables.join(", ")}.` : ""}</p> : null}<button type="button" className={styles.editTemplate} aria-label={`Edit text: ${item.title}`} onClick={() => setTemplateId(item.id)}>Edit text</button></article>)}</div>
         {!templates.length ? <Empty title="No automatic texts in this stage">Choose another stage to review its messages.</Empty> : null}
         {manual.length ? <section className={styles.manual} aria-label="Manual texts"><h3>Manual texts</h3><p className={styles.note}>These are prepared and sent separately from automatic member texts.</p><div className={styles.stack}>{manual.map(item => <article className={`operator-glass ${styles.card}`} key={item.id}><div className={styles.rowHeading}><h4>{item.title}</h4><span className={styles.status}>{item.statusLabel}</span></div><dl className={styles.facts}><div><dt>When</dt><dd>{item.timing}</dd></div><div><dt>Audience</dt><dd>{item.audience}</dd></div></dl>{item.detail ? <p className={styles.note}>{item.detail}</p> : null}{item.action?.href && !preview ? <Link className={styles.action} href={item.action.href}>{item.action.label} →</Link> : null}</article>)}</div></section> : null}
       </> : <>
@@ -143,9 +173,10 @@ export default function OperatorSmsOperations({ preview = false, previewCommunic
           {history.length ? <div className={styles.stack}>{history.map(item => <HistoryCard key={item.id} item={item} />)}</div> : <Empty title={needle ? "No loaded activity matches this search" : "No text attempts recorded"}>{needle ? "Try another recipient or call, or load older activity." : "Delivery activity appears after an actual send attempt."}</Empty>}
           {overview.history.nextCursor ? <button className={`${OPERATOR_BUTTON_CLASS} mt-4`} type="button" disabled={pending !== null} onClick={() => void load(true)}>{pending === "more" ? "Loading older activity…" : "Load older activity"}</button> : null}
           {overview.jobs.items.length || overview.jobs.truncated ? <section className={styles.manual} aria-label="Jobs without a send attempt"><h3>Jobs without a send attempt</h3><p className={styles.note}>Queued, interrupted, expired, or stopped jobs are separate from carrier delivery results.</p>{overview.jobs.truncated ? <p className={styles.note}>Only the most recent jobs are shown, with processing jobs first.</p> : null}<div className={styles.stack}>{jobs.map(item => <JobCard key={item.id} item={item} checkedAt={overview.generatedAt} />)}</div>{!jobs.length ? <p className={styles.note}>No loaded jobs match this search.</p> : null}</section> : null}
+          {overview.oneOffRequests?.items.length || overview.oneOffRequests?.truncated ? <section className={styles.manual} aria-label="One-off requests without a send attempt"><h3>One-off requests without a send attempt</h3><p className={styles.note}>These send requests have no provider attempt recorded. Check the existing request before sending another text.</p>{overview.oneOffRequests.truncated ? <p className={styles.note}>Only the most recent requests are shown.</p> : null}<div className={styles.stack}>{oneOffRequests.map(item => <OneOffRequestCard key={item.id} item={item} checkedAt={overview.generatedAt} />)}</div>{!oneOffRequests.length ? <p className={styles.note}>No loaded requests match this search.</p> : null}</section> : null}
         </>}
       </>}
-      <footer className={styles.footer}><p>Checked {smsOperationDate(overview.generatedAt)}.</p><p>{section === "activity" ? `${overview.history.items.length} ${overview.history.items.length === 1 ? "attempt" : "attempts"} loaded` : section === "upcoming" ? `${upcoming.length} ${upcoming.length === 1 ? "occurrence" : "occurrences"} shown` : "Read-only review"}</p></footer>
-    </>}
+      <footer className={styles.footer}><p>Checked {smsOperationDate(overview.generatedAt)}.</p><p>{section === "activity" ? `${overview.history.items.length} ${overview.history.items.length === 1 ? "attempt" : "attempts"} loaded` : section === "upcoming" ? `${upcoming.length} ${upcoming.length === 1 ? "occurrence" : "occurrences"} shown` : "Automatic message reference"}</p></footer>
+    </>}</> : null}
   </section>;
 }

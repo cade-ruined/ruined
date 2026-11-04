@@ -22,11 +22,13 @@ const manualCopy = compile("src/lib/communications/cade-communications.ts");
 const catalog = compile("src/lib/communications/communications-catalog.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView, "./cade-communications": manualCopy })[name] ?? noDependency(name));
 const navigation = compile("src/lib/communications/email-automation-navigation.ts", name => ({ "./member-email-cadence-model": model, "./email-automation-view": automationView })[name] ?? noDependency(name));
 const styles = compile("src/components/platform/operatorStyles.ts");
-const smsModel = compile("src/lib/communications/member-sms-model.ts");
+const smsOneOffModel = compile("src/lib/communications/member-sms-one-off-model.ts");
+const smsModel = compile("src/lib/communications/member-sms-model.ts", name => ({ "./member-sms-one-off-model": smsOneOffModel })[name] ?? noDependency(name));
 const smsAutomationModel = compile("src/lib/communications/member-sms-automation-model.ts");
-const smsOperationsModel = compile("src/lib/communications/member-sms-operations-model.ts", name => ({ "./member-sms-model": smsModel, "./member-sms-automation-model": smsAutomationModel })[name] ?? noDependency(name));
+const smsTemplateModel = compile("src/lib/communications/member-sms-template-model.ts", name => ({ "./member-sms-model": smsModel })[name] ?? noDependency(name));
+const smsOperationsModel = compile("src/lib/communications/member-sms-operations-model.ts", name => ({ "./member-sms-model": smsModel, "./member-sms-automation-model": smsAutomationModel, "./member-sms-template-model": smsTemplateModel })[name] ?? noDependency(name));
 const SMS_API = "/api/ops/messages/texts";
-const smsOverview = { generatedAt: "2026-11-02T19:00:00Z", automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: "2026-11-01T00:00:00Z", state: "enabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates: smsOperationsModel.getMemberSmsTemplatePreviews("https://members.example.test"), communications: [], upcoming: { items: [], horizonEnd: "2026-11-16T19:00:00Z", truncated: false, label: "Current eligibility forecast.", currentOptIns: 7 }, history: { items: [], nextCursor: null }, jobs: { items: [], truncated: false } };
+const smsOverview = { generatedAt: "2026-11-02T19:00:00Z", automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: "2026-11-01T00:00:00Z", state: "enabled", missing: [], schedule: "*/5 * * * *", batchSize: 100 }, templates: smsOperationsModel.getMemberSmsTemplatePreviews("https://members.example.test"), communications: [], upcoming: { items: [], horizonEnd: "2026-11-16T19:00:00Z", truncated: false, label: "Current eligibility forecast.", currentOptIns: 7, eligibleOptIns: 5 }, history: { items: [], nextCursor: null }, jobs: { items: [], truncated: false } };
 const nodes = node => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = node => node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 const API = "/api/ops/emails/automations";
@@ -67,7 +69,7 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
   function slot() { assert.ok(currentStore, "Hooks must run inside a component render"); const store = currentStore; return [store, store.cursor++]; }
   const hooks = { ...React,
     useRef(initial) { const [store, i] = slot(); return store.slots[i] ??= { current: initial }; },
-    useState(initial) { const [store, i] = slot(); if (!(i in store.slots)) store.slots[i] = typeof initial === "function" ? initial() : initial; return [store.slots[i], next => { const value = typeof next === "function" ? next(store.slots[i]) : next; changed ||= store.slots[i] !== value; store.slots[i] = value; }]; },
+    useState(initial) { const [store, i] = slot(); if (!(i in store.slots)) store.slots[i] = typeof initial === "function" ? initial() : initial; store.setters ??= []; store.setters[i] ??= next => { const value = typeof next === "function" ? next(store.slots[i]) : next; changed ||= store.slots[i] !== value; store.slots[i] = value; }; return [store.slots[i], store.setters[i]]; },
     useEffect(effect, dependencies) { const [store, i] = slot(); if (!store.slots[i] || dependencies.some((value, index) => value !== store.slots[i].dependencies[index])) effects.push(() => { store.slots[i]?.cleanup?.(); store.slots[i] = { dependencies, cleanup: effect() }; }); },
   };
   function resolve(node, path = "root") {
@@ -99,6 +101,10 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     "@/lib/communications/email-automation-navigation": navigation,
     "@/lib/communications/communications-catalog": catalog,
     "@/lib/communications/member-sms-model": smsModel,
+    "@/lib/communications/member-sms-one-off-model": smsOneOffModel,
+    "@/lib/communications/member-sms-template-model": smsTemplateModel,
+    "./OperatorSmsTemplateEditor.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
+    "./OperatorSmsOneOffComposer.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "@/lib/communications/member-sms-operations-model": smsOperationsModel,
     "./OperatorSmsOperations.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
     "./OperatorCommunicationsCatalog.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, key) => String(key) }) },
@@ -121,6 +127,8 @@ function fixture({ preview = false, data = overview, reviewed = review, selected
     return Response.json(JSON.parse(call.body).action === "preview" ? reviewed : { ok: true });
   }
   async function transport(url, options) { const call = { url, ...options }; calls.push(call); return respond ? respond(call, fallback) : fallback(call); }
+  deps["./OperatorSmsOneOffComposer"] = compile("src/components/platform/OperatorSmsOneOffComposer.tsx", name => deps[name] ?? noDependency(name), transport);
+  deps["./OperatorSmsTemplateEditor"] = compile("src/components/platform/OperatorSmsTemplateEditor.tsx", name => deps[name] ?? noDependency(name), transport);
   deps["./OperatorSmsOperations"] = compile("src/components/platform/OperatorSmsOperations.tsx", name => deps[name] ?? noDependency(name), transport);
   const Component = compile("src/components/platform/OperatorEmailAutomations.tsx", name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }, transport).default;
   function draw() {
@@ -979,6 +987,26 @@ test("a direct Texts bookmark loads SMS without email readiness and stays usable
     assert.equal(f.button("Upcoming").props["aria-current"], "page");
     assert.match(text(f.draw()), /No texts are due in this window/);
     assert.equal(f.calls.some(call => call.method !== "GET"), false);
+  } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
+});
+
+test("reviewing an automatic text retains the Texts bookmark and protects channel navigation while dirty", async () => {
+  const previous = globalThis.window;
+  const location = { href: "https://example.test/ops/messages?channel=texts&bucket=membership", pathname: "/ops/messages", search: "?channel=texts&bucket=membership", hash: "" };
+  const listeners = new Map();
+  globalThis.window = { location, history: { state: null, replaceState(_state, _unused, path) { const url = new URL(path, location.href); Object.assign(location, { href: url.href, pathname: url.pathname, search: url.search, hash: url.hash }); } }, addEventListener(name, listener) { listeners.set(name, listener); }, removeEventListener(name) { listeners.delete(name); } };
+  try {
+    const f = fixture({ preview: true }); f.draw(); await f.settle();
+    f.find(node => node.type === "button" && node.props["aria-label"] === "Edit text: Standard call reminder").props.onClick(); await f.settle();
+    f.change("sms-template-body", "Ruined: {{call_title}} at {{call_time}}. Join: {{call_link}}."); f.change("sms-template-minutes", "90");
+    await f.submit(); await f.settle();
+    assert.equal(new URLSearchParams(location.search).get("channel"), "texts"); assert.equal(new URLSearchParams(location.search).get("bucket"), "membership");
+    assert.match(text(f.draw()), /Reviewed message preview/); assert.equal(f.button("Saving off in sample").props.disabled, true);
+    f.channel("Emails"); f.draw(); assert.ok(f.find(node => node.props?.["aria-label"] === "Edit automatic text"));
+    f.button("Cancel edit").props.onClick(); f.button("Discard changes").props.onClick(); f.draw();
+    assert.equal(new URLSearchParams(location.search).get("channel"), "texts"); assert.ok(f.button("Messages"));
+    f.button("Upcoming").props.onClick(); f.draw(); assert.equal(new URLSearchParams(location.search).get("commsView"), "upcoming");
+    assert.equal(f.calls.length, 0);
   } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 });
 

@@ -29,11 +29,110 @@ test("SMS operations enforces current administrator access and makes only read-o
   assert.ok(!JSON.stringify(result).includes(m.phone));
   assert.ok(!JSON.stringify(result).includes(f.env.TWILIO_AUTH_TOKEN));
   assert.equal(result.automation.state, "enabled");
-  assert.equal(result.templates.length, 3);
+  assert.equal(result.templates.length, 4);
+  assert.equal(result.templates.find(item => item.id === "day_before").enabled, false);
   assert.deepEqual((await f.db.query("select (select count(*) from member_consents) as consents,(select count(*) from private.member_sms_delivery_attempts) as attempts,(select count(*) from private.member_sms_automation_jobs) as jobs")).rows, before);
   assert.ok(f.queries.every(query => !/for\s+(share|update)|ruined_lock_|\b(insert|update|delete)\b/i.test(query)));
   await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [f.admin]);
   await assert.rejects(f.view(), error => error.status === 403);
+});
+
+test("recipient counts separate eligible paid or complimentary members from other current permissions", async t => {
+  const f = await fixture(t), funded = await f.member(), unfunded = await f.member(), held = await f.member();
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [unfunded.memberId]);
+  await f.db.query("insert into member_registration_access(member_id) values($1)", [held.memberId]);
+  await f.consent(unfunded); await f.consent(held);
+  const { MEMBER_SMS_OPERATOR_ATTESTATION_VERSION, MEMBER_SMS_OPERATOR_ATTESTATION_ACTION } = f.load("src/lib/membership/member-sms-consent.ts");
+  await f.db.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence)
+    values($1,'communications',$2,'accepted',$3,'ops',$4,$5)`, [funded.memberId, MEMBER_SMS_OPERATOR_ATTESTATION_VERSION, f.ago(30), f.admin, JSON.stringify({
+    context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "sms", destination: funded.phone,
+    requested: true, marketingConsent: false, action: MEMBER_SMS_OPERATOR_ATTESTATION_ACTION,
+    operatorApproved: true, permissionConfirmed: true, memberAffirmed: false,
+    approvalReference: "isolated-test-approval", permissionStatement: "The member explicitly permitted membership texts to this number.",
+    batchId: id(9000), originalConsentId: null, originalPolicyVersion: null,
+  })]);
+  let result = await f.view();
+  assert.equal(result.upcoming.currentOptIns, 3);
+  assert.equal(result.upcoming.eligibleOptIns, 1);
+  assert.equal(result.upcoming.items.length, 0, "Recipient counts are independent of scheduled messages");
+
+  await f.db.query("update ruined_members set membership_state='pending' where id=$1", [funded.memberId]);
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [funded.memberId]);
+  await f.db.query("insert into member_complimentary_grants(member_id) values($1)", [funded.memberId]);
+  result = await f.view();
+  assert.equal(result.upcoming.currentOptIns, 3);
+  assert.equal(result.upcoming.eligibleOptIns, 1, "Current complimentary funding counts without a paid membership_state");
+
+  await f.consent(funded, { decision: "withdrawn" });
+  result = await f.view();
+  assert.equal(result.upcoming.currentOptIns, 2, "A later member withdrawal supersedes the operator attestation");
+  assert.equal(result.upcoming.eligibleOptIns, 0);
+  assert.ok(f.queries.every(query => !/for\s+(share|update)|ruined_lock_|\b(insert|update|delete)\b/i.test(query)));
+});
+
+test("saved template previews and forecasts use edited copy, timing and enabled stages without backfilling", async t => {
+  const f = await fixture(t), m = await f.member(); await f.consent(m); const e = await f.event({ startsAt: f.ago(-1560) });
+  let view = await f.view();
+  assert.equal(view.upcoming.items.length, 1, "disabled day-before has no upcoming occurrence");
+  const edited = "Ruined: {{call_title}} starts at {{call_time}}. Join: {{call_link}}.";
+  await f.db.query("update private.member_sms_templates set body=$1,notice_minutes=90,revision=1,updated_by=$2,effective_at=$3 where id='call_reminder'", [edited,f.admin,f.ago(1)]);
+  await f.db.query("update private.member_sms_templates set enabled=true,effective_at=$1 where id='day_before'", [f.ago(1)]);
+  view = await f.view();
+  const template = view.templates.find(row => row.id === "call_reminder");
+  assert.equal(template.editableBody, edited); assert.equal(template.revision, 1); assert.equal(template.noticeMinutes, 90);
+  assert.match(template.timing, /90 minutes before/); assert.match(template.body, /starts at/);
+  assert.deepEqual(template.variables, ["Call title", "Call time", "Member call-details link"]);
+  assert.equal(view.upcoming.items.length, 2);
+  const dayBefore = view.upcoming.items.find(row => row.reminderStage === "day_before");
+  const short = view.upcoming.items.find(row => !row.reminderStage);
+  assert.equal(dayBefore.call.reminderStage, "day_before"); assert.match(dayBefore.reminderKey, /:24h$/);
+  assert.equal(dayBefore.dueAt, new Date(Date.parse(e.startsAt)-1440*60000).toISOString());
+  assert.equal(short.dueAt, new Date(Date.parse(e.startsAt)-90*60000).toISOString()); assert.match(short.reminderKey, /:60m$/);
+  assert.match(short.body, /starts at/); assert.doesNotMatch(short.body, /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),/);
+  await f.db.query("update private.member_sms_templates set effective_at=$1 where id='day_before'", [new Date(Date.parse(dayBefore.dueAt)+1).toISOString()]);
+  assert.equal((await f.view()).upcoming.items.length, 1, "window before saved effective time is not backfilled");
+  await f.db.exec("update private.member_sms_templates set enabled=false where id='call_reminder'");
+  assert.equal((await f.view()).upcoming.items.length, 0);
+});
+
+test("paused and retimed durable jobs remain activity evidence without promising another send", async t => {
+  const f = await fixture(t), m = await f.member(); const c = await f.consent(m); const e = await f.event({ startsAt: f.ago(-180) });
+  const key = `call:${e.eventId}:${Date.parse(e.startsAt)}:60m`, due = new Date(Date.parse(e.startsAt)-60*60000).toISOString();
+  await f.db.query(`insert into private.member_sms_automation_jobs(member_id,reminder_kind,reminder_key,expected_consent_id,experience_id,starts_at,due_at,expires_at)
+    values($1,'call_reminder',$2,$3,$4,$5,$6,$7)`, [m.memberId,key,c,e.eventId,e.startsAt,due,new Date(Date.parse(due)+600000).toISOString()]);
+  assert.equal((await f.view()).upcoming.items[0].source, "queued");
+  await f.db.exec("update private.member_sms_templates set notice_minutes=90 where id='call_reminder'");
+  let view = await f.view(); assert.equal(view.upcoming.items.length, 0); assert.equal(view.jobs.items.length, 1);
+  await f.db.exec("update private.member_sms_templates set notice_minutes=60,enabled=false where id='call_reminder'");
+  view = await f.view(); assert.equal(view.upcoming.items.length, 0); assert.equal(view.jobs.items[0].status, "queued");
+});
+
+test("a confirmation edit holds an older forecast window without requiring already confirmed members to opt in again", async t => {
+  const f = await fixture(t), m = await f.member(); const c = await f.consent(m); await f.event();
+  await f.db.query("update private.member_sms_templates set effective_at=$1 where id='opt_in_confirmation'", [f.ago(1)]);
+  let item = (await f.view()).upcoming.items[0];
+  assert.equal(item.confirmation,"unavailable"); assert.equal(item.confirmationBody,null);
+  assert.match(item.blockedReason,/edited after this send window opened/);
+  await attempt(f,m,c);
+  item = (await f.view()).upcoming.items[0];
+  assert.equal(item.confirmation,"accepted"); assert.equal(item.blockedReason,null);
+});
+
+test("edited day-before history keeps the exact dispatched snapshot and identifies the separate stage", async t => {
+  const f = await fixture(t), m = await f.member(); const c = await f.consent(m); const e = await f.event({ startsAt: f.ago(-1560) });
+  const model = f.load("src/lib/communications/member-sms-template-model.ts");
+  const template = model.defaultMemberSmsTemplates().find(row => row.id === "day_before");
+  const key = `call:${e.eventId}:${Date.parse(e.startsAt)}:24h`;
+  const input = { memberId:m.memberId,kind:"call_reminder",reminderKey:key,expectedConsentId:c,callDetails:{...e,reminderStage:"day_before"} };
+  const sent = model.renderMemberSmsTemplate({...template,body:"Ruined: Tomorrow, make time for {{call_title}}. Join: {{call_link}}."}, input, ORIGIN);
+  await attempt(f,m,c,{kind:"call_reminder",key,body:sent,snapshot:true});
+  await f.db.query("update private.member_sms_templates set body=$1,enabled=true where id='day_before'", ["Ruined: A new message for {{call_title}}. Join: {{call_link}}."]);
+  const view = await f.view(), item = view.history.items[0];
+  assert.equal(item.body, sent); assert.equal(item.bodySource, "snapshot"); assert.equal(item.reminderStage,"day_before");
+  assert.equal(item.call,null,"current call metadata is not substituted for unverified historical text");
+  assert.doesNotMatch(item.body, /A new message/);
+  assert.equal(view.upcoming.items.filter(row=>row.reminderStage==="day_before").length,0,"recorded day-before occurrence never forecasts a retry");
+  assert.equal(view.upcoming.items.length,1,"short reminder is independently eligible");
 });
 
 test("forecasts follow latest consent, phone, suppression, hold, registration and current event eligibility", async t => {

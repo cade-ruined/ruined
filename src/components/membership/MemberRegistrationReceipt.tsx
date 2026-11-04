@@ -77,7 +77,7 @@ export default function MemberRegistrationReceipt({ email, registeredAt, require
         </div>
         <div className="border-t border-[var(--member-rule)] pt-5 sm:border-l sm:border-t-0 sm:pl-7 sm:pt-0">
           <p className="text-xs font-semibold uppercase tracking-[0.12em]">Registration saved{date ? <span className="mt-2 block font-normal normal-case tracking-normal">{date}</span> : null}</p>
-          <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{initialPayment ? "Your payment is confirmed by Stripe. Your profile stays closed until Ruined releases it; we’ll email you when it’s ready." : requiresPaymentMethod ? "Your card is saved securely with Stripe. Saving a card does not authorize a charge. You must separately review your price and confirm membership billing." : "Your complimentary registration is confirmed. No payment card is required."}</p>
+          <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{initialPayment ? "Your payment is confirmed by Stripe. Your profile opens automatically after completed registration; we’ll email your access details." : requiresPaymentMethod ? "Your card is saved securely with Stripe. Saving a card does not authorize a charge. You must separately review your price and confirm membership billing." : "Your complimentary registration is confirmed. No payment card is required."}</p>
           {requiresPaymentMethod ? <Link className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4" href="/my/payment-method">Manage saved card</Link> : null}
         </div>
       </div>

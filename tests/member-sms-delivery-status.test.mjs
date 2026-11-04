@@ -63,6 +63,8 @@ test("delivery state records known messages monotonically and never dispatches o
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
+  await db.exec("create table platform_users(auth_user_id uuid primary key); create table people(id uuid primary key)");
+  await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
   const apply = loader(env)("src/lib/communications/member-sms-delivery-status.ts").applyMemberSmsDeliveryStatus;
   const sql = sqlFor(db), phone = "+12025550123";
   for (const n of [1, 2]) {

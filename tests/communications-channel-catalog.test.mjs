@@ -41,7 +41,7 @@ test("preview uses the same inventory without live configuration reads or active
   const f = fixture();
   const preview = f.preview();
   assert.ok(Object.values(f.reads).every(count => count === 0));
-  assert.equal(preview.length, 13);
+  assert.equal(preview.length, 14);
   assert.ok(preview.every(item => ["manual", "paused"].includes(item.status)));
   assert.ok(preview.every(item => item.statusLabel.startsWith("Sample ·")));
   assert.ok(preview.every(item => item.detail.startsWith("Sample workspace. Nothing is saved or sent.")));
@@ -51,7 +51,7 @@ test("preview uses the same inventory without live configuration reads or active
 test("SMS requires both explicit switches, configured transport and worker, and an elapsed activation time", () => {
   const f = fixture();
   const sms = () => f.catalog().filter(item => item.id.startsWith("sms:"));
-  assert.equal(sms().length, 4, "the confirmation and all call timing variants share the same gates");
+  assert.equal(sms().length, 5, "the confirmation and all call timing variants share the same delivery prerequisites");
   assert.ok(sms().every(item => item.status === "paused"), "credentials alone never enable SMS");
   f.configuration.transport.enabled = true;
   assert.ok(sms().every(item => item.status === "paused"), "transport alone never enables automation");
@@ -115,31 +115,40 @@ test("manual invitations and app publishing describe their actual boundaries and
   assert.match(f.item("notification:circle-reveal").trigger, /after.*completed Foundations/);
 });
 
-test("Foundations 01 exposes its explicit earlier rule while other calls retain the standard timing", () => {
+test("SMS inventory labels defaults and directs operators to the saved text settings", () => {
   const rows = fixture().catalog();
   const firstFoundations = rows.find(item => item.id === "sms:foundations-01-call-reminder");
   const foundations = rows.find(item => item.id === "sms:foundations-call-reminder");
   const membership = rows.find(item => item.id === "sms:membership-call-reminder");
   assert.equal(firstFoundations.channel, "texts");
   assert.equal(firstFoundations.bucket, "foundations");
-  assert.equal(firstFoundations.title, "150-minute Foundations 01 reminder");
+  assert.equal(firstFoundations.title, "Foundations 01 reminder");
   assert.match(firstFoundations.trigger, /explicitly assigned to Foundations 01.*invite-only.*internal registration/);
   assert.match(firstFoundations.timing, /150 minutes.*2½ hours/);
   assert.match(firstFoundations.detail, /call title does not select this rule/);
   assert.match(firstFoundations.detail, /direct Google Meet link/);
   assert.equal(foundations.channel, "texts");
   assert.equal(foundations.bucket, "foundations");
-  assert.equal(foundations.title, "60-minute Foundations reminder");
+  assert.equal(foundations.title, "Standard Foundations reminder");
   assert.equal(membership.channel, "texts");
   assert.equal(membership.bucket, "membership");
-  assert.equal(membership.title, "60-minute Membership / Circle reminder");
+  assert.equal(membership.title, "Standard Membership / Circle reminder");
   for (const key of ["audience", "timing", "detail", "status", "statusLabel", "action"]) {
     assert.deepEqual(foundations[key], membership[key], key);
   }
   assert.match(foundations.timing, /60 minutes before/);
-  assert.match(foundations.trigger, /excluding calls that qualify for the earlier Foundations 01 reminder/);
+  assert.match(foundations.trigger, /excluding calls that qualify for the Foundations 01-specific reminder/);
   assert.match(foundations.detail, /same consent and delivery checks/);
   assert.equal(rows.some(item => item.id === "sms:call-reminder"), false);
+  assert.match(foundations.timing, /^Default:/);
+  assert.match(firstFoundations.timing, /^Default:/);
+  const dayBefore = rows.find(item => item.id === "sms:day-before-call-reminder");
+  assert.match(dayBefore.timing,/24 hours before/); assert.match(dayBefore.detail,/Disabled by default/);
+  for (const row of rows.filter(item => item.id.startsWith("sms:"))) {
+    assert.match(row.detail,/Texts → Messages → Edit text/);
+    assert.equal(row.action.href,"/ops/messages?mode=automations&channel=texts");
+    assert.doesNotMatch(row.detail,/copy have no editor/);
+  }
 });
 
 test("catalog exposes descriptions only and fresh rows without configuration secrets or recipients", () => {

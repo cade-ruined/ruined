@@ -9,6 +9,7 @@ import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import ts from "typescript";
+import { taggedSqlBridge } from "../tests/helpers/postgres-fragments.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const requirePackage = createRequire(new URL("../package.json", import.meta.url));
@@ -55,10 +56,9 @@ export function validateEnvironment(env) {
 }
 
 function sqlFor(engine) {
-  const sql = async (strings, ...values) => {
-    const text = strings.reduce((result, part, index) => result + (index ? `$${index}` : "") + part, "");
+  const sql = taggedSqlBridge(async (text, values) => {
     return (await engine.query(text, values.map(value => value instanceof Date ? value.toISOString() : value))).rows;
-  };
+  });
   sql.json = value => JSON.stringify(value);
   sql.begin = callback => engine.transaction(transaction => callback(sqlFor(transaction)));
   return sql;
@@ -670,11 +670,16 @@ async function selfTestPrepaid() {
       const standardQuote=await reserveNext();
       assert.equal(standardQuote.offerId,'individual_monthly',"the 51st person gets standard pricing instead of an indefinite temporary hold");
       await commercial.releaseCommercialMembershipReservation({reservationId:standardQuote.id,reason:'before_checkout_abandoned'});
-      const messageRepository = app.load("src/lib/membership/registration-message-repository.ts"), claims = [];
+      const messageRepository = app.load("src/lib/membership/registration-message-repository.ts"), claims = [], releasedProfiles = new Map();
       for (const person of [app.fixture,partner].filter(Boolean)) {
         const registered = await app.registration.getMemberRegistration(person.authUserId);
-        assert.equal(registered.state,"registered");assert.equal(registered.completionBasis,"paid_membership");
-        assert.equal(registered.profileActivatedAt,null);assert.equal(registered.initialPayment.amountPaid,amount);
+        assert.equal(registered.state,"activated");assert.equal(registered.completionBasis,"paid_membership");
+        assert.ok(registered.profileActivatedAt,"verified payment opens the completed profile before service starts");
+        releasedProfiles.set(person.memberId,registered.profileActivatedAt);
+        assert.equal(registered.initialPayment.amountPaid,amount);
+        const release=(await app.engine.query("select profile_payment_reservation_id,activated_by_auth_user_id from member_registration_access where member_id=$1",[person.memberId])).rows[0];
+        assert.equal(release.profile_payment_reservation_id,paidStatus.reservations[0].id);
+        assert.equal(release.activated_by_auth_user_id,null,"automatic release never invents an administrator action");
         if (legacyRegistration && person.memberId === app.fixture.memberId) {
           assert.equal(registered.requiresInitialPayment,false,"voluntary payment must not rewrite the original requirement");
           assert.equal(registered.ready,true,"verified payment completes legacy registration without standalone card setup");
@@ -691,6 +696,7 @@ async function selfTestPrepaid() {
         assert.equal(delivery.value.isPayer,person.memberId===app.fixture.memberId);
         assert.deepEqual(delivery.value.billingSchedule,expectedSchedule);
         assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='welcome'",[person.memberId])).rows[0].n,1);
+        assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='profile_ready'",[person.memberId])).rows[0].n,1,"payment replay cannot enqueue duplicate profile-access messages");
         assert.equal((await app.engine.query("select count(*)::int n from member_payment_method_accounts where member_id=$1",[person.memberId])).rows[0].n,0,"paid registration never requires a separate setup checkout");
       }
       if(plan==='monthly' && kind==='individual') {
@@ -751,7 +757,7 @@ async function selfTestPrepaid() {
       for (const person of [app.fixture,partner].filter(Boolean)) {
         const held = await app.registration.getMemberRegistration(person.authUserId);
         assert.equal(held.ready,false);assert.equal(held.initialPayment,null,"adjusted proof cannot appear as a successful payment receipt");
-        assert.equal(held.profileActivatedAt,null);
+        assert.equal(held.profileActivatedAt,releasedProfiles.get(person.memberId),"a later adjustment preserves historical release while current payment eligibility is removed");
         assert.equal((await app.engine.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='welcome'",[person.memberId])).rows[0].n,1,"adjustment/replay cannot enqueue duplicate welcomes");
       }
       for (const {claim,lease} of claims) {
@@ -764,7 +770,7 @@ async function selfTestPrepaid() {
       assert.ok(!page.includes(fake.STRIPE_SECRET_KEY) && !page.includes(fake.STRIPE_WEBHOOK_SECRET));
     } finally { await app.engine.close(); }
   }
-  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly/annual/couple new and historical paid onboarding without card-saving detours, immutable schedules and consent, signed webhook settlement, one welcome per adult, held profiles, 50th/51st founding capacity, per-adult couple boundary flags, actual cancellation/refund routes plus canceled-subscription reconciliation, retained pre-service founding rejoin and post-service-departure policy fixture, adjustment suppression and replay. No provider network calls or live changes. Real provider collection/refunds and due service activation require separate runtime and sandbox checks.");
+  console.log("Offline prepaid self-test passed: full migration schema, synthetic v3 agreement, monthly/annual/couple new and historical paid onboarding without card-saving detours, immutable schedules and consent, signed webhook settlement, one welcome and profile-access message per adult, automatic verified-payment profile release, 50th/51st founding capacity, per-adult couple boundary flags, actual cancellation/refund routes plus canceled-subscription reconciliation, retained pre-service founding rejoin and post-service-departure policy fixture, adjustment suppression and replay. No provider network calls or live changes. Real provider collection/refunds and due service activation require separate runtime and sandbox checks.");
 }
 
 async function main() {

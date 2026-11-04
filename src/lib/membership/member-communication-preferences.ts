@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { acceptedMemberSmsConsentSql } from "./member-sms-consent";
 import type { Sql, TransactionSql } from "postgres";
 import {
   MEMBER_COMMUNICATION_NOTICE_VERSION, MEMBER_EMAIL_UPDATES_NOTICE, MEMBER_SMS_UPDATES_NOTICE, MEMBER_SMS_UPDATES_DETAIL,
@@ -34,19 +35,17 @@ async function readState(sql: Sql | TransactionSql, memberId: string, destinatio
           and evidence->>'operatorApproved'='true' and evidence->>'memberAffirmed'='false'
           and jsonb_typeof(evidence->'approvalReference')='string'
           and evidence->>'approvalReference' ~ '[^[:space:]]'))) is true as "authorizedEmail",
-      (source='member' and actor_auth_user_id is not null and evidence->>'action'='sms_checkbox_checked'
-        and evidence->>'requested'='true' and evidence->>'marketingConsent'='false'
-        and evidence->>'termsVersion'=${MEMBER_SMS_TERMS_VERSION}) is true as "affirmativeSms"
-    from member_consents where member_id=${memberId}::uuid and consent_type='communications'
+      ${acceptedMemberSmsConsentSql(sql, sql`${destinations.phone}::text`)} as "affirmativeSms"
+    from member_consents sms_decision where member_id=${memberId}::uuid and consent_type='communications'
       and evidence->>'context'=${CONTEXT} and evidence->>'purpose'='membership_updates'
-      and evidence->>'channel' in ('email','sms') order by evidence->>'channel',member_consents.id desc`;
+      and evidence->>'channel' in ('email','sms') order by evidence->>'channel',sms_decision.id desc`;
   const latest = Object.fromEntries(rows.map(row => [row.channel, row])) as Partial<Record<Channel, Decision>>;
   const value = (channel: Channel, destination: string | null): boolean | null => {
     const decision = latest[channel];
     if (!decision) return null;
     return decision.decision === "accepted" && Boolean(destination) && decision.destination === destination
       && (channel !== "email" || decision.authorizedEmail)
-      && (channel !== "sms" || (decision.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && decision.affirmativeSms));
+      && (channel !== "sms" || decision.affirmativeSms);
   };
   const snapshot: MemberCommunicationPreferencesSnapshot = {
     email: value("email", destinations.email), sms: value("sms", destinations.phone),
@@ -90,7 +89,7 @@ export async function saveMemberCommunicationPreferences(tx: TransactionSql,
   const matches = (channel: Channel) => latest[channel]?.destination === destinations[channel]
     && latest[channel]?.decision === (input[channel] ? "accepted" : "withdrawn")
     && (channel !== "email" || !input.email || latest.email?.authorizedEmail)
-    && (channel !== "sms" || !input.sms || (latest.sms?.policyVersion === MEMBER_COMMUNICATION_NOTICE_VERSION && latest.sms.affirmativeSms));
+    && (channel !== "sms" || !input.sms || latest.sms?.affirmativeSms);
   const fingerprint = hash([CONTEXT, member.memberId, input.expectedRevision, input.noticeVersion,
     input.email, input.sms, member.email, member.phone, ...(options.emailOnly ? ["email_only"] : options.smsOnly ? ["sms_only"] : [])]);
   if (snapshot.revision !== input.expectedRevision) {

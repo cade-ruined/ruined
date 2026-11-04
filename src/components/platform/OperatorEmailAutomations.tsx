@@ -125,6 +125,7 @@ function readWorkspaceNavigation(search: string): CommunicationNavigation {
 export default function OperatorEmailAutomations({ preview = false, previewCommunications = [] }: { preview?: boolean; previewCommunications?: CommunicationItem[] }) {
   const [lifecycleDirty, setLifecycleDirty] = useState(false);
   const [registrationDirty, setRegistrationDirty] = useState(false);
+  const [smsComposerBusy, setSmsComposerBusy] = useState(false);
   const externalDirty = lifecycleDirty || registrationDirty;
   const [lifecycle, setLifecycle] = useState<LifecycleEmailOverview | null>(null);
   const [overview, setOverview] = useState<Overview | null>(preview ? sampleOverview() : null);
@@ -244,7 +245,7 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
   useEffect(() => {
     if (typeof window === "undefined") return;
     const restore = () => {
-      if (busy.current || editorOpen || externalDirty) return;
+      if (busy.current || editorOpen || externalDirty || smsComposerBusy) return;
       const saved = readAutomationNavigation(window.location.search);
       const workspace = readWorkspaceNavigation(window.location.search);
       const resolvedSection = workspace.view === "catalog" ? "upcoming" : workspace.view;
@@ -257,7 +258,7 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
     window.addEventListener("popstate",restore);
     return () => window.removeEventListener("popstate",restore);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[overview,editorOpen,externalDirty,selection,detail,detailStage]);
+  },[overview,editorOpen,externalDirty,selection,detail,detailStage,smsComposerBusy]);
 
   function change(update: Partial<Draft>) {
     if (busy.current) return;
@@ -410,14 +411,14 @@ export default function OperatorEmailAutomations({ preview = false, previewCommu
   const catalog = overview ? buildCommunicationsCatalog(overview, [...(preview ? previewCommunications : overview.communications ?? []), ...lifecycleCommunicationItems(lifecycle)]) : [];
   const channel = communicationNav.channel;
   function browse(next: Partial<CommunicationNavigation>) {
-    if (busy.current || editorOpen || externalDirty) return;
+    if (busy.current || editorOpen || externalDirty || smsComposerBusy) return;
     setCommunicationNav(current => ({ ...current, ...next }));
     setDetail(null); setSelection(null); setMessage("");
     if (next.view === "catalog" || next.channel) { setSection("upcoming"); setQuery(""); setFilter("all"); setViewOptions({...DEFAULT_AUTOMATION_VIEW_OPTIONS,track:"members"}); }
   }
   if (channel === "texts") return <OperatorPageFrame title="Communications">
-    <OperatorMessagesTabs active="automations" channel="texts" bucket={communicationNav.bucket} onChannel={value => browse({channel:value,view:"catalog"})} />
-    <OperatorSmsOperations preview={preview} previewCommunications={previewCommunications} view={communicationNav.view} bucket={communicationNav.bucket} onNavigate={browse} />
+    <OperatorMessagesTabs active="automations" channel="texts" bucket={communicationNav.bucket} pending={smsComposerBusy} onChannel={value => browse({channel:value,view:"catalog"})} />
+    <OperatorSmsOperations preview={preview} previewCommunications={previewCommunications} view={communicationNav.view} bucket={communicationNav.bucket} onNavigate={browse} onComposerBusyChange={setSmsComposerBusy} />
   </OperatorPageFrame>;
   return <OperatorPageFrame title="Communications">
     <OperatorMessagesTabs active="automations" channel={channel} bucket={communicationNav.bucket} pending={!!pending} onChannel={editorOpen || externalDirty ? undefined : value => browse({channel:value,view:"catalog"})} />

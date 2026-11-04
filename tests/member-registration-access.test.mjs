@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import Stripe from "stripe";
 import ts from "typescript";
+import { taggedSqlBridge } from "./helpers/postgres-fragments.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const requirePackage = createRequire(new URL("../package.json", import.meta.url));
@@ -36,10 +37,9 @@ class OfflineStripe extends Stripe {
 }
 
 function sqlFor(engine) {
-  const sql = async (strings, ...values) => {
-    const text = strings.reduce((result, part, index) => result + (index ? `$${index}` : "") + part, "");
+  const sql = taggedSqlBridge(async (text, values) => {
     return (await engine.query(text, values.map(value => value instanceof Date ? value.toISOString() : value))).rows;
-  };
+  });
   sql.json = value => JSON.stringify(value);
   sql.begin = callback => engine.transaction(transaction => callback(sqlFor(transaction)));
   return sql;
@@ -80,7 +80,7 @@ function sourceLoader(overrides) {
   return load;
 }
 
-test("registration holds survive launch changes and release profiles only after explicit administrator activation", async t => {
+test("registration holds preserve prior access and require manual release without verified payment", async t => {
   const db = new PGlite(); t.after(() => db.close());
   await db.exec("create role anon; create role authenticated; create role service_role;");
   const migrations = [...read("scripts/migrate-platform.mjs").matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g)];
@@ -95,9 +95,10 @@ test("registration holds survive launch changes and release profiles only after 
   const legacyCheckoutMigration = "db/migrations/20261007111000_legacy_registration_checkout.sql";
   const operatorCheckoutMigration = "db/migrations/20261022140000_operator_membership_checkout.sql";
   const operatorSavedPaymentMigration = "db/migrations/20261102120000_operator_saved_membership_payment.sql";
+  const profilePaymentMigration = "db/migrations/20261103021417_member_paid_profile_release.sql";
   const rolloverMigration = "db/migrations/20261104190000_paid_foundations_cohort_rollover.sql";
   const complimentaryCohortMigration = "db/migrations/20261104190000_complimentary_foundations_cohorts.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,rolloverMigration,complimentaryCohortMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,profilePaymentMigration,rolloverMigration,complimentaryCohortMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -168,6 +169,7 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec(read(legacyCheckoutMigration));
   await db.exec(read(operatorCheckoutMigration));
   await db.exec(read(operatorSavedPaymentMigration));
+  await db.exec(read(profilePaymentMigration));
   await db.exec(read(rolloverMigration));
   await db.exec(read(complimentaryCohortMigration));
   paymentSchemaReady = true;

@@ -25,6 +25,8 @@ function harness(fetch) {
     if (name === 'next/link') return function TestLink({ children, ...props }) { return React.createElement('a', props, children); };
     if (name === './OperatorSmsOperations.module.css') return new Proxy({}, { get: (_, key) => key });
     if (name === './operatorStyles') return { OPERATOR_BUTTON_CLASS: 'button' };
+    if (name === './OperatorSmsOneOffComposer') return function OneOffComposerStub() { return null; };
+    if (name === './OperatorSmsTemplateEditor') return function TemplateEditorStub() { return null; };
     if (name === '@/lib/communications/member-sms-operations-model') return model;
     if (name === '@/lib/communications/member-sms-model') return loader()('src/lib/communications/member-sms-model.ts');
     if (name === '@/lib/communications/communications-catalog') return { COMMUNICATION_BUCKETS: [{ value: 'registration', label: 'Registration' }, { value: 'foundations', label: 'Foundations' }, { value: 'membership', label: 'Membership' }] };
@@ -39,7 +41,7 @@ const text = node => node == null || typeof node === 'boolean' ? '' : Array.isAr
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const recipient = { memberId: 'member-1', name: 'Alex Example', maskedPhone: '••• ••• 0123', sharedPhone: false };
 const attempt = (patch = {}) => ({ id: 'attempt-1', kind: 'opt_in_confirmation', reminderKey: 'consent:1', recipient, call: null, createdAt: '2026-11-02T19:00:00Z', updatedAt: '2026-11-02T19:00:01Z', status: 'accepted', deliveryStatus: null, deliveryUpdatedAt: null, deliveryErrorCode: null, blockedReason: null, messageSid: null, body: templates[0].body, bodySource: 'snapshot', ...patch });
-const overview = (patch = {}) => ({ generatedAt: '2026-11-02T19:00:00Z', automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: '2026-11-01T00:00:00Z', state: 'enabled', missing: [], schedule: '*/5 * * * *', batchSize: 100 }, templates, communications: [], jobs: { items: [], truncated: false }, upcoming: { items: [], horizonEnd: '2026-11-16T19:00:00Z', truncated: false, label: 'Current eligibility forecast.', currentOptIns: 7 }, history: { items: [attempt()], nextCursor: null }, ...patch });
+const overview = (patch = {}) => ({ generatedAt: '2026-11-02T19:00:00Z', automation: { enabled: true, transportEnabled: true, automationEnabled: true, ready: true, callReady: true, warnings: [], activatedAt: '2026-11-01T00:00:00Z', state: 'enabled', missing: [], schedule: '*/5 * * * *', batchSize: 100 }, templates, communications: [], jobs: { items: [], truncated: false }, upcoming: { items: [], horizonEnd: '2026-11-16T19:00:00Z', truncated: false, label: 'Current eligibility forecast.', currentOptIns: 7, eligibleOptIns: 5 }, history: { items: [attempt()], nextCursor: null }, ...patch });
 const props = (patch = {}) => ({ view: 'catalog', bucket: null, onNavigate() {}, ...patch });
 function button(tree, name) { const value = nodes(expanded(tree)).find(node => node.type === 'button' && text(node) === name); assert.ok(value, `Missing ${name}`); return value; }
 
@@ -50,7 +52,7 @@ test('SMS sample view uses real templates but never requests or mutates live dat
   assert.match(messages, /Example with sample call details/); assert.match(messages, /Reply STOP/);
   const activity = text(expanded(h.render(props({ preview: true, view: 'activity' }))));
   assert.match(activity, /Alex Example/); assert.match(activity, /Delivered/);
-  assert.equal(nodes(expanded(h.render(props({ preview: true })))).some(node => node.type === 'button' && /send|pause|save/i.test(text(node))), false);
+  assert.equal(nodes(expanded(h.render(props({ preview: true })))).some(node => node.type === 'button' && /^(Send text|Pause|Save)$/i.test(text(node))), false);
 });
 
 test('independent read-only SMS loading exposes actual wording and recoverable errors', async () => {
@@ -77,8 +79,21 @@ test('delivery labels distinguish acceptance, carrier handoff, delivery, failure
   assert.equal(smsDeliveryLabel(attempt({ status: 'blocked', blockedReason: 'phone_suppressed' })).label, 'Blocked');
 });
 
+test('recipient counts distinguish current permissions from eligible members even without upcoming messages', async () => {
+  const h = harness(async () => ({ ok: true, json: async () => overview() }));
+  h.render(props()); await settle();
+  const tree = expanded(h.render(props()));
+  const counts = nodes(tree).find(node => node.type === 'dl' && node.props['aria-label'] === 'Text recipients');
+  assert.ok(counts);
+  assert.deepEqual(nodes(counts).filter(node => node.type === 'dt').map(text), ['Eligible opted-in members', 'Current opt-ins in total']);
+  assert.deepEqual(nodes(counts).filter(node => node.type === 'dd').map(text), ['5', '7']);
+  assert.match(text(tree), /current paid or complimentary access and an open profile/);
+  assert.match(text(tree), /Each text still checks its audience and sending requirements/);
+  h.cleanup();
+});
+
 test('upcoming texts show window, recipient, confirmation dependency and limited forecast caveat', async () => {
-  const data = overview({ upcoming: { items: [{ id: 'next', kind: 'call_reminder', reminderKey: 'call:1', recipient, call: { eventId: 'event-1', title: 'Foundations 01', startsAt: '2026-11-03T22:00:00Z', timeZone: 'America/Denver', foundations01: true }, dueAt: '2026-11-03T19:30:00Z', expiresAt: '2026-11-03T19:40:00Z', body: 'Prepared call text', source: 'forecast', confirmation: 'required', confirmationBody: 'Confirmation first', confirmationStatus: null, blockedReason: null }], horizonEnd: '2026-11-16T19:00:00Z', truncated: true, label: 'Current eligibility forecast.', currentOptIns: 7 } });
+  const data = overview({ upcoming: { items: [{ id: 'next', kind: 'call_reminder', reminderKey: 'call:1', recipient, call: { eventId: 'event-1', title: 'Foundations 01', startsAt: '2026-11-03T22:00:00Z', timeZone: 'America/Denver', foundations01: true }, dueAt: '2026-11-03T19:30:00Z', expiresAt: '2026-11-03T19:40:00Z', body: 'Prepared call text', source: 'forecast', confirmation: 'required', confirmationBody: 'Confirmation first', confirmationStatus: null, blockedReason: null }], horizonEnd: '2026-11-16T19:00:00Z', truncated: true, label: 'Current eligibility forecast.', currentOptIns: 7, eligibleOptIns: 5 } });
   const h = harness(async () => ({ ok: true, json: async () => data }));
   h.render(props({ view: 'upcoming' })); await settle();
   const tree = expanded(h.render(props({ view: 'upcoming' }))), rendered = text(tree);
@@ -110,6 +125,18 @@ test('message stages and tabs report navigation without causing a send', () => {
   assert.deepEqual(changes[1], { bucket: 'foundations' });
 });
 
+test('each automatic text opens its editor and a successful save refreshes Operations', async () => {
+  const calls = [], h = harness(async (url, options) => { calls.push({ url, ...options }); return { ok: true, json: async () => overview() }; });
+  h.render(props()); await settle(); let tree = h.render(props());
+  const editButtons = nodes(expanded(tree)).filter(node => node.type === 'button' && text(node) === 'Edit text');
+  assert.equal(editButtons.length, 4); assert.match(text(expanded(tree)), /Day-before call reminder/); assert.match(text(expanded(tree)), /Off/);
+  editButtons.find(node => node.props['aria-label'] === 'Edit text: Standard call reminder').props.onClick(); tree = h.render(props());
+  const editor = nodes(tree).find(node => node.type?.name === 'TemplateEditorStub'); assert.ok(editor); assert.equal(editor.props.templateId, 'call_reminder');
+  assert.equal(nodes(expanded(tree)).some(node => node.type === 'button' && text(node) === 'Send a text'), false);
+  editor.props.onSaved(); await settle(); assert.equal(calls.length, 2); assert.ok(calls.every(call => call.method === 'GET'));
+  editor.props.onClose(); tree = h.render(props()); assert.equal(nodes(expanded(tree)).filter(node => node.type === 'button' && text(node) === 'Edit text').length, 4); h.cleanup();
+});
+
 test('expired and interrupted jobs remain distinct from a delivered message', async () => {
   const job = { id: 'job-1', kind: 'call_reminder', recipient, call: null, dueAt: '2026-11-02T18:00:00Z', expiresAt: '2026-11-02T18:10:00Z', createdAt: '2026-11-02T18:00:00Z', updatedAt: '2026-11-02T18:01:00Z', status: 'processing', outcome: null };
   const h = harness(async () => ({ ok: true, json: async () => overview({ history: { items: [], nextCursor: null }, jobs: { items: [job, { ...job, id: 'job-2', status: 'finished', outcome: 'expired' }], truncated: true } }) }));
@@ -118,4 +145,23 @@ test('expired and interrupted jobs remain distinct from a delivered message', as
   assert.match(rendered, /Jobs without a send attempt/); assert.match(rendered, /Needs review/); assert.match(rendered, /Expired/);
   assert.match(rendered, /will not be automatically retried/); assert.match(rendered, /No provider send attempt is recorded/);
   assert.match(rendered, /processing jobs first/); assert.doesNotMatch(rendered, /The carrier reported delivery/);
+});
+
+test('one-off activity shows the operator and separates blocked requests from interrupted results', async () => {
+  const request = { id: 'request-1', recipient, body: 'Ruined: A reviewed service update.', actorName: 'Cade Example', createdAt: '2026-11-02T18:00:00Z', claimedAt: '2026-11-02T18:00:01Z', status: 'claimed', outcome: null };
+  const h = harness(async () => ({ ok: true, json: async () => overview({ history: { items: [attempt({ kind: 'one_off', actorName: 'Cade Example', body: 'Exact one-off wording.' })], nextCursor: null }, oneOffRequests: { items: [request, { ...request, id: 'request-2', status: 'finished', outcome: 'blocked' }], truncated: false } }) }));
+  h.render(props({ view: 'activity' })); await settle();
+  const rendered = text(expanded(h.render(props({ view: 'activity' }))));
+  assert.match(rendered, /One-off text/); assert.match(rendered, /Requested by/); assert.match(rendered, /Cade Example/); assert.match(rendered, /Exact one-off wording/);
+  assert.match(rendered, /Needs review/); assert.match(rendered, /Not sent/); assert.match(rendered, /Eligibility checks stopped/);
+  assert.match(rendered, /will not be automatically resent/); assert.doesNotMatch(rendered, /Awaiting result/);
+});
+
+test('24-hour reminders remain identifiable in forecasts, delivery history and jobs', async () => {
+  const call = { eventId: 'event-day-before', title: 'Membership call', startsAt: '2030-01-15T19:00:00Z', timeZone: 'America/Denver', foundations01: false };
+  const occurrence = { id: 'day-before', kind: 'call_reminder', reminderStage: 'day_before', reminderKey: 'sample-day-before', recipient, call, dueAt: '2030-01-14T19:00:00Z', expiresAt: '2030-01-14T19:10:00Z' };
+  const data = overview({ upcoming: { ...overview().upcoming, items: [{ ...occurrence, body: 'Tomorrow at noon', source: 'forecast', confirmation: 'accepted', confirmationBody: null, confirmationStatus: 'accepted', blockedReason: null }] }, history: { items: [attempt({ kind: 'call_reminder', reminderStage: 'day_before', call })], nextCursor: null }, jobs: { items: [{ ...occurrence, createdAt: occurrence.dueAt, updatedAt: occurrence.dueAt, status: 'queued', outcome: null }], truncated: false } });
+  const h = harness(async () => ({ ok: true, json: async () => data })); h.render(props({ view: 'upcoming' })); await settle();
+  assert.match(text(expanded(h.render(props({ view: 'upcoming' })))), /Membership call · 24-hour call reminder/);
+  const activity = text(expanded(h.render(props({ view: 'activity' })))); assert.equal((activity.match(/Membership call · 24-hour call reminder/g) ?? []).length, 2); h.cleanup();
 });

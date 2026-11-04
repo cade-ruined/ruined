@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
 import { PGlite } from "@electric-sql/pglite";
+import { taggedSqlBridge } from "./helpers/postgres-fragments.mjs";
 
 const require = createRequire(import.meta.url);
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -19,9 +20,10 @@ function moduleAt(path, dependencies = {}) {
   return loaded.exports;
 }
 const model = moduleAt("src/lib/membership/member-communication-preferences-model.ts");
-const repository = moduleAt("src/lib/membership/member-communication-preferences.ts", { "./member-communication-preferences-model": model });
+const smsConsent = moduleAt("src/lib/membership/member-sms-consent.ts", { "./member-communication-preferences-model": model });
+const repository = moduleAt("src/lib/membership/member-communication-preferences.ts", { "./member-communication-preferences-model": model, "./member-sms-consent": smsConsent });
 function sqlFor(db) {
-  const sql = async (strings, ...values) => (await db.query(strings.reduce((result, part, index) => result + (index ? `$${index}` : "") + part, ""), values)).rows;
+  const sql = taggedSqlBridge(async (query, values) => (await db.query(query, values)).rows);
   sql.json = JSON.stringify;
   return sql;
 }
@@ -158,6 +160,32 @@ test("optional member reminders retain channel decisions and exact destinations 
   });
 });
 
+test("operator-attested SMS permission displays on without inventing a member checkbox and later withdrawal wins", async t => {
+  const { db, member, rows, get, choice, save } = await fixture(t);
+  const operator = randomUUID();
+  await db.query("insert into platform_users(auth_user_id,status) values($1,'active')", [operator]);
+  await db.query(`insert into member_consents(member_id,consent_type,policy_version,decision,accepted_at,source,actor_auth_user_id,evidence,dedupe_key)
+    values($1,'communications',$2,'accepted',now(),'ops',$3,$4,$5)`, [member.memberId, smsConsent.MEMBER_SMS_OPERATOR_ATTESTATION_VERSION, operator, {
+    context: "member_communication_preferences_v1", purpose: "membership_updates", channel: "sms", destination: member.phone,
+    requested: true, marketingConsent: false, action: smsConsent.MEMBER_SMS_OPERATOR_ATTESTATION_ACTION,
+    operatorApproved: true, permissionConfirmed: true, memberAffirmed: false,
+    approvalReference: "isolated-test-approval", permissionStatement: "The member explicitly permitted membership texts to this number.",
+    batchId: randomUUID(), originalConsentId: null, originalPolicyVersion: null,
+  }, `operator-sms-fixture:${member.memberId}`]);
+  assert.equal((await get()).sms, true);
+  const before = (await rows()).filter(row => row.evidence.channel === "sms");
+  await save(await choice({ sms: true }));
+  assert.deepEqual((await rows()).filter(row => row.evidence.channel === "sms"), before,
+    "Saving an unchanged preference preserves the operator's actual evidence");
+  await save(await choice({ sms: false }));
+  assert.equal((await get()).sms, false);
+  const decisions = (await rows()).filter(row => row.evidence.channel === "sms");
+  assert.equal(decisions.length, 2);
+  assert.equal(decisions[1].source, "member");
+  assert.equal(decisions[1].decision, "withdrawn");
+  assert.equal(decisions[1].evidence.action, "preference_off_at_submission");
+});
+
 test("v2 requires a new affirmative SMS choice and preserves earlier email choices and evidence", async t => {
   const { db, member, sql, rows, get, choice, save } = await fixture(t);
   for (const channel of ["email", "sms"]) {
@@ -177,6 +205,9 @@ test("v2 requires a new affirmative SMS choice and preserves earlier email choic
   assert.equal((await get()).smsPhone, member.phone);
   const olderRepository = moduleAt("src/lib/membership/member-communication-preferences.ts", {
     "./member-communication-preferences-model": { ...model, MEMBER_COMMUNICATION_NOTICE_VERSION: "membership-reminders-v1" },
+    "./member-sms-consent": moduleAt("src/lib/membership/member-sms-consent.ts", {
+      "./member-communication-preferences-model": { ...model, MEMBER_COMMUNICATION_NOTICE_VERSION: "membership-reminders-v1" },
+    }),
   });
   const oldSnapshot = await olderRepository.getMemberCommunicationPreferences(sql, member.memberId, { email: member.email, phone: member.phone });
   assert.notEqual(oldSnapshot.revision, (await get()).revision, "A notice rollout invalidates an already-open form revision");
