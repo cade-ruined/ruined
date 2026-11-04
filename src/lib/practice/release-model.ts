@@ -14,7 +14,7 @@ export const PRACTICE_RECAPS = {
     closing: "Take them one at a time. Once you keep three complete entries, your F1 Badge is earned." },
   f4: { title: "Foundations 4", subject: "Foundations 4 · A letter to your future self", heading: "To the person you are becoming.",
     paragraphs: ["Foundations 4 brings what you have noticed into the way you want to live.", "A letter gives you a place to name what matters now and what you want to carry forward."],
-    assignment: "Write a letter to your future self in Practice.", steps: ["Write what you want your future self to remember.", "Keep your letter when you are ready."],
+    assignment: "Write a letter to your future self in The Work.", steps: ["Write what you want your future self to remember.", "Keep your letter when you are ready."],
     closing: "Keeping your letter earns your F4 Badge. Your letter stays private." },
   time: { title: "TIME", subject: "TIME · Make room for one thing", heading: "The same week. A different choice.",
     paragraphs: ["We all work within 168 hours. Making room for what matters begins by noticing where some of that time goes—and choosing what could change.", "You don’t need to rebuild your whole life. Begin with one thing."],

@@ -49,10 +49,10 @@ async function readWork(sql: Query, memberId: string): Promise<WorkRow> {
 
 async function owner(authUserId: string): Promise<MemberIdentity> {
   const identity = await getMemberIdentity(authUserId);
-  if (!identity) throw new PracticeError(403, "Your member Practice is unavailable.");
+  if (!identity) throw new PracticeError(403, "The Work is unavailable.");
   const access = deriveMemberAccessPolicy(identity, identity.cancellationEffectiveAt);
   if (!memberCan(access, "foundations.write") && !memberCan(access, "foundations.revisit")) {
-    throw new PracticeError(403, "Your membership does not currently include Practice access.");
+    throw new PracticeError(403, "Your membership does not currently include access to The Work.");
   }
   return identity;
 }
@@ -135,7 +135,7 @@ export async function saveMemberPractice(authUserId: string, input: unknown): Pr
       if (!release?.released) throw new PracticeError(403, "This assignment has not been released yet.", "course_locked");
     }
     const current = await readWork(tx, identity.memberId);
-    if (current.revision !== action.expectedRevision) throw new PracticeError(409, "Your Practice changed in another tab. Load the latest saved work before continuing.", "revision_conflict");
+    if (current.revision !== action.expectedRevision) throw new PracticeError(409, "Your saved work changed in another tab. Load the latest saved work before continuing.", "revision_conflict");
     const next: WorkRow = { ...current };
     const [clock] = await tx<Array<{ now: Date }>>`select statement_timestamp() as now`;
     const now = iso(clock!.now)!;

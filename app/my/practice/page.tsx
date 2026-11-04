@@ -12,12 +12,12 @@ import { PRACTICE_COURSES, previewPracticeSnapshot, type PracticeCourse } from "
 import { getMemberPracticeSnapshot } from "@/lib/practice/repository";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Practice | Ruined", description: "Foundations and monthly practice. One step at a time." };
+export const metadata: Metadata = { title: "The Work | Ruined", description: "Foundations and monthly assignments. One step at a time." };
 
 export default async function MyPracticePage({ searchParams }: {
   searchParams: Promise<{ area?: string; course?: string }>;
 }) {
-  const context = await getMembershipPageContext(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Practice");
+  const context = await getMembershipPageContext(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "The Work");
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
@@ -36,7 +36,7 @@ export default async function MyPracticePage({ searchParams }: {
   } catch (error) {
     console.error("Member Practice could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
     return <section className="member-journey-page">
-      <h1 className="member-page-title">Your practice couldn’t load.</h1>
+      <h1 className="member-page-title">The Work couldn’t load.</h1>
       <p>Your saved work is still yours. Please try again.</p>
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a className="member-button" href="/my/practice">Try again</a>

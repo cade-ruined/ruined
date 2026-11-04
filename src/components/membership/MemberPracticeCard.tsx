@@ -42,10 +42,10 @@ export default function MemberPracticeCard({ ownerId, preview = false }: { owner
   } : record?.releases.time && !record.badges.time.earned ? {
     title: "TIME", detail: "Make room in MY 168.", href: "/my/practice?course=time", action: "Continue",
   } : {
-    title: "Your practice", detail: record?.badges.f1.earned ? "Return to your assignments whenever you need." : "Foundations and monthly topics.", href: "/my/practice", action: "Open Practice",
+    title: "Your work", detail: record?.badges.f1.earned ? "Return to your assignments whenever you need." : "Foundations and monthly topics.", href: "/my/practice", action: "Open The Work",
   };
-  return <section className={styles.card} aria-label="Your practice">
-    <div><p className={styles.label}>Practice</p><h2>{next.title}</h2><p className={styles.detail}>{next.detail}</p></div>
+  return <section className={styles.card} aria-label="The Work">
+    <div><p className={styles.label}>The Work</p><h2>{next.title}</h2><p className={styles.detail}>{next.detail}</p></div>
     <Link className="member-button member-button-primary" href={next.href}>{next.action} <span aria-hidden="true">→</span></Link>
   </section>;
 }
