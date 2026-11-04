@@ -29,6 +29,7 @@ test("paid, complimentary, and saved-card completion are never conflated", () =>
   assert.doesNotMatch(JSON.stringify(paid), /Complimentary|pay again|First payment needed/);
   const complimentary = status(registration({ ...complete, requiresInitialPayment: false, requiresPaymentMethod: false, completionBasis: "complimentary" }));
   assert.equal(complimentary.label, "Complimentary");
+  assert.match(complimentary.next,/opens the profile automatically/);
   const saved = status(registration({ ...complete, requiresInitialPayment: false, requiresPaymentMethod: true, completionBasis: "saved_card", paymentMethodState: "saved" }));
   assert.equal(saved.label, "Card saved · not charged");
   assert.match(saved.next, /authorize paid activation/);

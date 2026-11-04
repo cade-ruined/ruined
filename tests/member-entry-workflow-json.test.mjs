@@ -138,14 +138,24 @@ test("the onboarding welcome notification keeps its delivery evidence as an obje
   assert.match(queries[1].query, /on conflict \(dedupe_key\) do nothing/);
 });
 
-test("the onboarding operator follow-up keeps its creation evidence as an object", async (t) => {
+test("an operator support task keeps its creation evidence as an object", async (t) => {
   const { repository, queries, evidence } = await setup(t);
   const result = await repository.executeWorkflowAction(action("create_operator_task", {
-    task_type: "onboarding.follow_up", title: "Follow up after onboarding",
-    description: "Check that the member knows the next step.", priority: "normal",
+    task_type: "member.support", title: "Resolve a member support request",
+    description: "Review the member's requested assistance.", priority: "normal",
   }));
   assert.deepEqual(result, { operatorTaskId: ids.result });
   assert.deepEqual(evidence, [{ workflowActionId: ids.action }]);
   assert.match(queries[0].query, /on conflict \(idempotency_key\) where idempotency_key is not null do update/);
   assert.match(queries[1].query, /on conflict \(dedupe_key\) do nothing/);
+});
+
+test("a stale onboarding follow-up action is skipped without creating a task or event", async (t) => {
+  const { repository, queries, evidence } = await setup(t);
+  const result = await repository.executeWorkflowAction(action("create_operator_task", {
+    task_type: "onboarding.follow_up", title: "Follow up after onboarding",
+  }));
+  assert.deepEqual(result, { skipped: true, reason: "task_type_retired" });
+  assert.deepEqual(queries, []);
+  assert.deepEqual(evidence, []);
 });

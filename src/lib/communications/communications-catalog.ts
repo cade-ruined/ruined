@@ -154,7 +154,7 @@ export function buildCommunicationsCatalog(overview: CadenceManagementOverview, 
         action: { label: "Edit template", href: "/ops/messages?mode=automations&bucket=pre-foundations&template=registration:pre_foundations#registration-email-copy" },
         detail: `${workflow.controlBoundary} Waits for completed registration, a confirmed Foundations schedule and profile access. It does not replay old welcomes or send after the first call starts.` });
       items.push({ ...common, id: "workflow:profile-access", bucket: "pre-foundations", title: "Profile access ready",
-        trigger: "An administrator grants the member profile access.",
+        trigger: "Completed registration with verified payment or current complimentary membership opens profile access automatically. An administrator can also grant access separately.",
         timing: "Once after profile access is granted. Pending messages are checked every five minutes.",
         action: { label: "Edit template", href: "/ops/messages?mode=automations&bucket=pre-foundations&template=registration:profile_ready#registration-email-copy" } });
     } else {

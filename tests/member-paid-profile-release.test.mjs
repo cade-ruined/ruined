@@ -8,6 +8,7 @@ import { installMemberSmsFundingFixture, seedMemberSmsPaidReservation } from "./
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),"utf8");
 const migration="db/migrations/20261103021417_member_paid_profile_release.sql";
+const complimentaryMigration="db/migrations/20261104202219_automatic_complimentary_profile_release.sql";
 function functionSql(path,name) {
   const source=read(path),match=source.match(new RegExp(`create (?:or replace )?function private\\.${name}\\(`));
   assert.ok(match,`Missing real function ${name}`);
@@ -27,7 +28,7 @@ async function fixture(t) {
     create table people(id uuid primary key,status text default 'active');
     create table ruined_members(id uuid primary key,person_id uuid,email_normalized text,membership_state text default 'pending',deleted_at timestamptz);
     create table platform_users(auth_user_id uuid primary key,member_id uuid,person_id uuid,email_normalized text,status text default 'active');
-    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz);
+    create table platform_role_grants(id bigint generated always as identity primary key,auth_user_id uuid,role_slug text,revoked_at timestamptz);
     create table member_lifecycle(member_id uuid primary key,account_state text default 'active',billing_state text default 'pending',standing_state text default 'pre_active',cancellation_effective_at timestamptz);
     create table person_private_profiles(person_id uuid primary key,birth_date date,default_fulfillment_address jsonb);
     create table person_email_addresses(person_id uuid,email_normalized text,verification_state text,retired_at timestamptz);
@@ -54,6 +55,7 @@ async function fixture(t) {
     await db.exec(functionSql("db/migrations/20261007111000_legacy_registration_checkout.sql",name));
   }
   await db.exec(read(migration));
+  await db.exec(read(complimentaryMigration));
   await db.exec(`create trigger registration_payment_requirement before insert or update on member_registration_access
     for each row execute function private.ruined_guard_registration_payment_requirement();`);
   const hooks=[],faults=[];
@@ -156,16 +158,103 @@ test("shared payment cannot release a partner after payer suspension, terminatio
   await f.complete(partner);assert.equal((await f.state(partner)).profile_payment_reservation_id,payer.reservation,"payer onboarding is not an extra partner requirement");
 });
 
-test("saved-card-only and complimentary registration retain their separate profile release",async t=>{
+test("saved-card-only registration retains separate release and deployed administrator writers remain compatible",async t=>{
   const f=await fixture(t),card=await f.member({paid:false,legacy:true}),comp=await f.member({paid:false});
   const attempt=randomUUID();
   await f.db.query("insert into member_payment_method_setup_attempts values($1,$2,'acct_fixture',true,'saved',null)",[attempt,card.memberId]);
   await f.db.query("insert into member_payment_method_accounts values($1,$2,'acct_fixture',true,'pm_fixture',now(),null,false)",[card.memberId,attempt]);
   await f.db.query("insert into member_complimentary_grants(member_id) values($1)",[comp.memberId]);
-  for(const m of [card,comp]){await f.complete(m);assert.ok((await f.state(m)).registered_at);assert.equal((await f.state(m)).profile_activated_at,null);}
+  await f.complete(card);assert.ok((await f.state(card)).registered_at);assert.equal((await f.state(card)).profile_activated_at,null);
   // Previously deployed admin writers remain compatible with the additive migration.
+  await f.db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary' where member_id=$1",[comp.memberId]);
   await f.db.query("update member_registration_access set profile_activated_at=now(),activated_by_auth_user_id=$2 where member_id=$1",[comp.memberId,comp.auth]);
+  const before=await f.state(comp);await f.complete(comp);assert.deepEqual(await f.state(comp),before);
   assert.ok((await f.state(comp)).profile_activated_at);assert.equal((await f.state(comp)).profile_payment_reservation_id,null);
+});
+
+test("current complimentary and operator funding automatically release completed registration once with real grant evidence",async t=>{
+  const f=await fixture(t);
+  for(const admin of [false,true]){
+    const m=await f.member({paid:false,admin});
+    const grant=admin
+      ? (await f.db.query("select id::text as id from platform_role_grants where auth_user_id=$1 and role_slug='ops_admin'",[m.auth])).rows[0].id
+      : (await f.db.query("insert into member_complimentary_grants(member_id) values($1) returning id",[m.memberId])).rows[0].id;
+    await f.complete(m);const before=await f.state(m);
+    assert.ok(before.registered_at);assert.ok(before.profile_activated_at);
+    assert.equal(before.completion_basis,"complimentary");assert.equal(before.activated_by_auth_user_id,null);
+    assert.equal(before.profile_payment_reservation_id,null);
+    assert.equal(before.profile_complimentary_grant_id,admin?null:grant);
+    assert.equal(before.profile_operator_grant_id===null?null:String(before.profile_operator_grant_id),admin?grant:null);
+    assert.deepEqual((await f.db.query("select kind from member_registration_messages where member_id=$1 order by kind",[m.memberId])).rows.map(r=>r.kind),["profile_ready","welcome"]);
+    await f.complete(m);assert.deepEqual(await f.state(m),before);
+    const audit=(await f.db.query("select * from operator_audit_events where subject_id=$1",[m.memberId])).rows;
+    assert.equal(audit.length,1);assert.equal(audit[0].actor_auth_user_id,null);
+    assert.equal(audit[0].metadata[admin?"operatorGrantId":"complimentaryGrantId"],grant);
+    assert.equal(audit[0].after_snapshot.billingChanged,false);
+    assert.equal((await f.db.query("select count(*)::int n from stripe_checkout_attempts where member_id=$1",[m.memberId])).rows[0].n,0);
+  }
+});
+
+test("complimentary access preserves intake, legal, identity, account, standing and current funding gates",async t=>{
+  const f=await fixture(t);
+  for(const mutate of [
+    m=>f.db.query("update member_onboardings set profile_completed_at=null where member_id=$1",[m.memberId]),
+    m=>f.db.query("delete from member_consents where member_id=$1",[m.memberId]),
+    m=>f.db.query("update person_email_addresses set verification_state='pending' where person_id=$1",[m.personId]),
+    m=>f.db.query("update platform_users set email_normalized='changed@example.test' where auth_user_id=$1",[m.auth]),
+    m=>f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1",[m.auth]),
+    m=>f.db.query("update people set status='inactive' where id=$1",[m.personId]),
+    m=>f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1",[m.memberId]),
+    m=>f.db.query("update member_lifecycle set standing_state='inactive' where member_id=$1",[m.memberId]),
+    m=>f.db.query("update member_lifecycle set standing_state='cancellation_requested',cancellation_effective_at=now()-interval '1 second' where member_id=$1",[m.memberId]),
+    m=>f.db.query("update person_private_profiles set default_fulfillment_address='{\"countryCode\":\"CA\"}' where person_id=$1",[m.personId]),
+    m=>f.db.query("update member_complimentary_grants set revoked_at=now() where member_id=$1",[m.memberId]),
+    m=>f.db.query("update member_complimentary_grants set ends_at=now()-interval '1 second' where member_id=$1",[m.memberId]),
+    m=>f.db.query("update member_complimentary_grants set starts_at=now()+interval '1 day' where member_id=$1",[m.memberId]),
+  ]){
+    const m=await f.member({paid:false});
+    await f.db.query("insert into member_complimentary_grants(member_id) values($1)",[m.memberId]);
+    await mutate(m);await f.complete(m);
+    assert.equal((await f.state(m)).profile_activated_at,null);
+    assert.equal((await f.db.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='profile_ready'",[m.memberId])).rows[0].n,0);
+  }
+  const operator=await f.member({paid:false,admin:true});
+  await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='ops_admin'",[operator.auth]);
+  await f.complete(operator);assert.equal((await f.state(operator)).profile_activated_at,null);
+});
+
+test("complimentary release rechecks funding after identity locks and rolls back emails and audit atomically",async t=>{
+  const f=await fixture(t),m=await f.member({paid:false});
+  await f.db.query("insert into member_complimentary_grants(member_id) values($1)",[m.memberId]);
+  f.hooks.push({match:"select member.id from ruined_members member",run:tx=>tx.query("update member_complimentary_grants set revoked_at=now() where member_id=$1",[m.memberId])});
+  await f.complete(m);assert.ok((await f.state(m)).registered_at);assert.equal((await f.state(m)).profile_activated_at,null);
+  // The fixture permits restoring funding; production grant history is immutable.
+  await f.db.query("update member_complimentary_grants set revoked_at=null where member_id=$1",[m.memberId]);
+  const before=await f.state(m);f.faults.push("insert into operator_audit_events");
+  await assert.rejects(f.complete(m),/Injected/);assert.deepEqual(await f.state(m),before);
+  assert.equal((await f.db.query("select count(*)::int n from member_registration_messages where member_id=$1 and kind='profile_ready'",[m.memberId])).rows[0].n,0);
+  await f.complete(m);assert.ok((await f.state(m)).profile_activated_at);
+});
+
+test("complimentary provenance cannot be forged, reassigned or cleared and survives expired funding",async t=>{
+  const f=await fixture(t),m=await f.member({paid:false}),other=await f.member({paid:false,admin:true});
+  const grant=(await f.db.query("insert into member_complimentary_grants(member_id) values($1) returning id",[m.memberId])).rows[0].id;
+  await assert.rejects(f.db.query("update member_registration_access set profile_activated_at=now(),profile_complimentary_grant_id=$2 where member_id=$1",[m.memberId,grant]),/completed intake/);
+  await f.db.query("update member_registration_access set registered_at=now(),completion_basis='complimentary' where member_id=$1",[other.memberId]);
+  await assert.rejects(f.db.query("update member_registration_access set profile_activated_at=now(),profile_complimentary_grant_id=$2 where member_id=$1",[other.memberId,grant]),/current complimentary grant/);
+  await f.complete(m);
+  await assert.rejects(f.db.query("update member_registration_access set profile_complimentary_grant_id=null where member_id=$1",[m.memberId]),/immutable/);
+  await assert.rejects(f.db.query("update member_registration_access set member_id=$2 where member_id=$1",[m.memberId,randomUUID()]),/immutable/);
+  await assert.rejects(f.db.query("update member_registration_access set activated_by_auth_user_id=$2 where member_id=$1",[m.memberId,m.auth]),/immutable/);
+  await assert.rejects(f.db.query("update member_registration_access set profile_activated_at=null where member_id=$1",[m.memberId]),/immutable/);
+  await assert.rejects(f.db.query("delete from member_complimentary_grants where id=$1",[grant]),/foreign key/);
+  await f.db.query("update member_complimentary_grants set ends_at=now()-interval '1 second' where id=$1",[grant]);
+  const before=await f.state(m);await f.complete(m);assert.deepEqual(await f.state(m),before);
+  for(const role of ["anon","authenticated"]){
+    for(const fn of ["ruined_complimentary_profile_release_ready(uuid)","ruined_guard_profile_complimentary_release()"]){
+      assert.equal((await f.db.query("select has_function_privilege($1,$2,'EXECUTE') allowed",[role,`private.${fn}`])).rows[0].allowed,false);
+    }
+  }
 });
 
 test("refund, review, cancellation, mismatched account and removed participation block release",async t=>{

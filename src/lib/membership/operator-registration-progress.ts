@@ -71,8 +71,9 @@ export function operatorMemberJourney(row: OperatorRegistrationProgress): Operat
       : row.paidCheckoutAvailable === false ? "Paid checkout is not open. Keep the payment follow-up on hold."
       : "Member reviews the price and terms, then pays through Stripe at /my/activate. No separate card-saving step.", actor: "Member" };
   else if (!granted && (!row.registeredAt || !row.ready)) next = { key: "review", label: "Review registration completion", detail: "Payment is confirmed or not required, but registration is not ready for profile access. Check the remaining registration record.", actor: "Support" };
-  else if (!granted) next = { key: "profile", label: paid ? "Review automatic profile access" : "Grant profile access", detail: paid
+  else if (!granted) next = { key: "profile", label: paid || exempt ? "Review automatic profile access" : "Grant profile access", detail: paid
     ? "Verified payment opens a completed profile automatically. If access is still pending, review the registration and current payment before granting access."
+    : exempt ? "Current complimentary membership opens a completed profile and sends the profile-access email automatically. Review registration and funding if access is still pending."
     : "An Administrator opens the profile when ready. This sends the profile-access email and does not charge the member.", actor: "Operator" };
   else next = { key: "complete", label: "Onboarding complete", detail: "All required checkpoints are complete.", actor: "Operator" };
   return { checkpoints, next, attention: attention ?? (next.key === "review" ? next.detail : null) };
@@ -102,7 +103,7 @@ export function operatorRegistrationStatus(row: OperatorRegistrationProgress): O
       row.registeredAt && row.ready || row.state === "activated" ? "Operator" : "Support");
   }
   if (!row.requiresInitialPayment && !row.requiresPaymentMethod) return result("complimentary", "Complimentary", `${profile} · no payment required`,
-    row.state === "activated" ? "No payment follow-up needed." : row.registeredAt && row.ready ? "Operator opens the profile when ready." : "Member finishes complimentary registration.",
+    row.state === "activated" ? "No payment follow-up needed." : row.registeredAt && row.ready ? "Current complimentary membership opens the profile automatically; review access if it remains pending." : "Member finishes complimentary registration.",
     row.registeredAt && row.ready || row.state === "activated" ? "Operator" : "Member");
   if (row.billingState === "attention_required" || row.completionBasis === "paid_membership" || row.paymentNeedsReview) return result("review", "Payment needs review", "Payment is not currently confirmed", "Support checks the payment or refund before asking the member to pay again.", "Support", true);
   if (row.billingArranged) return result("review", "Billing arranged", `${profile} · payment not confirmed here`, "Review the billing schedule and payment confirmation; do not request a second payment.", "Support");

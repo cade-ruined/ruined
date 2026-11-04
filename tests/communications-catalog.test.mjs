@@ -78,7 +78,8 @@ test("registration welcome and profile access have separate homes but retain the
     assert.ok(rows.every(item => item.status === { configured: "enabled", paused: "paused", incomplete: "attention" }[state]));
     assert.ok(rows.every(item => item.statusLabel === workflow("registration", state).statusLabel));
     assert.match(rows[0].trigger, /Registration becomes complete/);
-    assert.match(rows[2].trigger, /administrator grants.*profile access/);
+    assert.match(rows[2].trigger, /verified payment or current complimentary membership opens profile access automatically/);
+    assert.match(rows[2].trigger, /administrator can also grant access separately/);
     assert.ok(rows.every(item => item.action.label === "Edit template"));
     for (const [index,key] of ["welcome","pre_foundations","profile_ready"].entries()) {
       const href = new URL(rows[index].action.href,"https://example.test");
