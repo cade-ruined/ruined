@@ -17,6 +17,47 @@ async function attempt(f, m, consentId, options = {}) {
 }
 async function fixture(t) { const f = await operationsFixture(); t.after(() => f.db.close()); return f; }
 
+test("SMS forecasts match canonical standing team invitations and retain funding, roster and permission gates", async t => {
+  const f=await fixture(t),m=await f.member(); await f.consent(m); const e=await f.event();
+  const circle="e140cf3c-dd56-4164-b7e4-6c97fbd39d3e";
+  await f.db.query("update member_lifecycle set billing_state='pending' where member_id=$1",[m.memberId]);
+  await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[m.authId]);
+  assert.equal((await f.view()).upcoming.eligibleOptIns,1,"current operator funding is already included by the shipped SQL");
+  await f.db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+  assert.equal((await f.view()).upcoming.items.length,0,"an operator role alone never substitutes for a call invitation");
+  await f.db.query("insert into circles(id,status,activated_at) values($1,'active',$2)",[circle,f.ago(2880)]);
+  await f.db.query("insert into circle_member_assignments(member_id,circle_id,assigned_at) values($1,$2,$3)",[m.memberId,circle,f.ago(2880)]);
+  assert.equal((await f.view()).upcoming.items.length,1);
+  await f.db.query("update platform_role_grants set granted_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]);
+  assert.equal((await f.view()).upcoming.items.length,0,"new standing authority cannot backfill an existing send window");
+  await f.db.query("update platform_role_grants set granted_at=$2 where auth_user_id=$1",[m.authId,f.ago(2880)]);
+  await f.db.query("update circle_member_assignments set assigned_at=clock_timestamp() where member_id=$1",[m.memberId]);
+  assert.equal((await f.view()).upcoming.items.length,0);
+  await f.db.query("update circle_member_assignments set assigned_at=$2 where member_id=$1",[m.memberId,f.ago(2880)]);
+  await f.db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind,track) values($1,'foundations_02','founder_test')",[e.eventId]);
+  assert.equal((await f.view()).upcoming.items.length,0,"founder tests never inherit standing invitations");
+  await f.db.query("insert into experience_registrations(experience_id,person_id,member_id,status,source) values($1,$2,$3,'registered','member')",[e.eventId,m.personId,m.memberId]);
+  assert.equal((await f.view()).upcoming.items.length,0);
+  await f.db.query("update experience_registrations set source='ops' where person_id=$1",[m.personId]);
+  assert.equal((await f.view()).upcoming.items.length,1);
+  await f.db.query("delete from private.member_email_cadence_event_bindings where experience_id=$1",[e.eventId]);
+  await f.db.query("delete from experience_registrations where person_id=$1",[m.personId]);
+  await f.db.query("insert into experience_registrations(experience_id,person_id,status) values($1,$2,'waitlisted')",[e.eventId,m.personId]);
+  assert.equal((await f.view()).upcoming.items.length,0);
+  await f.db.query("update experience_registrations set status='cancelled' where person_id=$1",[m.personId]);
+  assert.equal((await f.view()).upcoming.items.length,0);
+  await f.db.query("delete from experience_registrations where person_id=$1",[m.personId]);
+  await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]);
+  assert.equal((await f.view()).upcoming.eligibleOptIns,0);
+  await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1",[m.authId]);
+  await f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[m.memberId]);
+  assert.equal((await f.view()).upcoming.items.length,0);
+  await f.db.query("update member_lifecycle set standing_state='active' where member_id=$1",[m.memberId]);
+  await f.consent(m,{decision:"withdrawn"}); assert.equal((await f.view()).upcoming.items.length,0);
+  await f.consent(m); await f.db.query("insert into private.member_sms_phone_suppressions(phone_e164,latest_message_sid) values($1,$2)",[m.phone,sid(9000)]);
+  assert.equal((await f.view()).upcoming.items.length,0);
+});
+
 test("SMS operations enforces current administrator access and makes only read-only queries", async t => {
   const f = await fixture(t), m = await f.member(); await f.consent(m); await f.event();
   await assert.rejects(f.service.getMemberSmsOperationsOverview(f.ordinary), error => error.status === 403);
@@ -162,7 +203,7 @@ test("forecasts follow latest consent, phone, suppression, hold, registration an
 test("Foundations timing comes from binding; future activation and stale durable jobs cannot promise a new send", async t => {
   const f = await fixture(t), m = await f.member(); const c = await f.consent(m); const e = await f.event({ title: "Foundations 01", startsAt: f.ago(-148) });
   assert.equal((await f.view()).upcoming.items[0].dueAt, new Date(Date.parse(e.startsAt)-60*60000).toISOString(), "title alone uses standard notice");
-  await f.db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')", [e.eventId]);
+  await f.db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')", [e.eventId]);
   assert.equal((await f.view()).upcoming.items.length, 0, "invalid Foundations binding is not a standard call");
   await f.db.exec("update experiences set visibility='invite_only',registration_mode='internal'");
   await f.db.query("insert into experience_registrations(experience_id,person_id,member_id,status,source) values($1,$2,$3,'registered','ops')", [e.eventId,m.personId,m.memberId]);

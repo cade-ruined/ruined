@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { id, loader, read } from "./helpers/member-sms-fixture.mjs";
-import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { installCurrentOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { installPaidReservationFunction } from "./helpers/paid-reservation-fixture.mjs";
 
 // The existing SMS fixture's lazy-fragment bridge also supports conditional FOR SHARE clauses.
@@ -45,7 +45,7 @@ async function fixture(t) {
     create table person_email_addresses(id uuid primary key default gen_random_uuid(),person_id uuid,email_normalized text,
       is_primary boolean,retired_at timestamptz,verification_state text);
     create table platform_users(auth_user_id uuid primary key,member_id uuid,person_id uuid,status text,email_normalized text);
-    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz);
+    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz,granted_at timestamptz default statement_timestamp()-interval '2 days');
     create table member_lifecycle(member_id uuid primary key,account_state text,administrative_onboarding_state text,
       billing_state text,cancellation_effective_at timestamptz,foundations_state text,program_state text,standing_state text,current_progression_level_slug text);
     create table member_registration_access(member_id uuid primary key,profile_activated_at timestamptz,registered_at timestamptz);
@@ -70,7 +70,7 @@ async function fixture(t) {
       local_entity_id text,external_entity_type text,livemode boolean,metadata jsonb);
     create function private.ruined_member_paid_reservation(uuid) returns uuid language sql as 'select null::uuid';`);
   // Canonical access and the shipped paid-provider predicate run against isolated fixture evidence.
-  await installOperatorFundingFunctions(db);
+  await installCurrentOperatorFundingFunctions(db);
   await installCircleRevealFunction(db);
   await db.exec("drop table member_registration_access; drop function private.ruined_member_paid_reservation(uuid)");
   await installPaidReservationFunction(db);
@@ -119,6 +119,13 @@ async function fixture(t) {
     [m.memberId, options.decision ?? "accepted", ago(60), options.source ?? "member", Object.hasOwn(options, "actor") ? options.actor : m.authId, JSON.stringify(evidence)]);
     return result.rows[0].id;
   }
+  async function standingFounder(m, enrolledAt = ago(2880)) {
+    const circle = "e140cf3c-dd56-4164-b7e4-6c97fbd39d3e";
+    await db.query("insert into platform_role_grants(auth_user_id,role_slug,granted_at) values($1,'ops_admin',$2)", [m.authId, enrolledAt]);
+    await db.query("update member_lifecycle set billing_state='pending' where member_id=$1", [m.memberId]);
+    await db.query("insert into circles(id,status,activated_at) values($1,'active',$2) on conflict do nothing", [circle, enrolledAt]);
+    await db.query("insert into circle_member_assignments(member_id,circle_id,assigned_at) values($1,$2,$3)", [m.memberId, circle, enrolledAt]);
+  }
   async function event(options = {}) {
     const e = { id: id(serial++), title: "SEE", timeZone: "America/Denver", startsAt: ago(-1430), endsAt: ago(-1520),
       visibility: "all_members", registrationMode: "internal", kind: "weekly_call", ...options };
@@ -165,11 +172,69 @@ async function fixture(t) {
     const lease = randomUUID(), claimed = await repo.claimCadenceDelivery(lease);
     assert.ok(claimed); return { claim: claimed, lease };
   }
-  return { db, sql, env, repo, model, inheritance, schedules, calendar, member, consent, event, roster, plan, setup, reset, state, enqueue, claim };
+  return { db, sql, env, repo, model, inheritance, schedules, calendar, member, consent, standingFounder, event, roster, plan, setup, reset, state, enqueue, claim };
 }
 
 test("cadence repository uses canonical access, exact current consent and durable occurrence delivery", async t => {
   const f = await fixture(t);
+  await t.test("standing team invitations receive member-call reminders without consuming a roster place", async () => {
+    for (const eventOptions of [{ visibility: "invite_only" }, { visibility: "circle", registrationMode: "none", circleId: id(99002) }]) {
+      await f.reset(); const m = await f.member(); await f.consent(m); await f.standingFounder(m);
+      const e = await f.event(eventOptions); await f.plan(e, m);
+      const operator = await f.member(); await f.consent(operator);
+      await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [operator.authId]);
+      assert.deepEqual((await f.repo.readCadenceRecipients(f.sql,e,"members")).filter(row=>row.eligible).map(row=>row.memberId),[m.memberId]);
+      assert.deepEqual(await f.repo.readCadenceRecipients(f.sql,e,"founder_test"),[],"test sends still require their explicit roster");
+      assert.equal(await f.enqueue(),1); assert.equal(await f.enqueue(),0);
+      assert.equal((await f.db.query("select count(*)::int n from experience_registrations")).rows[0].n,0);
+      const current = await f.claim();
+      assert.equal((await f.repo.withCadenceDelivery(current.claim,current.lease,()=>"preview only")).kind,"ok");
+    }
+  });
+  await t.test("standing invitation enrollment cannot backfill reminders or override roster decisions", async () => {
+    for (const lateEvidence of [
+      m=>f.db.query("update circle_member_assignments set assigned_at=clock_timestamp() where member_id=$1",[m.memberId]),
+      m=>f.db.query("update platform_role_grants set granted_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]),
+      ()=>f.db.query("update circles set activated_at=clock_timestamp()"),
+    ]) {
+      await f.reset(); const m=await f.member(); await f.consent(m); await f.standingFounder(m);
+      const e=await f.event({visibility:"invite_only"}); await f.plan(e,m); await lateEvidence(m);
+      assert.equal(await f.enqueue(),0);
+    }
+    for (const status of ["cancelled","waitlisted","attended"]) {
+      await f.reset(); const m=await f.member(); await f.consent(m); await f.standingFounder(m);
+      const e=await f.event({visibility:"invite_only"}); await f.plan(e,m); await f.roster(m,e,{status});
+      await f.db.query("update experience_registrations set member_id=null where person_id=$1",[m.personId]);
+      assert.equal(await f.enqueue(),0,"a person-level roster decision still takes precedence");
+    }
+  });
+  await t.test("existing explicit call invitations keep their original enrollment after later team grants or assignments", async () => {
+    for (const lateEvidence of [
+      m=>f.db.query("update circle_member_assignments set assigned_at=clock_timestamp() where member_id=$1",[m.memberId]),
+      m=>f.db.query("update platform_role_grants set granted_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]),
+    ]) {
+      await f.reset(); const m=await f.member(); await f.consent(m); await f.standingFounder(m);
+      const e=await f.event({visibility:"invite_only"}); await f.roster(m,e,{source:"ops"}); await f.plan(e,m);
+      assert.equal(await f.enqueue(),1); const current=await f.claim(); await lateEvidence(m);
+      const rows=await f.repo.readCadenceRecipients(f.sql,e,"members");
+      assert.ok(Date.parse(rows[0].registeredAt)<Date.now()-600_000,"existing call enrollment remains older than this reminder window");
+      assert.equal((await f.repo.withCadenceDelivery(current.claim,current.lease,()=>"preview only")).kind,"ok");
+    }
+  });
+  await t.test("standing reminder dispatch rechecks team authority, participation and current email permission", async () => {
+    for (const revoke of [
+      m=>f.db.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]),
+      m=>f.db.query("update circle_member_assignments set ended_at=clock_timestamp() where member_id=$1",[m.memberId]),
+      m=>f.db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[m.memberId]),
+      m=>f.consent(m,{decision:"withdrawn"}),
+      m=>f.db.query("insert into communication_contacts(email_normalized,delivery_state) values($1,'suppressed')",[m.email]),
+    ]) {
+      await f.reset(); const m=await f.member(); await f.consent(m); await f.standingFounder(m);
+      const e=await f.event({visibility:"invite_only"}); await f.plan(e,m); assert.equal(await f.enqueue(),1);
+      const current=await f.claim(); await revoke(m);
+      assert.equal((await f.repo.withCadenceDelivery(current.claim,current.lease,()=>assert.fail("revoked recipient"))).kind,"cancelled");
+    }
+  });
   await t.test("canonical call classification and Circle name enrich new snapshots without invalidating legacy snapshots", async () => {
     await f.reset(); const event=await f.event({title:"An authored title"});
     const legacy={...event};delete legacy.callType;delete legacy.circleName;

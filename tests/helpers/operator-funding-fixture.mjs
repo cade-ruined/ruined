@@ -13,6 +13,18 @@ export async function installOperatorFundingFunctions(db) {
   await installComplimentaryFundingFunctions(db);
 }
 
+/** The later Supporter migration narrows operator funding to active ops_admin grants. */
+export async function installCurrentOperatorFundingFunctions(db) {
+  await installOperatorFundingFunctions(db);
+  const migration = await readFile(new URL("../../db/migrations/20260930100000_supporter_service.sql", import.meta.url), "utf8");
+  for (const name of ["private.ruined_member_has_operator_funding", "private.ruined_lock_member_operator_funding"]) {
+    const start = migration.indexOf(`create or replace function ${name}(`);
+    const end = migration.indexOf("$$;", start);
+    assert.ok(start >= 0 && end > start, `Missing current shipped function: ${name}`);
+    await db.exec(migration.slice(start, end + 3));
+  }
+}
+
 export async function installComplimentaryFundingFunctions(db) {
   // Surrounding schemas are deliberately small; funding predicates are the
   // exact shipped definitions, not a boolean stub of authorization behavior.

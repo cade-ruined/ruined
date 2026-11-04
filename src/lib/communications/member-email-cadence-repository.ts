@@ -2,7 +2,9 @@ import "server-only";
 
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
-import { memberEligibleForExperience, memberEligibleForExperienceSnapshot } from "@/lib/platform/experience-member-access";
+import { getStandingFounderInvitationEnrolledAt, getStandingFounderInvitationMemberIds,
+  memberEligibleForExperience, memberEligibleForExperienceSnapshot,
+  memberEligibleForExperienceWithoutStandingInvitation } from "@/lib/platform/experience-member-access";
 import { googleCommunicationLivemode, googleCommunicationUrlFromMetadata } from "@/lib/google/communications";
 import { cadenceOccurrences, cadenceOccurrenceIsDue, getMemberEmailCadenceConfiguration, type CadenceConfiguration } from "./member-email-cadence-model";
 import type { CadenceDelivery, CadenceDeliveryClaim, CadenceEmailPayload, CadenceEventSnapshot, CadencePlan, CadenceRecipient } from "./member-email-cadence-types";
@@ -44,19 +46,23 @@ export async function cadenceCallReady(tx: TransactionSql, id: string, lock = fa
   return links.some(link => Boolean(googleCommunicationUrlFromMetadata("meet", link.metadata)));
 }
 
-/** Internal calls use their roster; no-registration calls use the canonical current member audience. */
+/** Internal calls use their roster or canonical standing team invitation. */
 export async function readCadenceRecipients(tx: TransactionSql, event: CadenceEventSnapshot,
   track: CadencePlan["track"], options: { memberId?: string; lock?: boolean } = {}): Promise<CadenceRecipient[]> {
   if (event.visibility === "public" || event.registration_mode === "external") return [];
   const automatic = track === "members" && event.registration_mode === "none"
     && ["all_members", "circle", "block", "progression"].includes(event.visibility);
-  const candidates = await tx<Array<{ memberId: string }>>`
+  const standingFounders = new Set(track === "members" ? await getStandingFounderInvitationMemberIds(tx) : []);
+  const rosterCandidates = await tx<Array<{ memberId: string }>>`
     select member.id as "memberId" from ruined_members member
     where (${options.memberId ?? null}::uuid is null or member.id=${options.memberId ?? null}::uuid)
       and (${automatic} or exists(select 1 from experience_registrations registration
         where registration.experience_id=${event.id}::uuid and registration.member_id=member.id))
       and member.deleted_at is null
     order by member.id limit 501`;
+  const candidates = [...new Set([...rosterCandidates.map(row => row.memberId),
+    ...[...standingFounders].filter(id => !options.memberId || id === options.memberId)])]
+    .sort().map(memberId => ({ memberId }));
   if (candidates.length > 500) throw new CadenceDeliveryError("roster_exceeds_review_limit", true);
   const recipients: CadenceRecipient[] = [];
   for (const candidate of candidates) {
@@ -76,7 +82,8 @@ export async function readCadenceRecipients(tx: TransactionSql, event: CadenceEv
           where transition.registration_id=registration.id and transition.next_status='registered'
             and transition.previous_status is distinct from 'registered'),registration.registered_at)) as "registeredAt",
         registration.status,registration.source from experience_registrations registration
-      where registration.experience_id=${event.id}::uuid and registration.member_id=${candidate.memberId}::uuid
+      join ruined_members recipient on recipient.person_id=registration.person_id
+      where registration.experience_id=${event.id}::uuid and recipient.id=${candidate.memberId}::uuid
       ${options.lock ? tx`for share of registration` : tx``}`;
     const [member] = await tx<Array<{ name: string; email: string; available: boolean; verified: boolean;
       consentId: string | null; consent: boolean; suppressed: boolean; enrolledAt: Date | string }>>`
@@ -107,17 +114,25 @@ export async function readCadenceRecipients(tx: TransactionSql, event: CadenceEv
         order by decision.id desc limit 1) consent on true
       where member.id=${candidate.memberId}::uuid`;
     if (!member) continue;
+    const rosterNeedsInvitation = (!registration && !automatic)
+      || ((track === "founder_test" || event.visibility === "invite_only") && registration?.source !== "ops");
+    const ordinaryAccess = !rosterNeedsInvitation && await memberEligibleForExperienceWithoutStandingInvitation(tx,event,candidate.memberId,options.lock);
+    const standingEnrolledAt = !ordinaryAccess && standingFounders.has(candidate.memberId)
+      ? await getStandingFounderInvitationEnrolledAt(tx, candidate.memberId, options.lock) : null;
+    const standingInvitation = standingEnrolledAt !== null;
     let reason = !member.available ? "Account unavailable" : !member.verified ? "Email is not verified"
-      : (registration && registration.status !== "registered") || (!registration && !automatic) ? "Not on the confirmed call roster"
-      : (track === "founder_test" || event.visibility === "invite_only") && registration?.source !== "ops" ? "This call requires an explicit admin invitation"
+      : (registration && registration.status !== "registered") || (!registration && !automatic && !standingInvitation) ? "Not on the confirmed call roster"
+      : (track === "founder_test" || event.visibility === "invite_only") && registration?.source !== "ops" && !standingInvitation ? "This call requires an explicit admin invitation"
       : member.suppressed ? "Email delivery is suppressed"
       : !member.consent ? "Membership email reminders are not enabled" : "";
-    if (!reason && !await (options.lock ? memberEligibleForExperience : memberEligibleForExperienceSnapshot)(tx, event, candidate.memberId)) {
+    if (!reason && !ordinaryAccess && !(standingInvitation
+      && await (options.lock ? memberEligibleForExperience : memberEligibleForExperienceSnapshot)(tx, event, candidate.memberId))) {
       reason = "Current membership or call access does not qualify";
     }
     let enrolledAt = new Date(automatic ? member.enrolledAt : registration?.registeredAt ?? member.enrolledAt).getTime();
     if (automatic && registration) enrolledAt = Math.max(enrolledAt,new Date(registration.registeredAt).getTime());
-    if (automatic && !reason && event.visibility !== "all_members") {
+    if (standingEnrolledAt) enrolledAt = Math.max(enrolledAt,new Date(member.enrolledAt).getTime(),new Date(standingEnrolledAt).getTime());
+    if (automatic && !standingInvitation && !reason && event.visibility !== "all_members") {
       // Access policy supplies authority; these matching timestamps prevent late enrollment backfill.
       let scopes: Array<{ enrolledAt: Date | string }>;
       if (event.visibility === "circle") {

@@ -20,6 +20,9 @@
 .badge { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 78px; height: 88px; border: 1px solid var(--member-rule); background: var(--member-subtle); color: var(--member-muted); font-family: var(--font-display); font-size: 43px; font-weight: 500; letter-spacing: -.04em; line-height: 1; }
 .badgeTime { font-size: 25px; letter-spacing: -.035em; }
 .earned { background: var(--member-yellow, #ffca2c); border-color: var(--member-yellow, #ffca2c); color: #2a2a2a; }
+.badgeArtwork, .badgeArtwork.earned { border: 0; background: transparent; }
+.badgeArtwork img { width: 100%; height: 100%; object-fit: contain; opacity: .78; }
+.badgeArtwork.earned img { opacity: 1; }
 .primary.primary { min-height: 50px; padding: 13px 23px; font-size: 15px; font-weight: 600; white-space: nowrap; }
 .textButton { display: inline-flex; align-items: center; min-height: 44px; color: var(--member-muted); font-size: 15px; line-height: 1.5; text-decoration: none; text-align: left; }
 .textButton:hover { color: var(--member-ink); }

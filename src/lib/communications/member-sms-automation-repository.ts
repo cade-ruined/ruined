@@ -2,7 +2,8 @@ import "server-only";
 
 import type { Sql, TransactionSql } from "postgres";
 import { googleCommunicationLivemode, googleCommunicationUrlFromMetadata } from "@/lib/google/communications";
-import { memberEligibleForExperience } from "@/lib/platform/experience-member-access";
+import { getStandingFounderInvitationEnrolledAt, memberEligibleForExperience,
+  memberEligibleForExperienceWithoutStandingInvitation } from "@/lib/platform/experience-member-access";
 import { acceptedMemberSmsConsentSql } from "@/lib/membership/member-sms-consent";
 import { memberSmsFundedEligibilitySql } from "./member-sms-eligibility";
 import type { MemberSmsReminder } from "./member-sms-model";
@@ -178,7 +179,7 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
     if (!confirmation) return false;
   }
   // The explicit event binding supplies timing; names never classify a call.
-  const bindings = await tx<Array<{ kind: string }>>`select kind from private.member_email_cadence_event_bindings
+  const bindings = await tx<Array<{ kind: string; track: string }>>`select kind,track from private.member_email_cadence_event_bindings
     where experience_id=${input.callDetails.eventId}::uuid for share`;
   const foundations01 = bindings[0]?.kind === "foundations_01";
   const templateId = input.callDetails.reminderStage === "day_before" ? "day_before" : foundations01 ? "foundations_01" : "call_reminder";
@@ -207,13 +208,22 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
   const [member] = await tx<Array<{ person_id: string }>>`select person_id from ruined_members
     where id=${input.memberId}::uuid and deleted_at is null for share`;
   if (!member) return false;
-  const registrations = await tx<Array<{ status: string }>>`select status from experience_registrations
+  const registrations = await tx<Array<{ status: string; source: string }>>`select status,source from experience_registrations
     where experience_id=${event.id}::uuid and person_id=${member.person_id}::uuid for share`;
   const registration = registrations[0];
   if (registration && registration.status !== "registered") return false;
-  if ((event.registration_mode !== "none" || ["invite_only", "public"].includes(event.visibility))
-    && registration?.status !== "registered") return false;
-  if (!await memberEligibleForExperience(tx, event, input.memberId)) return false;
+  const founderTest = bindings[0]?.track === "founder_test";
+  if (founderTest && (registration?.status !== "registered" || registration.source !== "ops")) return false;
+  const needsRosterInvitation = (event.registration_mode !== "none" || ["invite_only", "public"].includes(event.visibility))
+    && registration?.status !== "registered";
+  if (needsRosterInvitation && (event.visibility === "public" || event.registration_mode === "external")) return false;
+  const ordinaryAccess = !needsRosterInvitation && await memberEligibleForExperienceWithoutStandingInvitation(tx,event,input.memberId,true);
+  if (!ordinaryAccess) {
+    if (founderTest) return false;
+    const enrolledAt = await getStandingFounderInvitationEnrolledAt(tx,input.memberId,true);
+    if (!enrolledAt || new Date(enrolledAt).getTime()>new Date(job.dueAt).getTime()
+      || !await memberEligibleForExperience(tx,event,input.memberId)) return false;
+  }
   const meetings = await tx<Array<{ metadata: unknown }>>`select metadata from integration_entity_links
     where provider='google' and local_entity_type='experience' and local_entity_id=${event.id}
       and external_entity_type='meet_space' and livemode=${googleCommunicationLivemode()} for share`;

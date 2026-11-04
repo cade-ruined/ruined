@@ -3,7 +3,8 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { TransactionSql } from "postgres";
 import { getApplicationDatabase } from "@/lib/database/server";
-import { memberEligibleForExperienceSnapshot } from "@/lib/platform/experience-member-access";
+import { getStandingFounderInvitationEnrolledAt, memberEligibleForExperienceSnapshot,
+  memberEligibleForExperienceWithoutStandingInvitation } from "@/lib/platform/experience-member-access";
 import { googleCommunicationLivemode, googleCommunicationUrlFromMetadata } from "@/lib/google/communications";
 import { acceptedMemberSmsConsentSql } from "@/lib/membership/member-sms-consent";
 import { memberSmsFundedEligibilitySql } from "./member-sms-eligibility";
@@ -44,6 +45,7 @@ export function parseMemberSmsHistoryCursor(value?: string | null): { createdAt:
 type Member = { memberId: string; personId: string; name: string; phone: string; sharedPhone: boolean;
   consentId: string; acceptedAt: Date | string; confirmationWindowAllowed: boolean; fundedEligible: boolean; total: number; eligibleTotal: number };
 type Event = { id: string; title: string; startsAt: Date | string; timeZone: string; foundations01: boolean;
+  track: string | null;
   templateId?: "call_reminder" | "foundations_01" | "day_before";
   confirmationWindowAllowed?: boolean;
   visibility: string; registration_mode: string; circle_id: string | null; block_id: string | null; progression_level_slug: string | null; meetings: unknown[] | null };
@@ -85,7 +87,7 @@ async function readMembers(tx: TransactionSql): Promise<Member[]> {
 }
 async function readEvents(tx: TransactionSql, now: string, horizonEnd: string, activatedAt: string): Promise<Event[]> {
   return tx<Event[]>`select event.id,event.title,event.starts_at as "startsAt",event.timezone as "timeZone",
-      template.id as "templateId",
+      template.id as "templateId",binding.track,
       event.starts_at-make_interval(mins=>template.notice_minutes)>=(select effective_at from private.member_sms_templates where id='opt_in_confirmation') as "confirmationWindowAllowed",
       coalesce(binding.kind='foundations_01',false) as "foundations01",event.visibility,event.registration_mode,event.circle_id,event.block_id,event.progression_level_slug,
       (select jsonb_agg(meeting.metadata) from integration_entity_links meeting where meeting.provider='google'
@@ -126,10 +128,10 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
     from private.member_sms_automation_jobs where member_id=any(${memberIds}::uuid[]) and reminder_key=any(${keys}::text[])`;
   const attemptMap = new Map(attempts.map(row => [`${row.memberId}:${row.kind}:${row.reminderKey}`, row]));
   const jobMap = new Map(jobs.map(row => [`${row.memberId}:${row.kind}:${row.reminderKey}`, row]));
-  const registrations = await tx<Array<{ eventId: string; personId: string; status: string }>>`
-    select experience_id as "eventId",person_id as "personId",status from experience_registrations
+  const registrations = await tx<Array<{ eventId: string; personId: string; status: string; source: string }>>`
+    select experience_id as "eventId",person_id as "personId",status,source from experience_registrations
     where experience_id=any(${events.map(event => event.id)}::uuid[]) and person_id=any(${members.map(member => member.personId)}::uuid[])`;
-  const registrationMap = new Map(registrations.map(row => [`${row.eventId}:${row.personId}`, row.status]));
+  const registrationMap = new Map(registrations.map(row => [`${row.eventId}:${row.personId}`, row]));
   function sourceFor(member: Member, kind: string, key: string, due: number): MemberSmsUpcomingItem["source"] | null {
     const keyWithMember = `${member.memberId}:${kind}:${key}`, job = jobMap.get(keyWithMember);
     // Any prior attempt is non-retryable, including unknown/blocked. A finished or
@@ -156,7 +158,10 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
   outer: for (const event of events) for (const member of members) {
     if (!member.fundedEligible) continue;
     const registration = registrationMap.get(`${event.id}:${member.personId}`);
-    if ((registration && registration !== "registered") || ((event.registration_mode !== "none" || ["invite_only", "public"].includes(event.visibility)) && registration !== "registered")) continue;
+    if (registration && registration.status !== "registered") continue;
+    if (event.track === "founder_test" && (registration?.status !== "registered" || registration.source !== "ops")) continue;
+    const needsStandingInvitation = (event.registration_mode !== "none" || ["invite_only", "public"].includes(event.visibility)) && registration?.status !== "registered";
+    if (needsStandingInvitation && (event.visibility === "public" || event.registration_mode === "external")) continue;
     const input = reminder(member.memberId, member.consentId, event);
     if (!input) continue;
     const template = templates.find(item => item.id === event.templateId)!;
@@ -164,7 +169,13 @@ async function readUpcoming(tx: TransactionSql, now: string, activatedAt: string
     const due = Date.parse(iso(event.startsAt)) - minutes * 60_000;
     const source = sourceFor(member, "call_reminder", input.reminderKey, due); if (!source) continue;
     if (++examined > PAIR_LIMIT || Date.now() >= stopForecastingAt) { truncated = true; break outer; }
-    if (!await memberEligibleForExperienceSnapshot(tx, event, member.memberId)) continue;
+    const ordinaryAccess = !needsStandingInvitation && await memberEligibleForExperienceWithoutStandingInvitation(tx,event,member.memberId);
+    if (!ordinaryAccess) {
+      if (event.track === "founder_test") continue;
+      const enrolledAt = await getStandingFounderInvitationEnrolledAt(tx,member.memberId);
+      if (!enrolledAt || new Date(enrolledAt).getTime()>due
+        || !await memberEligibleForExperienceSnapshot(tx,event,member.memberId)) continue;
+    }
     let body: string;
     try { body = renderMemberSmsTemplate(template, input, ORIGIN); } catch { continue; } // Invalid call data is not sendable.
     const prior = attemptMap.get(`${member.memberId}:opt_in_confirmation:consent:${member.consentId}`);
