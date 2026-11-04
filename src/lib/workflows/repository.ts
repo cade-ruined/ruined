@@ -747,6 +747,11 @@ async function projectMilestone(action: WorkflowAction): Promise<Record<string, 
 }
 
 async function createOperatorTask(action: WorkflowAction): Promise<Record<string, unknown>> {
+  const taskType = requiredPayloadString(action, "task_type");
+  // Older or replayed onboarding actions must not recreate this retired task.
+  if (taskType === "onboarding.follow_up") {
+    return { skipped: true, reason: "task_type_retired" };
+  }
   const sql = getApplicationDatabase();
   const taskId = randomUUID();
   return sql.begin(async (tx) => {
@@ -766,7 +771,7 @@ async function createOperatorTask(action: WorkflowAction): Promise<Record<string
         ${taskId}::uuid,
         ${action.memberId}::uuid,
         ${action.personId}::uuid,
-        ${requiredPayloadString(action, "task_type")},
+        ${taskType},
         ${requiredPayloadString(action, "title")},
         ${payloadString(action, "description")},
         ${payloadString(action, "priority") ?? "normal"},

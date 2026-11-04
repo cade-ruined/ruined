@@ -129,6 +129,7 @@ export async function reconcileMemberRegistration(tx: TransactionSql, memberId: 
   if (completed) await tx`insert into member_registration_messages(member_id,kind) values(${memberId}::uuid,'welcome')
     on conflict(member_id,kind) do nothing`;
   await releasePaidMemberProfile(tx, memberId);
+  await releaseComplimentaryMemberProfile(tx, memberId);
 }
 
 export type PaidMemberProfileRelease = {
@@ -149,11 +150,7 @@ async function readPaidMemberProfileRelease(tx: TransactionSql, memberId: string
   return row ? { ...row, version: Number(row.version), profileActivatedAt: iso(row.profileActivatedAt) } : null;
 }
 
-/** Caller holds funding/member locks. Payment and identity are rechecked after
- * locking their evidence; release, its provenance, email and audit commit together. */
-async function releasePaidMemberProfile(tx: TransactionSql, memberId: string): Promise<boolean> {
-  const before = await readPaidMemberProfileRelease(tx, memberId);
-  if (!before?.eligible || !before.paymentReservationId) return false;
+async function lockProfileReleaseIdentity(tx: TransactionSql, memberId: string): Promise<boolean> {
   const identity = await tx`
     select member.id from ruined_members member
     join people person on person.id=member.person_id and person.status='active'
@@ -167,7 +164,15 @@ async function releasePaidMemberProfile(tx: TransactionSql, memberId: string): P
     join member_lifecycle lifecycle on lifecycle.member_id=member.id
     where member.id=${memberId}::uuid and member.deleted_at is null
     for share of person,account,grant_row,email,profile,onboarding,lifecycle`;
-  if (!identity.length) return false;
+  return identity.length > 0;
+}
+
+/** Caller holds funding/member locks. Payment and identity are rechecked after
+ * locking their evidence; release, its provenance, email and audit commit together. */
+async function releasePaidMemberProfile(tx: TransactionSql, memberId: string): Promise<boolean> {
+  const before = await readPaidMemberProfileRelease(tx, memberId);
+  if (!before?.eligible || !before.paymentReservationId) return false;
+  if (!await lockProfileReleaseIdentity(tx, memberId)) return false;
   await tx`select member_id from member_registration_access where member_id=${memberId}::uuid for update`;
   const payment = await tx`
     select proof.reservation_id from stripe_membership_prepaid_proofs proof
@@ -205,6 +210,51 @@ async function releasePaidMemberProfile(tx: TransactionSql, memberId: string): P
       ${tx.json({ profileActivated: false })},${tx.json({ profileActivated: true, billingChanged: false })},
       ${tx.json({ source: "verified_membership_payment", paymentReservationId: current.paymentReservationId })},${`registration-payment-activation:${memberId}`})
     on conflict(dedupe_key) do nothing`;
+  return true;
+}
+
+async function readComplimentaryMemberProfileRelease(tx: TransactionSql, memberId: string) {
+  const [row] = await tx<Array<{ eligible: boolean; complimentaryGrantId: string | null; operatorGrantId: string | null }>>`
+    select private.ruined_complimentary_profile_release_ready(registration.member_id) as eligible,
+      (select funding.id from member_complimentary_grants funding
+        where funding.member_id=registration.member_id and funding.revoked_at is null
+          and funding.starts_at<=clock_timestamp() and (funding.ends_at is null or funding.ends_at>clock_timestamp())
+        order by funding.id limit 1) as "complimentaryGrantId",
+      (select grant_row.id::text from platform_role_grants grant_row
+        join platform_users account on account.auth_user_id=grant_row.auth_user_id
+        join ruined_members member on member.id=registration.member_id and account.person_id=member.person_id
+          and account.email_normalized=member.email_normalized
+        where account.member_id=registration.member_id and account.status='active'
+          and grant_row.role_slug='ops_admin' and grant_row.revoked_at is null
+        order by grant_row.id limit 1) as "operatorGrantId"
+    from member_registration_access registration where registration.member_id=${memberId}::uuid`;
+  return row;
+}
+
+/** Caller holds the current funding grants and member locks. Never creates funding,
+ * accepts terms, or starts billing; only completed eligible registrations open. */
+async function releaseComplimentaryMemberProfile(tx: TransactionSql, memberId: string): Promise<boolean> {
+  const before = await readComplimentaryMemberProfileRelease(tx, memberId);
+  if (!before?.eligible || (!before.complimentaryGrantId && !before.operatorGrantId)) return false;
+  if (!await lockProfileReleaseIdentity(tx, memberId)) return false;
+  await tx`select member_id from member_registration_access where member_id=${memberId}::uuid for update`;
+  const current = await readComplimentaryMemberProfileRelease(tx, memberId);
+  if (!current?.eligible || current.complimentaryGrantId !== before.complimentaryGrantId
+    || current.operatorGrantId !== before.operatorGrantId) return false;
+  const complimentaryGrantId = current.complimentaryGrantId;
+  const operatorGrantId = complimentaryGrantId ? null : current.operatorGrantId;
+  const [released] = await tx`update member_registration_access
+    set profile_activated_at=clock_timestamp(),profile_complimentary_grant_id=${complimentaryGrantId}::uuid,
+      profile_operator_grant_id=${operatorGrantId}::bigint,version=version+1,updated_at=clock_timestamp()
+    where member_id=${memberId}::uuid and profile_activated_at is null returning member_id`;
+  if (!released) return false;
+  await tx`insert into member_registration_messages(member_id,kind) values(${memberId}::uuid,'profile_ready')
+    on conflict(member_id,kind) do nothing`;
+  await tx`insert into operator_audit_events(action,subject_type,subject_id,member_id,before_snapshot,after_snapshot,metadata,dedupe_key)
+    values('member.profile_automatically_activated','member',${memberId},${memberId}::uuid,
+      ${tx.json({ profileActivated: false })},${tx.json({ profileActivated: true, billingChanged: false })},
+      ${tx.json({ source: complimentaryGrantId ? "complimentary_membership" : "operator_membership", complimentaryGrantId, operatorGrantId })},
+      ${`registration-complimentary-activation:${memberId}`}) on conflict(dedupe_key) do nothing`;
   return true;
 }
 

@@ -83,9 +83,9 @@ test("closed checkout holds every payment follow-up, including already-started a
 test("complimentary and verified-paid members receive access review instead of another payment link", () => {
   for (const overrides of [{ paymentExempt: true }, { paymentConfirmed: true, paymentReceivedAt: at }]) {
     const action = followUp(registration({ registeredAt: at, ready: true, ...overrides }));
-    assertNotShare(action, overrides.paymentConfirmed ? "review" : "release");
-    assert.equal(action.title, overrides.paymentConfirmed ? "Review automatic profile access" : "Review and grant profile access");
-    assert.match(action.detail, overrides.paymentConfirmed ? /opens a completed profile automatically/ : /after you confirm/);
+    assertNotShare(action, "review");
+    assert.equal(action.title, "Review automatic profile access");
+    assert.match(action.detail, /opens a completed profile automatically/);
   }
 });
 

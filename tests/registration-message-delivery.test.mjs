@@ -358,6 +358,10 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card",befo
   const followupMigration=await readFile(new URL("../db/migrations/20261021190000_cade_registration_followup.sql",import.meta.url),"utf8");
   const releaseMigration=await readFile(new URL("../db/migrations/20261103021417_member_paid_profile_release.sql",import.meta.url),"utf8");
   await pg.exec(releaseMigration.slice(0,releaseMigration.indexOf("create function private.ruined_paid_profile_release_ready"))+"commit;");
+  await pg.exec(`create table member_complimentary_grants(id uuid primary key);
+    create table platform_role_grants(id bigint generated always as identity primary key);`);
+  const complimentaryReleaseMigration=await readFile(new URL("../db/migrations/20261104202219_automatic_complimentary_profile_release.sql",import.meta.url),"utf8");
+  await pg.exec(complimentaryReleaseMigration.slice(0,complimentaryReleaseMigration.indexOf("create function private.ruined_complimentary_profile_release_ready"))+"commit;");
   if (!beforeMigration) await pg.exec(followupMigration);
   await pg.query("insert into people values($1,'active')",[ids.person]);
   await pg.query("insert into ruined_members values($1,$2,'alex@example.test',null)",[ids.member,ids.person]);
@@ -513,6 +517,22 @@ test("automatic payment release preserves the receipt and sends profile access o
   assert.equal(f.sends.filter(send=>send.payload.subject==="Your Ruined profile is ready").length,1);
   assert.match(f.sends.find(send=>send.payload.text.includes("$375.18 USD paid")).payload.text,/profile opens automatically after verified payment/);
   assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+});
+
+test("automatic complimentary and operator release preserve welcome and send profile access once",async t=>{
+  for(const operator of [false,true]){
+    const f=await fixture(t,{basis:"complimentary"});
+    const grant=operator
+      ? (await f.pg.query("insert into platform_role_grants default values returning id")).rows[0].id
+      : crypto.randomUUID();
+    if(!operator)await f.pg.query("insert into member_complimentary_grants(id) values($1)",[grant]);
+    await f.pg.query(`update member_registration_access set profile_activated_at=now(),${operator?"profile_operator_grant_id":"profile_complimentary_grant_id"}=$2 where member_id=$1`,[f.ids.member,grant]);
+    await f.pg.query("insert into member_registration_messages(member_id,kind) values($1,'profile_ready')",[f.ids.member]);
+    assert.equal((await f.worker.processRegistrationMessageBatch()).sent,2);
+    assert.equal(f.sends.filter(send=>send.payload.subject==="Welcome to RU/NED").length,1);
+    assert.equal(f.sends.filter(send=>send.payload.subject==="Your Ruined profile is ready").length,1);
+    assert.equal((await f.worker.processRegistrationMessageBatch()).claimed,0);
+  }
 });
 
 test("paid welcome waits for exact current proof and checks it again immediately before sending",async t=>{

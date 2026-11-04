@@ -80,7 +80,7 @@ function sourceLoader(overrides) {
   return load;
 }
 
-test("registration holds preserve prior access and require manual release without verified payment", async t => {
+test("registration preserves prior access, opens eligible complimentary profiles, and holds unpaid saved-card profiles", async t => {
   const db = new PGlite(); t.after(() => db.close());
   await db.exec("create role anon; create role authenticated; create role service_role;");
   const migrations = [...read("scripts/migrate-platform.mjs").matchAll(/"\.\.\/(db\/migrations\/[^\"]+)"/g)];
@@ -98,7 +98,8 @@ test("registration holds preserve prior access and require manual release withou
   const profilePaymentMigration = "db/migrations/20261103021417_member_paid_profile_release.sql";
   const rolloverMigration = "db/migrations/20261104190000_paid_foundations_cohort_rollover.sql";
   const complimentaryCohortMigration = "db/migrations/20261104190000_complimentary_foundations_cohorts.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,profilePaymentMigration,rolloverMigration,complimentaryCohortMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const complimentaryProfileMigration = "db/migrations/20261104202219_automatic_complimentary_profile_release.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,profilePaymentMigration,rolloverMigration,complimentaryCohortMigration,complimentaryProfileMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -172,6 +173,7 @@ test("registration holds preserve prior access and require manual release withou
   await db.exec(read(profilePaymentMigration));
   await db.exec(read(rolloverMigration));
   await db.exec(read(complimentaryCohortMigration));
+  await db.exec(read(complimentaryProfileMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");
@@ -423,7 +425,7 @@ test("registration holds preserve prior access and require manual release withou
     assert.equal((await row("select billing_state from member_lifecycle where member_id=$1",[pending.member_id])).billing_state,"pending");
     assert.equal((await row("select private.ruined_member_profile_released($1) as released",[pending.member_id])).released,false);
   });
-  await t.test("complimentary funding completes without a card but still holds the profile",async()=>{
+  await t.test("eligible complimentary funding completes and opens the profile without a card or manual release",async()=>{
     const complimentary={authUserId:randomUUID(),email:"complimentary@example.test"};
     await profile(admin);
     const agreementId = randomUUID(), terms = "TEST ONLY operator onboarding agreement.";
@@ -461,7 +463,12 @@ test("registration holds preserve prior access and require manual release withou
     await assert.rejects(() => profile(complimentary, { legalAcknowledgment: undefined }), { status: 400 });
     await profile(complimentary);
     const result=await registration.getMemberRegistration(complimentary.authUserId);
-    assert.equal(result.requiresPaymentMethod,false);assert.equal(result.ready,true);assert.equal(result.state,"registered");
+    assert.equal(result.requiresPaymentMethod,false);assert.equal(result.ready,true);assert.equal(result.state,"activated");
+    assert.ok(result.profileActivatedAt);
+    assert.equal(await registration.getMemberRegistrationDestination(complimentary.authUserId),null);
+    const released=await row("select profile_complimentary_grant_id,profile_operator_grant_id,activated_by_auth_user_id from member_registration_access where member_id=$1",[complimentary.member_id]);
+    assert.ok(released.profile_complimentary_grant_id);assert.equal(released.profile_operator_grant_id,null);assert.equal(released.activated_by_auth_user_id,null);
+    assert.deepEqual((await db.query("select kind from member_registration_messages where member_id=$1 order by kind",[complimentary.member_id])).rows.map(message=>message.kind),["profile_ready","welcome"]);
     assert.equal(result.foundingPricing, null, "Complimentary registrants receive no paid-price confirmation");
     assert.equal((await row("select count(*)::int as count from private.ruined_commercial_registered_people() where person_id=$1", [complimentary.person_id])).count, 1);
     assert.equal((await row("select completion_basis from member_registration_access where member_id=$1",[complimentary.member_id])).completion_basis,"complimentary");
@@ -483,23 +490,25 @@ test("registration holds preserve prior access and require manual release withou
     const platform = load("src/lib/auth/platform-access.ts");
     await platform.completePlatformSignIn(returning, { invitationToken: token });
     const completed = await registration.getMemberRegistration(returning.authUserId);
-    assert.equal(completed.state, "registered");
+    assert.equal(completed.state, "activated");
     assert.equal(completed.ready, true);
     assert.ok(completed.registeredAt);
     assert.equal(completed.requiresPaymentMethod, false);
     assert.equal(completed.requiresInitialPayment, false);
-    assert.equal(await registration.getMemberRegistrationDestination(returning.authUserId), "/my/registered");
+    assert.equal(await registration.getMemberRegistrationDestination(returning.authUserId), null);
     assert.equal((await row("select completion_basis from member_registration_access where member_id=$1", [returning.member_id])).completion_basis, "complimentary");
-    assert.equal((await row("select private.ruined_member_profile_released($1) as released", [returning.member_id])).released, false);
+    assert.equal((await row("select private.ruined_member_profile_released($1) as released", [returning.member_id])).released, true);
     assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='welcome'", [returning.member_id])).count, 1);
+    assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='profile_ready'", [returning.member_id])).count, 1);
     for (const table of ["member_payment_method_accounts", "stripe_subscriptions", "stripe_checkout_attempts"]) {
       assert.equal((await row(`select count(*)::int as count from ${table} where member_id=$1`, [returning.member_id])).count, 0);
     }
 
-    // Reopening the accepted invitation is idempotent: no second completion or welcome.
+    // Reopening the accepted invitation cannot repeat completion, release or either message.
     await platform.completePlatformSignIn(returning, { invitationToken: token });
     assert.deepEqual(await registration.getMemberRegistration(returning.authUserId), completed);
     assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='welcome'", [returning.member_id])).count, 1);
+    assert.equal((await row("select count(*)::int as count from member_registration_messages where member_id=$1 and kind='profile_ready'", [returning.member_id])).count, 1);
   });
   await t.test("paid agreement acceptance requires the activation gate and complete intake without opening held profiles", async () => {
     const target = await member("paid-agreement-held@example.test");
