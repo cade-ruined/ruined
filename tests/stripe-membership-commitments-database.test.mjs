@@ -27,6 +27,10 @@ async function fixture(t) {
     create table stripe_checkout_attempts (id uuid primary key, member_id uuid, agreement_acceptance_id uuid, billing_plan text, stripe_price_id text,
       recurring_payment_accepted_at timestamptz, billing_consent_auth_user_id uuid, recurring_payment_terms jsonb, status text, stripe_subscription_id text, first_charge_at timestamptz, billing_schedule jsonb);`);
   await db.exec(await read("db/migrations/20260929005000_membership_commitments.sql"));
+  // This isolated legacy-contract fixture has no rollover ledger. The full
+  // shipped-migration prepayment suite verifies the actual effective overlay.
+  await db.exec(`create function private.ruined_effective_membership_terms(target_contract_id uuid) returns jsonb
+    language sql stable as $$ select terms_snapshot from stripe_membership_commitments where id=target_contract_id $$;`);
   const c = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member", livemode: false,
     offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v2",
     agreementContentSha256: "a".repeat(64), acceptedAt: "2026-09-01T12:00:00.000Z", startsAt: "2026-09-15T12:00:00.000Z", billingTermsVersion: "membership-billing-v2" });

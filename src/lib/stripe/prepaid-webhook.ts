@@ -24,7 +24,7 @@ export async function projectPrepaidMembershipInvoice(tx: BillingTransaction, in
     || reservation.id !== subscription.metadata.ruined_checkout_attempt_id
     || reservation.offerId !== subscription.metadata.ruined_offer_id
     || reservation.stripePriceId !== subscription.items.data[0]?.price.id
-    || prepaidScheduleFingerprint(schedule) !== prepaidScheduleFingerprint(reservation.billingSchedule)
+    || prepaidScheduleFingerprint(schedule) !== prepaidScheduleFingerprint(reservation.effectiveBillingSchedule ?? reservation.billingSchedule)
     || reservation.stripeSubscriptionId && reservation.stripeSubscriptionId !== subscription.id) {
     throw new MembershipCommitmentError("commercial_consent_identity_mismatch");
   }
@@ -70,8 +70,8 @@ export async function projectPrepaidMembershipInvoice(tx: BillingTransaction, in
       customerId: id(subscription.customer)!, livemode: subscription.livemode, offerId: reservation.offerId,
       priceId: reservation.stripePriceId!, agreementAcceptanceId: accepted.acceptanceId,
       agreementVersion: accepted.agreementVersion, agreementContentSha256: accepted.agreementContentSha256,
-      acceptedAt: new Date(accepted.acceptedAt).toISOString(), startsAt: schedule.serviceStartsAt,
-      billingTermsVersion: MEMBERSHIP_COMMITMENT_TERMS_VERSION, billingSchedule: schedule });
+      acceptedAt: new Date(accepted.acceptedAt).toISOString(), startsAt: reservation.billingSchedule.serviceStartsAt,
+      billingTermsVersion: MEMBERSHIP_COMMITMENT_TERMS_VERSION, billingSchedule: reservation.billingSchedule });
     await createMembershipCommitment(tx, contract, reservation.id);
   }
   if (proof && proof.refundState !== "none") return "attention_required";
@@ -90,7 +90,7 @@ export async function projectPrepaidMembershipInvoice(tx: BillingTransaction, in
       purpose: "membership", status: verified.invoice.status });
     proof = await recordMembershipPrepayment(tx, { reservationId: reservation.id, contractId: contract.id, memberId,
       subscriptionId: subscription.id, invoiceId: verified.invoiceId, paymentIntentId: verified.paymentIntentId,
-      chargeId: verified.chargeId, serviceStartsAt: schedule.serviceStartsAt, prepaidThrough: schedule.prepaidThrough,
+      chargeId: verified.chargeId, serviceStartsAt: reservation.billingSchedule.serviceStartsAt, prepaidThrough: reservation.billingSchedule.prepaidThrough,
       duesAmount: contract.installmentDues, amountPaid: verified.amount, currency: "usd", livemode: contract.livemode, verifiedAt: new Date() });
   } catch (error) {
     if (!(error instanceof MembershipCommitmentError)) throw error;

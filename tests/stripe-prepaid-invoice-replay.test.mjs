@@ -16,7 +16,7 @@ const state = await load("src/lib/stripe/membership-state.ts");
 const schedule = foundationsScheduleFixture.foundationsBillingScheduleForMonth("2026-11", "monthly");
 const memberId = "11111111-1111-4111-8111-111111111111", attemptId = "22222222-2222-4222-8222-222222222222", acceptanceId = "33333333-3333-4333-8333-333333333333";
 
-async function fixture(currentPaid) {
+async function fixture(currentPaid, {rolled=false, completed=true}={}) {
   const writes = [], projected = [], retrieved = [], stored = [];
   const price = { id: "price_member", product: "prod_member", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", transform_quantity: null,
     tax_behavior: "exclusive", currency: "usd", unit_amount: 34900, recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } };
@@ -40,12 +40,20 @@ async function fixture(currentPaid) {
   const current = { ...common, id: "in_renewal", billing_reason: "subscription_cycle", status: currentPaid ? "paid" : "open", amount_paid: currentPaid ? 34900 : 0,
     amount_remaining: currentPaid ? 0 : 34900, status_transitions: { paid_at: currentPaid ? prepaidEnd : null },
     lines: { has_more: false, data: [{ ...line, period: { start: prepaidEnd, end: prepaidEnd + 31 * 86400 } }] } };
+  if (rolled) {
+    const effective=foundationsScheduleFixture.foundationsBillingScheduleForMonth("2026-12","monthly");
+    Object.assign(metadata,prepaidPolicyFixture.prepaidRolloverMetadata(effective,attemptId));
+    subscription.status="trialing";subscription.trial_end=Date.parse(effective.prepaidThrough)/1000;subscription.billing_cycle_anchor=subscription.trial_end;
+    Object.assign(current,{billing_reason:"subscription_update",status:"paid",amount_due:0,amount_paid:0,amount_remaining:0,total:0,total_excluding_tax:0,
+      starting_balance:0,ending_balance:0,pre_payment_credit_notes_amount:0,post_payment_credit_notes_amount:0,
+      lines:{has_more:false,data:[{...line,amount:0,subtotal:0,period:{start:prepaidEnd,end:subscription.trial_end}}]}});
+  }
   const stripe = { subscriptions: { retrieve: async () => subscription }, invoices: { retrieve: async id => { retrieved.push(id); assert.ok([initial.id, current.id].includes(id)); return id === initial.id ? initial : current; } } };
   const processor = await load("src/lib/stripe/webhook.ts", {
     "server-only": {}, "@/lib/membership/pricing": pricing, "@/lib/stripe/membership-state": state, "@/lib/stripe/price-policy": prices,
     "@/lib/membership/registration-repository": { reconcilePaidMemberRegistrations: async () => {} },
     "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
-    "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn(async () => []) }) },
+    "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async fn => fn(async strings => strings.join(" ").includes("private.membership_cohort_rollovers") && completed ? [{reservation_id:attemptId}] : []) }) },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({ livemode: false, offers: { founding_individual_monthly: price.id } }), isStripeTaxEnabled: () => false },
     "@/lib/stripe/checkout-consent": { reconcileNativeCheckoutConsent: async (_tx, _stripe, { subscription }) => {
       assert.equal(subscription.metadata.billing_consent_source, undefined, "historical prepaid replays retain their stored member-approved consent");
@@ -76,4 +84,26 @@ test("old prepaid initial paid invoice cannot grant access when the current rene
   const f = await fixture(false); await f.replay();
   assert.equal(f.projected.length, 1); assert.equal(f.projected[0].invoice.id, "in_renewal"); assert.equal(f.projected[0].verifiedPayment, false);
   assert.deepEqual(f.writes.map(value => value.state), ["attention_required"]);
+});
+
+test("recorded $0 rollover invoice uses original payment coverage; an uncompleted or foreign rollover cannot grant access",async()=>{
+  for(const completed of [true,false]) {
+    const f=await fixture(true,{rolled:true,completed});await f.replay();
+    assert.equal(f.projected.length,1);assert.equal(f.projected[0].invoice.amount_paid,0);
+    assert.equal(f.projected[0].verifiedPayment,completed);
+    assert.deepEqual(f.writes.map(value=>value.state),[completed?"active":"attention_required"]);
+  }
+});
+
+test("zero-dollar rollover invoice ceases to verify payment exactly when effective coverage ends",async()=>{
+  const originalNow=Date.now;
+  try {
+    for(const offset of [0,1000,86400000]) {
+      const effective=foundationsScheduleFixture.foundationsBillingScheduleForMonth("2026-12","monthly");
+      Date.now=()=>Date.parse(effective.prepaidThrough)+offset;
+      const f=await fixture(true,{rolled:true,completed:true});await f.replay();
+      assert.equal(f.projected[0].verifiedPayment,false);
+      assert.equal(f.writes.at(-1).state,"attention_required");
+    }
+  } finally {Date.now=originalNow;}
 });

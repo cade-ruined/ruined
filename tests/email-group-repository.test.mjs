@@ -85,6 +85,25 @@ const manual=(name,members)=>({name,description:'Selected local contacts',mode:'
 const rule=(name,selection)=>({name,description:'A current audience',mode:'rule',rule:selection});
 const status=number=>error=>error.status===number;
 
+test('cohort audiences and options follow verified rollover dates while preserving the accepted offer',async t=>{
+  const f=await fixture(t),{db,repo,actor,paid}=f;
+  const next=f.load('src/lib/membership/foundations-schedule.ts').foundationsBillingScheduleForMonth('2026-12','monthly');
+  // The payment predicate continues validating the original accepted contract.
+  // Only the accessor changes after a separately verified rollover completes.
+  await db.exec(`alter table membership_commercial_reservations add column verified_rollover_schedule jsonb;
+    create or replace function private.ruined_effective_prepaid_schedule(target_reservation_id uuid) returns jsonb
+      language sql stable as $$ select coalesce(verified_rollover_schedule,billing_schedule)
+        from membership_commercial_reservations where id=target_reservation_id $$;`);
+  await db.query('update membership_commercial_reservations set verified_rollover_schedule=$1 where id=$2',[JSON.stringify(next),f.reservation]);
+  const audience=async month=>(await repo.previewEmailGroup(actor,rule('Foundations',{kind:'foundations_cohort',cohortMonth:month}))).members.map(member=>member.email);
+  assert.deepEqual(await audience('2026-11'),[]);
+  assert.deepEqual(await audience('2026-12'),[paid.email]);
+  assert.deepEqual((await repo.listEmailGroupRuleOptions(actor)).cohorts,[{cohortMonth:'2026-12',name:'2026-12 Foundations'}]);
+  assert.deepEqual((await db.query('select billing_schedule from membership_commercial_reservations where id=$1',[f.reservation])).rows[0].billing_schedule,f.schedule);
+  await db.exec("update stripe_membership_prepaid_proofs set refund_state='review_required'");
+  assert.deepEqual(await audience('2026-12'),[],'Moving dates never bypasses unsettled payment evidence');
+});
+
 test('live paid registrations share current payment proof across segments and native groups',async t=>{
   const f=await fixture(t),{db,sql,repo,actor,paid}=f;
   const {readMemberSegmentSource,classifyMemberSegment}=f.load('src/lib/communications/member-segment-sync.ts');

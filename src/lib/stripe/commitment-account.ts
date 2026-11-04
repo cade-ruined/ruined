@@ -8,7 +8,7 @@ import type { MembershipCommitment } from "@/lib/stripe/commitment-policy";
 export async function getMemberBillingCommitment(memberId: string): Promise<MembershipCommitment | null> {
   const sql = getBillingDatabase();
   const rows = await sql<Array<{ terms: MembershipCommitment }>>`
-    select c.terms_snapshot as terms from stripe_membership_commitments c
+    select private.ruined_effective_membership_terms(c.id) as terms from stripe_membership_commitments c
     join stripe_subscriptions s on s.id = c.stripe_subscription_id and s.member_id = c.member_id
     where c.member_id = ${memberId}::uuid and c.livemode = ${getStripeLivemode()}
     order by c.created_at desc limit 1
@@ -21,7 +21,7 @@ export type MemberBillingCommitmentSummary = {
   initialTermEndsAt: string;
   plan: "monthly" | "annual";
   installmentDues: number;
-  status: "scheduled" | "active" | "pending_payment" | "canceled" | "review_required" | "refund_pending";
+  status: "scheduled" | "active" | "pending_payment" | "canceled" | "review_required" | "refund_pending" | "rollover_pending";
   canCancelBeforeStart: boolean;
   canceledBeforeStart: boolean;
   billingSchedule?: MembershipCommitment["billingSchedule"];
@@ -35,7 +35,7 @@ export async function getMemberBillingCommitmentSummary(memberId: string, now = 
   const sql = getBillingDatabase();
   const rows = await sql<Array<{ terms: MembershipCommitment; contractStatus: string; subscriptionStatus: string;
     prestartCanceled: boolean; prestartReview: boolean; paid: boolean; cancellationQuoteId: string | null }>>`
-    select c.terms_snapshot as terms, c.status as "contractStatus", s.stripe_status as "subscriptionStatus",
+    select private.ruined_effective_membership_terms(c.id) as terms, c.status as "contractStatus", s.stripe_status as "subscriptionStatus",
       exists (select 1 from stripe_membership_cancellations cancellation where cancellation.contract_id = c.id
         and cancellation.intent = 'cancel_before_start' and cancellation.status = 'completed') as "prestartCanceled",
       exists (select 1 from stripe_membership_cancellations cancellation where cancellation.contract_id = c.id
@@ -58,6 +58,10 @@ export async function getMemberBillingCommitmentSummary(memberId: string, now = 
     const { getMembershipPrepayment } = await import("@/lib/stripe/billing-repository");
     const proof = await sql.begin(tx => getMembershipPrepayment(tx, { subscriptionId: row.terms.subscriptionId }));
     const refunded = proof?.refundState === "refunded" && row.prestartCanceled;
+    const rolloverPending = proof?.refundState === "review_required" && proof.reviewReason === "cohort_cutoff_missed"
+      && /^ruined_membership-v([4-9]|[1-9]\d+)$/.test(row.terms.agreementVersion)
+      && !proof.activatedAt && !proof.cancellationId && !proof.canceledAt && proof.amountRefunded === 0
+      && row.contractStatus === "active" && row.subscriptionStatus === "trialing" && !row.prestartReview && !row.cancellationQuoteId;
     const review = row.contractStatus === "manual_review" || row.prestartReview
       || proof && ["partial", "review_required"].includes(proof.refundState)
       || row.subscriptionStatus === "canceled" && !refunded && !row.cancellationQuoteId;
@@ -65,7 +69,7 @@ export async function getMemberBillingCommitmentSummary(memberId: string, now = 
     const settled = proof?.refundState === "none" && proof.amountPaid >= row.terms.installmentDues;
     const currentPaid = settled && (row.subscriptionStatus === "trialing" && now.getTime() < Date.parse(row.terms.billingSchedule.prepaidThrough)
       || row.subscriptionStatus === "active" && row.paid);
-    const status = review ? "review_required" : refunded ? "canceled" : refundPending ? "refund_pending"
+    const status = rolloverPending ? "rollover_pending" : review ? "review_required" : refunded ? "canceled" : refundPending ? "refund_pending"
       : beforeStart && settled ? "scheduled" : !beforeStart && currentPaid && proof?.activatedAt ? "active" : "pending_payment";
     return { startsAt: row.terms.startsAt, initialTermEndsAt: row.terms.initialTermEndsAt,
       plan: row.terms.billingPlan, installmentDues: row.terms.installmentDues, status,

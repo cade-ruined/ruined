@@ -1406,6 +1406,7 @@ export type MembershipPrepayment = {
   serviceStartsAt: Date; prepaidThrough: Date; duesAmount: number; amountPaid: number;
   currency: "usd"; livemode: boolean; verifiedAt: Date;
   billingSchedule: FoundationsBillingSchedule;
+  acceptedBillingSchedule?: FoundationsBillingSchedule;
   refundState: "none" | "pending" | "partial" | "refunded" | "review_required";
   amountRefunded: number; refundId: string | null; cancellationId: string | null;
   refundVerifiedAt: Date | null; canceledAt: Date | null; reviewReason: string | null; activatedAt: Date | null;
@@ -1415,6 +1416,7 @@ type PrepaymentRow = {
   stripe_invoice_id: string; stripe_payment_intent_id: string; stripe_charge_id: string;
   service_starts_at: Date | string; prepaid_through: Date | string; dues_amount: number | string; amount_paid: number | string;
   currency: "usd"; livemode: boolean; verified_at: Date | string; billing_schedule: FoundationsBillingSchedule;
+  accepted_billing_schedule?: FoundationsBillingSchedule;
   refund_state: MembershipPrepayment["refundState"]; amount_refunded: number | string;
   stripe_refund_id: string | null; cancellation_id: string | null; refund_verified_at: Date | string | null;
   provider_canceled_at: Date | string | null; review_reason: string | null; activated_at: Date | string | null;
@@ -1423,9 +1425,9 @@ function prepaymentDate(value: Date | string) { return value instanceof Date ? v
 function prepayment(row: PrepaymentRow): MembershipPrepayment {
   return { reservationId: row.reservation_id, contractId: row.contract_id, memberId: row.member_id,
     subscriptionId: row.stripe_subscription_id, invoiceId: row.stripe_invoice_id, paymentIntentId: row.stripe_payment_intent_id,
-    chargeId: row.stripe_charge_id, serviceStartsAt: prepaymentDate(row.service_starts_at), prepaidThrough: prepaymentDate(row.prepaid_through),
+    chargeId: row.stripe_charge_id, serviceStartsAt: prepaymentDate(row.billing_schedule.serviceStartsAt), prepaidThrough: prepaymentDate(row.billing_schedule.prepaidThrough),
     duesAmount: Number(row.dues_amount), amountPaid: Number(row.amount_paid), currency: row.currency, livemode: row.livemode,
-    verifiedAt: prepaymentDate(row.verified_at), billingSchedule: row.billing_schedule, refundState: row.refund_state,
+    verifiedAt: prepaymentDate(row.verified_at), billingSchedule: row.billing_schedule, acceptedBillingSchedule: row.accepted_billing_schedule ?? row.billing_schedule, refundState: row.refund_state,
     amountRefunded: Number(row.amount_refunded), refundId: row.stripe_refund_id, cancellationId: row.cancellation_id,
     refundVerifiedAt: row.refund_verified_at ? prepaymentDate(row.refund_verified_at) : null,
     canceledAt: row.provider_canceled_at ? prepaymentDate(row.provider_canceled_at) : null, reviewReason: row.review_reason,
@@ -1433,7 +1435,7 @@ function prepayment(row: PrepaymentRow): MembershipPrepayment {
 }
 
 export async function getMembershipPrepayment(tx: BillingTransaction, input: { reservationId: string; subscriptionId?: never } | { subscriptionId: string; reservationId?: never }): Promise<MembershipPrepayment | null> {
-  const rows = await tx<PrepaymentRow[]>`select proof.*, reservation.billing_schedule
+  const rows = await tx<PrepaymentRow[]>`select proof.*, private.ruined_effective_prepaid_schedule(reservation.id) as billing_schedule, reservation.billing_schedule as accepted_billing_schedule
     from stripe_membership_prepaid_proofs proof
     join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
     where (${input.reservationId ?? null}::uuid is not null and proof.reservation_id=${input.reservationId ?? null}::uuid)
@@ -1459,8 +1461,8 @@ export async function recordMembershipPrepayment(tx: BillingTransaction, input: 
   const proof = await getMembershipPrepayment(tx, { reservationId: input.reservationId });
   if (!proof || proof.contractId !== input.contractId || proof.memberId !== input.memberId || proof.subscriptionId !== input.subscriptionId
     || proof.invoiceId !== input.invoiceId || proof.paymentIntentId !== input.paymentIntentId || proof.chargeId !== input.chargeId
-    || proof.serviceStartsAt.getTime() !== prepaymentDate(input.serviceStartsAt).getTime()
-    || proof.prepaidThrough.getTime() !== prepaymentDate(input.prepaidThrough).getTime()
+    || Date.parse((proof.acceptedBillingSchedule ?? proof.billingSchedule).serviceStartsAt) !== prepaymentDate(input.serviceStartsAt).getTime()
+    || Date.parse((proof.acceptedBillingSchedule ?? proof.billingSchedule).prepaidThrough) !== prepaymentDate(input.prepaidThrough).getTime()
     || proof.duesAmount !== input.duesAmount || proof.amountPaid !== input.amountPaid || proof.currency !== input.currency || proof.livemode !== input.livemode) {
     throw new MembershipCheckoutConflictError("prepaid_payment_identity_mismatch");
   }
@@ -1473,12 +1475,17 @@ export async function recordMembershipPrepayment(tx: BillingTransaction, input: 
  * requires a paid current recurring invoice once the prepaid period has ended. */
 export async function listMembershipPrepaymentsDue(input: { limit?: number; now?: Date; livemode?: boolean } = {}): Promise<MembershipPrepayment[]> {
   const sql = getBillingDatabase(), limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 50)));
-  const rows = await sql<PrepaymentRow[]>`select proof.*,reservation.billing_schedule
+  const rows = await sql<PrepaymentRow[]>`select proof.*,private.ruined_effective_prepaid_schedule(reservation.id) as billing_schedule, reservation.billing_schedule as accepted_billing_schedule
     from stripe_membership_prepaid_proofs proof
     join membership_commercial_reservations reservation on reservation.id=proof.reservation_id and reservation.status='reserved'
     where (${input.livemode ?? null}::boolean is null or proof.livemode=${input.livemode ?? null}::boolean)
-      and proof.activated_at is null and ((proof.refund_state='none' and proof.service_starts_at<=${input.now ?? new Date()})
-      or (proof.refund_state='review_required' and proof.review_reason='cohort_cutoff_missed') or proof.refund_state='refunded')
+      and proof.activated_at is null and ((proof.refund_state='none' and (private.ruined_effective_prepaid_schedule(reservation.id)->>'serviceStartsAt')::timestamptz<=${input.now ?? new Date()})
+      or (proof.refund_state='review_required' and proof.review_reason='cohort_cutoff_missed') or proof.refund_state='refunded'
+      or (proof.refund_state='none' and exists(select 1 from private.membership_cohort_rollovers rollover
+        join stripe_subscriptions subscription on subscription.id=proof.stripe_subscription_id
+        where rollover.reservation_id=proof.reservation_id and rollover.status='completed'
+          and (subscription.latest_invoice_id is distinct from rollover.provider_evidence->>'latestInvoiceId'
+            or not exists(select 1 from member_registration_access registration where registration.member_id=proof.member_id and registration.registered_at is not null)))))
     order by proof.service_starts_at,proof.reservation_id limit ${limit}`;
   return rows.map(prepayment);
 }

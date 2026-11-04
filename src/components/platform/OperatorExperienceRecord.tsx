@@ -75,6 +75,7 @@ async function jsonRequest(url: string, body: unknown, method = "POST") {
 function RosterRow({
   canManageAttendance,
   canManageRoster,
+  canOverrideFoundations,
   experienceId,
   item,
   onChanged,
@@ -82,6 +83,7 @@ function RosterRow({
 }: {
   canManageAttendance: boolean;
   canManageRoster: boolean;
+  canOverrideFoundations: boolean;
   experienceId: string;
   item: OpsExperienceRosterItem;
   onChanged: (calendarChanged?: boolean) => Promise<void>;
@@ -90,6 +92,7 @@ function RosterRow({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [cutoffOverride,setCutoffOverride]=useState(false);
   const [attendanceChoice, setAttendanceChoice] = useState(
     ["attended", "checked_in", "no_show"].includes(item.attendanceState ?? "")
       ? item.attendanceState ?? "checked_in"
@@ -109,8 +112,10 @@ function RosterRow({
         action,
         reason,
         registrationId: item.registrationId,
+        foundationsCutoffOverride: cutoffOverride,
       });
       setReason("");
+      setCutoffOverride(false);
       await onChanged(true);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The roster could not be changed.");
@@ -188,6 +193,7 @@ function RosterRow({
             {item.status === "waitlisted" ? "Confirm a place or remove from waitlist" : "Change registration"}
           </summary>
           <div className="grid gap-3 rounded-none bg-[var(--operator-surface-muted)] p-3 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-end">
+            {canOverrideFoundations && item.status === "waitlisted" ? <label className="flex gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={cutoffOverride} onChange={event=>setCutoffOverride(event.target.checked)} />Approve a Foundations exception for this call. A reason is required.</label> : null}
             <FormField label="Reason when needed">
               <input
                 className={OPERATOR_FIELD_CLASS}
@@ -415,7 +421,8 @@ export default function OperatorExperienceRecord({
       return;
     }
     const form = event.currentTarget;
-    const memberId = String(new FormData(form).get("memberId") ?? "");
+    const formData=new FormData(form);
+    const memberId = String(formData.get("memberId") ?? "");
     if (!memberId) return;
     setPending(true);
     setError(null);
@@ -423,6 +430,8 @@ export default function OperatorExperienceRecord({
       await jsonRequest(`/api/ops/experiences/${experience.experienceId}/registrations`, {
         action: "register",
         memberId,
+        foundationsCutoffOverride: formData.get("foundationsCutoffOverride")==="on",
+        reason: String(formData.get("foundationsOverrideReason") ?? ""),
       });
       form.reset();
       await changed();
@@ -467,6 +476,7 @@ export default function OperatorExperienceRecord({
                   {availableMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
                 </select>
                 <button className={OPERATOR_BUTTON_CLASS} disabled={pending} type="submit">Add member</button>
+                {experience.canManageGlobal && experience.emailCadence?.track === "members" && experience.emailCadence.kind.startsWith("foundations_") ? <details className="basis-full text-sm text-[color:var(--operator-muted)]"><summary className="min-h-11 cursor-pointer py-3">Foundations exception</summary><label className="flex items-start gap-2"><input type="checkbox" name="foundationsCutoffOverride" className="mt-1" />Approve this call outside the member’s assigned group or cutoff.</label><label className="mt-3 block">Reason<input className={`${OPERATOR_FIELD_CLASS} mt-1 w-full`} name="foundationsOverrideReason" minLength={10} maxLength={1000} placeholder="Why should this member attend this call?" /></label><p className="mt-2">For a complimentary member, adding Foundations 1 moves their group and upcoming automatic invitations. For a paid member, this adds only the call and does not change billing.</p></details> : null}
               </form>
             ) : null}
           </div>
@@ -475,6 +485,7 @@ export default function OperatorExperienceRecord({
               <RosterRow
                 canManageAttendance={experience.canManageAttendance}
                 canManageRoster={experience.canManageRoster}
+                canOverrideFoundations={experience.canManageGlobal && experience.emailCadence?.track === "members" && experience.emailCadence.kind.startsWith("foundations_")}
                 experienceId={experience.experienceId}
                 item={item}
                 key={item.registrationId}

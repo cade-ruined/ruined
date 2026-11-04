@@ -16,6 +16,7 @@ export type CommercialMembershipReservation = {
   plan: MembershipBillingPlan; offerId: MembershipOfferId; status: "reserved" | "activated" | "released";
   occupiedCountAtDecision: number; expiresAt: Date; stripeSubscriptionId: string | null;
   stripePriceId: string | null; coupleAuthorizationId: string | null; firstChargeAt: Date | null; billingSchedule: FoundationsBillingSchedule | null;
+  effectiveBillingSchedule?: FoundationsBillingSchedule | null;
   participants: CommercialMembershipParticipant[];
 };
 export type CoupleMembershipAuthorization = {
@@ -57,7 +58,8 @@ export async function getCommercialMembershipReservation(id: string, tx?: Commer
     billing_plan: MembershipBillingPlan; status: CommercialMembershipReservation["status"];
     occupied_count_at_decision: number; expires_at: Date; stripe_subscription_id: string | null;
     stripe_price_id: string | null; couple_authorization_id: string | null; first_charge_at: Date | null; billing_schedule: FoundationsBillingSchedule | null;
-  }>>`select * from membership_commercial_reservations where id = ${id}::uuid`;
+    effective_billing_schedule: FoundationsBillingSchedule | null;
+  }>>`select *, private.ruined_effective_prepaid_schedule(id) as effective_billing_schedule from membership_commercial_reservations where id = ${id}::uuid`;
   if (!row) return null;
   const participants = await sql<Array<{ member_id: string; person_id: string; ordinal: number; founding_eligible: boolean; name_snapshot: string }>>`
     select member_id, person_id, ordinal, founding_eligible, name_snapshot from membership_commercial_participants
@@ -68,6 +70,7 @@ export async function getCommercialMembershipReservation(id: string, tx?: Commer
     occupiedCountAtDecision: row.occupied_count_at_decision, expiresAt: date(row.expires_at),
     stripeSubscriptionId: row.stripe_subscription_id, stripePriceId: row.stripe_price_id,
     coupleAuthorizationId: row.couple_authorization_id, firstChargeAt: nullableDate(row.first_charge_at ?? null), billingSchedule: row.billing_schedule ?? null,
+    effectiveBillingSchedule: row.effective_billing_schedule ?? row.billing_schedule ?? null,
     participants: participants.map(person => ({ memberId: person.member_id, personId: person.person_id,
       ordinal: person.ordinal, foundingEligible: person.founding_eligible, name: person.name_snapshot })),
   };

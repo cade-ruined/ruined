@@ -12,6 +12,7 @@ async function load(path, dependencies = {}) {
 }
 const schedule = await load("src/lib/membership/foundations-schedule.ts");
 const { createFoundationsBillingSchedule: create, foundationsBillingScheduleForMonth: forMonth, parseFoundationsBillingSchedule: parse } = schedule;
+const { resolveFoundationsEnrollmentSchedule: resolveEnrollment } = schedule;
 const pricing = await load("src/lib/membership/pricing.ts");
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
 
@@ -31,6 +32,35 @@ test("exact cutoff and every later instant moves to the next month, with no skip
   assert.equal(create(new Date("2026-11-04T22:00:00Z"), "monthly").cohortMonth, "2026-12");
   assert.equal(create(new Date("2026-11-30T23:59:59Z"), "monthly").cohortMonth, "2026-12");
   assert.equal(create(new Date("2026-12-02T22:00:00Z"), "annual").cohortMonth, "2027-01");
+});
+
+test("late completion carries the existing payment forward at every monthly boundary", () => {
+  for (const plan of ["monthly", "annual"]) for (let year = 2026; year <= 2030; year++) for (let month = 1; month <= 12; month++) {
+    const cohort = `${year}-${String(month).padStart(2, "0")}`;
+    if (cohort < "2026-11") continue;
+    const accepted = forMonth(cohort, plan), before = JSON.stringify(accepted);
+    const cutoff = Date.parse(accepted.cutoffAt);
+    assert.deepEqual(resolveEnrollment(accepted, new Date(cutoff - 1), plan), accepted);
+    const rolled = resolveEnrollment(accepted, new Date(cutoff), plan);
+    const expectedMonth = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
+    assert.equal(rolled.cohortMonth, expectedMonth);
+    assert.equal(rolled.serviceStartsAt, rolled.callStartsAt[0]);
+    assert.equal(rolled.nextChargeAt, policy.membershipCommitmentAnniversary(rolled.serviceStartsAt, plan === "annual" ? 12 : 1));
+    assert.equal(rolled.initialTermEndsAt, policy.membershipCommitmentAnniversary(rolled.serviceStartsAt, 12));
+    assert.equal(JSON.stringify(accepted), before, "The accepted offer is retained unchanged");
+    assert.deepEqual(resolveEnrollment(accepted, new Date(cutoff), plan), rolled, "Retries cannot move the group again");
+  }
+});
+
+test("delayed payment uses its settlement date and delayed processing never selects a different group", () => {
+  const original = forMonth("2026-11", "monthly");
+  const paidAt = new Date("2026-12-02T22:00:00Z");
+  assert.equal(resolveEnrollment(original, paidAt, "monthly").cohortMonth, "2027-01");
+  assert.deepEqual(resolveEnrollment(original, new Date("2026-11-04T21:59:59Z"), "monthly"), original);
+  const oldHolidayCalendar = forMonth("2026-12", "monthly", "foundations-prepaid-v2");
+  assert.deepEqual(resolveEnrollment(oldHolidayCalendar, new Date("2026-11-15T00:00:00Z"), "monthly"), oldHolidayCalendar);
+  assert.throws(() => resolveEnrollment(original, new Date("invalid"), "monthly"), /completion/);
+  assert.throws(() => resolveEnrollment(original, paidAt, "annual"), /schedule/);
 });
 
 test("four calls retain 3pm Denver across spring and fall daylight saving transitions", () => {

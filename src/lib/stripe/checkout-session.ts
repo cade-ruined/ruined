@@ -52,7 +52,7 @@ export async function createEmbeddedMembershipSession(input: {
   const initialTotal = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(selectedOffer.initialTermAmount / 100);
   const dateLabel = (date: string) => new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", dateStyle: "long" }).format(new Date(date));
   const scheduledDisclosure = billingSchedule
-    ? `Pay your first ${plan === "annual" ? "year" : "month"} today. Foundations and your 12-month term start ${dateLabel(billingSchedule.serviceStartsAt)}. This payment covers your first ${plan === "annual" ? "year" : "month"}; your next charge is ${dateLabel(billingSchedule.nextChargeAt)}. Cancel before service starts for a full refund. `
+    ? `Pay your first ${plan === "annual" ? "year" : "month"} today. Foundations and your 12-month term start ${dateLabel(billingSchedule.serviceStartsAt)}. This payment covers your first ${plan === "annual" ? "year" : "month"}; your next charge is ${dateLabel(billingSchedule.nextChargeAt)}. If payment completes at or after the group cutoff, your payment carries forward to the next eligible monthly group; service and renewal dates move together. Cancel before service starts for a full refund. `
     : reservation.firstChargeAt
     ? `$0 today. Your first payment is on ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", month: "long", day: "numeric", year: "numeric" }).format(reservation.firstChargeAt)}. Your initial term starts on that date. Cancel before then without a fee or charge. `
     : "";

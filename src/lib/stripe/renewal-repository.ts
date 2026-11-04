@@ -57,7 +57,7 @@ export async function enqueueMembershipRenewalNotices(configuration: string | Me
         contract.terms_snapshot->>'offerId' as offer_id,
         case when contract.terms_snapshot->>'billingPlan'='monthly' then 'initial_term_end' else 'annual_renewal' end as notice_kind,
         case when contract.terms_snapshot->>'billingPlan'='monthly'
-          then (contract.terms_snapshot->>'initialTermEndsAt')::timestamptz else subscription.current_period_end end as renews_at,
+          then (private.ruined_effective_membership_terms(contract.id)->>'initialTermEndsAt')::timestamptz else subscription.current_period_end end as renews_at,
         subscription.cancel_at, subscription.cancel_at_period_end
       from stripe_membership_commitments contract
       join stripe_subscriptions subscription on subscription.id=contract.stripe_subscription_id
@@ -104,7 +104,7 @@ export async function claimRenewalNotice(livemode: boolean, lease: string, now: 
       subscription.stripe_customer_id as "customerId", notice.livemode, notice.renews_at as "renewsAt",
       notice.lead_days as "leadDays", notice.attempts, member.email_normalized as email,
       notice.notice_kind as "noticeKind", notice.offer_id as "offerId", notice.contract_id as "commitmentId",
-      contract.checkout_attempt_id as "commercialReservationId", contract.terms_snapshot->>'initialTermEndsAt' as "commitmentInitialTermEndsAt",
+      contract.checkout_attempt_id as "commercialReservationId", private.ruined_effective_membership_terms(contract.id)->>'initialTermEndsAt' as "commitmentInitialTermEndsAt",
       contract.status as "commitmentStatus", contract.terms_snapshot->>'priceId' as "boundPriceId",
       notice.first_send_attempt_at as "firstSendAttemptAt", notice.delivery_payload as payload, notice.invoice_preview as preview,
       notice.member_email_snapshot as "savedMemberEmail"
@@ -150,7 +150,7 @@ export async function fenceRenewalNoticeSend(id: string, lease: string): Promise
           and ((notice.notice_kind='annual_renewal' and subscription.current_period_end=notice.renews_at)
             or (notice.notice_kind='initial_term_end' and exists(select 1 from stripe_membership_commitments contract
               where contract.id=notice.contract_id and contract.status='active' and contract.livemode=notice.livemode
-                and (contract.terms_snapshot->>'initialTermEndsAt')::timestamptz=notice.renews_at)))
+                and (private.ruined_effective_membership_terms(contract.id)->>'initialTermEndsAt')::timestamptz=notice.renews_at)))
           and (notice.contract_id is null or exists(select 1 from stripe_membership_commitments contract
             where contract.id=notice.contract_id and contract.status='active' and contract.livemode=notice.livemode
               and contract.terms_snapshot->>'offerId'=notice.offer_id and contract.terms_snapshot->>'priceId'=subscription.price_id)))

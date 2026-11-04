@@ -88,7 +88,7 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
           then jsonb_build_object('offerId',contract.terms_snapshot->>'offerId',
             'billingPlan',contract.terms_snapshot->>'billingPlan','amountPaidCents',proof.amount_paid,
             'duesAmountCents',proof.dues_amount,'currency',proof.currency,'paidAt',invoice.paid_at,
-            'billingSchedule',reservation.billing_schedule,'agreementVersion',contract.terms_snapshot->>'agreementVersion',
+            'billingSchedule',private.ruined_effective_prepaid_schedule(reservation.id),'agreementVersion',contract.terms_snapshot->>'agreementVersion',
             'initialTermAmountCents',contract.terms_snapshot->'totalInitialDues',
             'buyoutCapCents',contract.terms_snapshot->'buyoutCap','isPayer',proof.member_id=member.id)
           else null end as paid_membership,
@@ -175,13 +175,19 @@ export async function withRegistrationMessage<T>(claim: RegistrationMessageClaim
         // cohort. Never infer one from the month, title, or a public calendar.
         // Roster editors lock events before members; do not wait on an editor
         // while holding this registration worker's existing member lock.
+        const [cohortSchema]=await tx`select to_regclass('private.member_complimentary_foundations_cohorts') is not null as ready`;
+        const [cohort]=cohortSchema?.ready && delivery.completion_basis==="complimentary"
+          ? await tx<Array<{schedule:unknown}>>`select private.ruined_assign_complimentary_foundations(${claim.member_id}::uuid) as schedule` : [];
+        const assigned=parseFoundationsBillingSchedule(cohort?.schedule,"monthly");
         const calls = await tx<Array<{startsAt: Date | string; timeZone: string}>>`
           select event.starts_at as "startsAt",event.timezone as "timeZone" from experience_registrations roster
           join experiences event on event.id=roster.experience_id
           join private.member_email_cadence_event_bindings binding on binding.experience_id=event.id
           join member_registration_access registration on registration.member_id=roster.member_id
           where roster.member_id=${claim.member_id}::uuid and roster.status='registered' and roster.source='ops'
-            and binding.kind='foundations_01' and event.visibility='invite_only' and event.registration_mode='internal'
+            and binding.kind='foundations_01' and binding.track='members' and event.visibility='invite_only' and event.registration_mode='internal'
+            and (${assigned?.cohortMonth ?? null}::text is null or binding.cohort_month=${assigned?.cohortMonth ?? null})
+            and (${assigned?.callStartsAt[0] ?? null}::timestamptz is null or event.starts_at=${assigned?.callStartsAt[0] ?? null}::timestamptz)
             and event.status='published' and event.cancelled_at is null and event.ends_at>event.starts_at
             and event.starts_at>registration.registered_at
           order by event.starts_at,event.id limit 2 for share of roster,event,binding nowait`;

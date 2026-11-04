@@ -6,15 +6,16 @@ import { reconcilePrepaidMembershipSubscription } from "@/lib/stripe/webhook";
 import {
   listPendingPrepaidMembershipCancellations,
   reconcilePrepaidMembershipCancellation,
-  refundMissedFoundationsEnrollment,
 } from "@/lib/stripe/cancellation-service";
+
+import { reconcilePaidFoundationsRollover } from "@/lib/stripe/cohort-rollover";
 
 const BATCH_BUDGET_MS = 20_000;
 
 /** Fulfill already-accepted obligations independently of new-purchase flags.
  * This worker never sends communications or grants manual profile access. */
 export async function processMembershipPrepayments(requestedLimit = 5) {
-  const result = { ready: false, examined: 0, reconciled: 0, refundsResumed: 0, pending: 0, manualReview: 0, failed: 0, remainingDue: 0 };
+  const result = { ready: false, examined: 0, reconciled: 0, refundsResumed: 0, cohortsRolled: 0, pending: 0, manualReview: 0, failed: 0, remainingDue: 0 };
   if (!process.env.DATABASE_URL?.trim() || !/^(?:sk|rk)_(?:live|test)_/.test(process.env.STRIPE_SECRET_KEY?.trim() ?? "")) return result;
   result.ready = true;
   const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(10, Math.floor(requestedLimit))) : 5;
@@ -50,10 +51,9 @@ export async function processMembershipPrepayments(requestedLimit = 5) {
       seen.add(proof.subscriptionId);result.examined++;
       try {
         if (proof.refundState === "review_required" && proof.reviewReason === "cohort_cutoff_missed") {
-          // The internal executor verifies an invalid enrollment and resumes one
-          // durable cancellation; it never treats this as a member's new request.
-          await refundMissedFoundationsEnrollment({ subscriptionId: proof.subscriptionId, livemode });
-          result.refundsResumed++;
+          const rollover = await reconcilePaidFoundationsRollover({ subscriptionId: proof.subscriptionId, livemode });
+          if (rollover.reviewRequired) { result.manualReview++; continue; }
+          if (rollover.rolled) result.cohortsRolled++;
         }
         await reconcilePrepaidMembershipSubscription(proof.subscriptionId);
         result.reconciled++;

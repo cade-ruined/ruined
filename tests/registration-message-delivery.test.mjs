@@ -333,6 +333,8 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card",befo
     alter table member_registration_access add column payment_reservation_id uuid;
     alter table member_registration_messages add column delivery_payment_reservation_id uuid;
     create table membership_commercial_reservations(id uuid primary key,billing_schedule jsonb);
+    create function private.ruined_effective_prepaid_schedule(uuid) returns jsonb language sql as
+      'select billing_schedule from membership_commercial_reservations where id=$1';
     create table stripe_membership_prepaid_proofs(reservation_id uuid primary key,contract_id uuid,member_id uuid,
       stripe_invoice_id text,amount_paid bigint,dues_amount bigint,currency text);
     create table stripe_membership_commitments(id uuid primary key,terms_snapshot jsonb);
@@ -352,7 +354,7 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card",befo
     create table experiences(id uuid primary key,starts_at timestamptz,ends_at timestamptz,timezone text,visibility text,
       registration_mode text,status text,cancelled_at timestamptz);
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,member_id uuid,status text,source text);
-    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text);`);
+    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text,track text default 'members',cohort_month text);`);
   const followupMigration=await readFile(new URL("../db/migrations/20261021190000_cade_registration_followup.sql",import.meta.url),"utf8");
   const releaseMigration=await readFile(new URL("../db/migrations/20261103021417_member_paid_profile_release.sql",import.meta.url),"utf8");
   await pg.exec(releaseMigration.slice(0,releaseMigration.indexOf("create function private.ruined_paid_profile_release_ready"))+"commit;");
@@ -370,7 +372,7 @@ async function fixture(t,{kind="welcome",activated=false,basis="saved_card",befo
   await pg.query("insert into member_registration_messages(id,member_id,kind) values($1,$2,$3)",[ids.message,ids.member,kind]);
   if (beforeMigration) await pg.exec(followupMigration);
   await pg.query("insert into experiences values($1,'2099-11-05T22:00:00Z','2099-11-05T23:30:00Z','America/Denver','invite_only','internal','published',null)",[ids.event]);
-  await pg.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[ids.event]);
+  await pg.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')",[ids.event]);
   await pg.query("insert into experience_registrations(experience_id,member_id,status,source) values($1,$2,'registered','ops')",[ids.event,ids.member]);
   const consent=async(decision="accepted",destination="alex@example.test")=>pg.query(`insert into member_consents(member_id,consent_type,policy_version,decision,source,actor_auth_user_id,evidence)
     values($1,'communications','member-communications-v1',$2,'member',$3,$4::jsonb)`,[ids.member,decision,ids.auth,JSON.stringify({
@@ -987,12 +989,29 @@ test("nonpaid welcome waits for its unambiguous explicit Foundations invitation,
   assert.equal((await f.row()).last_error,"foundations_schedule_unavailable");assert.equal(f.sends.length,0);
   await f.pg.query("update experience_registrations set source='ops'");
   const other=crypto.randomUUID();await f.pg.query("insert into experiences select $1,starts_at+interval '1 month',ends_at+interval '1 month',timezone,visibility,registration_mode,status,cancelled_at from experiences",[other]);
-  await f.pg.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[other]);
+  await f.pg.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')",[other]);
   await f.pg.query("insert into experience_registrations(experience_id,member_id,status,source) values($1,$2,'registered','ops')",[other,f.ids.member]);
   await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1);assert.equal(f.sends.length,0);
   await f.pg.query("update experience_registrations set status='cancelled' where experience_id=$1",[other]);
   await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
   assert.match(f.sends[0].payload.text,/November 5, 2099/);assert.doesNotMatch(f.sends[0].payload.text,/November 5, 2026/);
+});
+
+test("complimentary welcome follows its effective assigned group, never a retained invitation from another group",async t=>{
+  const f=await fixture(t,{basis:"complimentary"});
+  const assigned=schedules.foundationsBillingScheduleForMonth("2099-12","monthly");
+  await f.pg.exec(`create table private.member_complimentary_foundations_cohorts(member_id uuid primary key,schedule jsonb);
+    create function private.ruined_assign_complimentary_foundations(uuid) returns jsonb language sql as
+      'select schedule from private.member_complimentary_foundations_cohorts where member_id=$1';`);
+  await f.pg.query("insert into private.member_complimentary_foundations_cohorts values($1,$2)",[f.ids.member,JSON.stringify(assigned)]);
+  await f.pg.query("update private.member_email_cadence_event_bindings set cohort_month='2099-11'");
+  assert.equal((await f.worker.processRegistrationMessageBatch()).deferred,1,"an assigned month alone cannot invent a calendar invitation");
+  const other=crypto.randomUUID();
+  await f.pg.query("insert into experiences select $1,$2::timestamptz,$2::timestamptz+interval '90 minutes',timezone,visibility,registration_mode,status,cancelled_at from experiences",[other,assigned.callStartsAt[0]]);
+  await f.pg.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01','members','2099-12')",[other]);
+  await f.pg.query("insert into experience_registrations(experience_id,member_id,status,source) values($1,$2,'registered','ops')",[other,f.ids.member]);
+  await f.due();assert.equal((await f.worker.processRegistrationMessageBatch()).sent,1);
+  assert.match(f.sends[0].payload.text,/December/);assert.doesNotMatch(f.sends[0].payload.text,/November 5, 2099/);
 });
 
 test("frozen followup retries identical bytes/key but stops on changed cohort or provider suppression",async t=>{

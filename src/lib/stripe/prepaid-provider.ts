@@ -1,7 +1,7 @@
 import "server-only";
 import type Stripe from "stripe";
 import { type MembershipCommitment, MembershipCommitmentError } from "@/lib/stripe/commitment-policy";
-import { matchesPrepaidMembershipInvoice, prepaidScheduleFromSubscription, prepaidScheduleFingerprint } from "@/lib/stripe/prepaid-policy";
+import { matchesPrepaidMembershipInvoice, matchesCohortRolloverAdjustment, prepaidScheduleFromSubscription, prepaidScheduleFingerprint } from "@/lib/stripe/prepaid-policy";
 import { recognizesMembershipSubscription } from "@/lib/stripe/price-policy";
 import { getMembershipPriceConfiguration } from "@/lib/stripe/server";
 
@@ -26,14 +26,21 @@ export async function inspectPrepaidMembershipInvoice(stripe: Stripe, contract: 
     || !recognizesMembershipSubscription(subscription, getMembershipPriceConfiguration())) return fail();
   let initial: Stripe.Invoice | null = null;
   let count = 0;
+  let adjustment: Stripe.Invoice | null = null;
   for await (const invoice of stripe.invoices.list({ subscription: subscription.id, limit: 100 })) {
     if (++count > 600) return fail();
     if (invoice.billing_reason === "subscription_create") {
       if (initial) return fail();
       initial = await stripe.invoices.retrieve(invoice.id);
+    } else if (invoice.billing_reason === "subscription_update" && subscription.metadata.ruined_cohort_rollover_id) {
+      const candidate = await stripe.invoices.retrieve(invoice.id);
+      if (matchesCohortRolloverAdjustment(candidate, subscription)) {
+        if (adjustment) return fail();
+        adjustment = candidate;
+      }
     }
   }
-  if (options.requireOnlyInitialInvoice && count !== 1) return fail();
+  if (options.requireOnlyInitialInvoice && count !== 1 + (adjustment ? 1 : 0)) return fail();
   if (!initial || !matchesPrepaidMembershipInvoice(initial, subscription) || initial.status !== "paid"
     || initial.amount_paid !== initial.total || initial.amount_remaining !== 0 || initial.amount_paid <= 0
     || initial.customer_address?.country !== "US" || initial.pre_payment_credit_notes_amount !== 0
@@ -61,5 +68,5 @@ export async function inspectPrepaidMembershipInvoice(stripe: Stripe, contract: 
   if (refund?.status === "succeeded" && (!charge.refunded || charge.amount_refunded !== initial.total)) return fail();
   return { subscription, invoice: initial, invoiceId: initial.id, paymentIntentId, chargeId,
     amount: initial.total, currency: initial.currency, periodStart: schedule.serviceStartsAt,
-    periodEnd: schedule.prepaidThrough, refund };
+    periodEnd: schedule.prepaidThrough, refund, adjustmentInvoice: adjustment };
 }

@@ -72,8 +72,14 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
   const commitmentEnd = commitment ? longDate(commitment.initialTermEndsAt) : null;
 
   useEffect(() => {
+    if (preview || status !== "rollover_pending") return;
+    const timer = setTimeout(() => setRefresh(value => value + 1), 10000);
+    return () => clearTimeout(timer);
+  }, [preview, status, refresh]);
+
+  useEffect(() => {
     if (!completingRegistration || preview || reviewAgain || confirmationNavigation.current ||
-      (!returnedFromCheckout && status !== "scheduled" && status !== "active")) return;
+      (!returnedFromCheckout && status !== "scheduled" && status !== "active" && status !== "rollover_pending")) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
@@ -96,7 +102,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
           window.location.replace("/my/registered");
           return;
         }
-        setConfirmationProblem(result.confirmationState === "needs_support" ? "needs_support" : null);
+        setConfirmationProblem(result.confirmationState === "needs_support" && status !== "rollover_pending" ? "needs_support" : null);
       } catch {
         // Network errors are different from a pending payment. Neither can
         // claim success or make another Checkout available.
@@ -130,8 +136,8 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
       <p>{loadError}</p><button className={linkClass + " mt-3"} type="button" onClick={refreshStatus}>Check billing again</button>
       <p className="mt-2 text-sm text-[var(--member-muted)]">Contact Ruined if you need help before a scheduled payment.</p>
     </section> : commitment && !reviewingCanceledOffer ? <section className="border-t border-[var(--member-rule)] pt-6" aria-label="Membership billing status">
-      <h2 className="text-2xl font-semibold">{status === "refund_pending" ? "Your refund is being confirmed." : status === "scheduled" ? commitment.billingSchedule ? "Your first period is paid." : "Your first payment is scheduled." : status === "canceled" ? commitment.canceledBeforeStart ? "Scheduled membership canceled." : "Membership billing canceled." : status === "review_required" ? "Billing needs review." : status === "pending_payment" ? commitment.billingSchedule ? "Membership confirmation pending." : "Your first payment is pending." : "Membership billing confirmed."}</h2>
-      {commitmentEnd && status !== "canceled" && status !== "review_required" && status !== "refund_pending" ? <p className="mt-3 text-sm text-[var(--member-muted)]">{commitment.billingSchedule ? `Initial commitment ends ${scheduleDate(commitment.billingSchedule.initialTermEndsAt)}.` : `Initial commitment ends at the start of ${commitmentEnd}, Mountain Time.`}</p> : null}
+      <h2 className="text-2xl font-semibold">{status === "rollover_pending" ? "Confirming your next Foundations group." : status === "refund_pending" ? "Your refund is being confirmed." : status === "scheduled" ? commitment.billingSchedule ? "Your first period is paid." : "Your first payment is scheduled." : status === "canceled" ? commitment.canceledBeforeStart ? "Scheduled membership canceled." : "Membership billing canceled." : status === "review_required" ? "Billing needs review." : status === "pending_payment" ? commitment.billingSchedule ? "Membership confirmation pending." : "Your first payment is pending." : "Membership billing confirmed."}</h2>
+      {commitmentEnd && !["canceled", "review_required", "refund_pending", "rollover_pending"].includes(status ?? "") ? <p className="mt-3 text-sm text-[var(--member-muted)]">{commitment.billingSchedule ? `Initial commitment ends ${scheduleDate(commitment.billingSchedule.initialTermEndsAt)}.` : `Initial commitment ends at the start of ${commitmentEnd}, Mountain Time.`}</p> : null}
       {status === "scheduled" && commitment.startsAt ? <>
         {commitment.billingSchedule ? <>
           <p className="mt-5 text-xl font-semibold">Service begins {scheduleDate(commitment.billingSchedule.serviceStartsAt)}.</p>
@@ -148,6 +154,7 @@ export default function MemberActivation({ onboarding, enabled, disabledReason, 
         {commitment.canceledBeforeStart && (!commitment.billingSchedule || commitment.refundStatus === "succeeded") && (enabled || preview) ? <button className="mt-5 min-h-12 border border-current px-5 text-sm font-semibold disabled:opacity-50" type="button" disabled={!enabled || preview} onClick={() => { if (enabled && !preview) setReviewAgain(true); }}>Review membership again</button> : null}
       </>
         : status === "refund_pending" ? <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Your cancellation and refund are still being confirmed. Wait for the confirmed result before starting another membership.</p>{!preview ? <MembershipCancellation initialCommitment={commitment} onCanceled={refreshStatus} /> : null}</>
+        : status === "rollover_pending" ? <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]" role="status">Your payment is saved. The cutoff for the previous group has passed, so it will cover your next eligible month. We’re confirming your new start and renewal dates. This page updates automatically; you do not need to pay again.</p>
         : status === "review_required" ? <p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Contact Ruined to resolve your billing before confirming another membership.</p>
           : status === "pending_payment" ? <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">{commitment.billingSchedule ? "We are confirming payment and the start of service. Your receipt will update when both are confirmed. Contact Ruined if you need help." : "A paid first invoice has not yet been confirmed. Contact Ruined if your payment needs attention."}</p><button className={linkClass + " mt-3"} type="button" onClick={refreshStatus}>Check payment status</button></>
           : <><p className="mt-4 text-sm leading-relaxed text-[var(--member-muted)]">Manage renewal or review cancellation below. Profile access remains separate from billing.</p>{!preview ? <MembershipCancellation initialCommitment={commitment} onCanceled={refreshStatus} /> : null}</>}

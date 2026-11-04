@@ -63,7 +63,7 @@ async function readRegistration(tx: TransactionSql, memberId: string): Promise<M
   const [row] = await tx<Array<RegistrationRow>>`select registration.*,
     (select jsonb_build_object('amountPaid',proof.amount_paid,'installmentDues',proof.dues_amount,
       'currency',proof.currency,'plan',reservation.billing_plan,'offerId',reservation.tier || '_' || reservation.billing_plan,
-      'billingSchedule',reservation.billing_schedule,'paidAt',invoice.paid_at,'isPayer',proof.member_id=registration.member_id)
+      'billingSchedule',private.ruined_effective_prepaid_schedule(reservation.id),'paidAt',invoice.paid_at,'isPayer',proof.member_id=registration.member_id)
       from stripe_membership_prepaid_proofs proof
       join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
       join stripe_invoices invoice on invoice.id=proof.stripe_invoice_id
@@ -348,7 +348,8 @@ export async function readMemberRegistrationProgress(tx: TransactionSql, memberI
       (method.consent_revoked_at is not null or method.cleanup_pending or setup.consent_revoked_at is not null
         or exists(select 1 from member_payment_method_detachments detached where detached.stripe_account_id=method.stripe_account_id
           and detached.livemode=method.livemode and detached.stripe_payment_method_id=method.stripe_payment_method_id)) as card_removed,
-      paid.reservation_id is not null as payment_confirmed,paid.service_starts_at,
+      paid.reservation_id is not null as payment_confirmed,
+      (private.ruined_effective_prepaid_schedule(paid.reservation_id)->>'serviceStartsAt')::timestamptz as service_starts_at,
       (paid.reservation_id is null and exists(select 1 from membership_commercial_participants participant
         join membership_commercial_reservations reservation on reservation.id=participant.reservation_id
         join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id

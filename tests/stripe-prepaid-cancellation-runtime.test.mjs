@@ -20,15 +20,16 @@ const schedule = await load("src/lib/membership/foundations-schedule.ts");
 const prepaid = await load("src/lib/stripe/prepaid-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing, "@/lib/membership/foundations-schedule": schedule });
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
 
-async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false, timeoutAfterRefund = false, missedCutoff = false, scheduleVersion, linkPayment = false } = {}) {
+async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false, timeoutAfterRefund = false, missedCutoff = false, scheduleVersion, linkPayment = false, rolled = false } = {}) {
   const now = new Date(), currentSchedule = schedule.createFoundationsBillingSchedule(now, "monthly");
   const billingSchedule = scheduleVersion ? schedule.foundationsBillingScheduleForMonth(currentSchedule.cohortMonth, "monthly", scheduleVersion) : currentSchedule;
   const contract = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member",
     livemode: false, offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v3",
     agreementContentSha256: "a".repeat(64), acceptedAt: now.toISOString(), startsAt: billingSchedule.serviceStartsAt,
     billingTermsVersion: "membership-billing-v2", billingSchedule });
-  const clockNow = missedCutoff ? Date.parse(contract.startsAt) + 86400000 : null;
+  const clockNow = missedCutoff || rolled ? Date.parse(contract.startsAt) + 86400000 : null;
   class ClockDate extends Date { constructor(...args) { super(...(args.length ? args : [clockNow ?? Date.now()])); } static now() { return clockNow ?? Date.now(); } }
+  const executionPolicy = { ...policy, quoteMembershipPrepaidCancellation: (contract, snapshot) => policy.quoteMembershipPrepaidCancellation(contract, snapshot, new ClockDate()) };
   const sub = { id: contract.subscriptionId, customer: contract.customerId, livemode: false, status: "trialing", cancel_at: null,
     canceled_at: null, cancel_at_period_end: false, trial_end: Date.parse(billingSchedule.prepaidThrough) / 1000,
     billing_cycle_anchor: Date.parse(billingSchedule.prepaidThrough) / 1000, latest_invoice: "in_first",
@@ -38,6 +39,14 @@ async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false,
   const payment = { invoiceId: "in_first", paymentIntentId: "pi_first", chargeId: linkPayment ? "py_3ExampleLinkPayment12345678" : "ch_first", amount: 52993, currency: "usd",
     periodStart: contract.startsAt, periodEnd: billingSchedule.prepaidThrough, refund: null,
     invoice: { status_transitions: { paid_at: missedCutoff ? Date.parse(billingSchedule.cutoffAt)/1000 + 60 : Math.floor(now.getTime()/1000) } } };
+  if (rolled) {
+    const effective = schedule.resolveFoundationsEnrollmentSchedule(billingSchedule,new Date(Date.parse(billingSchedule.cutoffAt)+1000),"monthly");
+    Object.assign(contract,{agreementVersion:"ruined_membership-v4",startsAt:effective.serviceStartsAt,initialTermEndsAt:effective.initialTermEndsAt,billingSchedule:effective});
+    sub.metadata.ruined_commercial_reservation_id=contract.id;
+    Object.assign(sub.metadata,prepaid.prepaidRolloverMetadata(effective,contract.id));
+    sub.trial_end=Date.parse(effective.prepaidThrough)/1000;sub.billing_cycle_anchor=sub.trial_end;
+    payment.periodStart=effective.serviceStartsAt;payment.periodEnd=effective.prepaidThrough;
+  }
   const proof = { contractId: contract.id, subscriptionId: contract.subscriptionId, invoiceId: payment.invoiceId, paymentIntentId: payment.paymentIntentId,
     chargeId: payment.chargeId, reviewReason: missedCutoff ? "cohort_cutoff_missed" : null, refundState: missedCutoff ? "review_required" : "none", activatedAt: null };
   const stored = new Map(), calls = [], proofs = [], refundLockOrders = []; let cancellation = null, heldLocks = [];
@@ -80,7 +89,7 @@ async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false,
   };
   const provider = await load("src/lib/stripe/cancellation-provider.ts", {
     "node:crypto": { createHash }, "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({}) },
-    "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true }, "@/lib/stripe/prepaid-policy": prepaid, "@/lib/stripe/commitment-policy": policy,
+    "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true }, "@/lib/stripe/prepaid-policy": prepaid, "@/lib/stripe/commitment-policy": executionPolicy,
     "@/lib/stripe/database": { getBillingDatabase: () => sql },
     "@/lib/stripe/billing-repository": { getMembershipPrepayment: async () => proof },
     "@/lib/stripe/prepaid-provider": { inspectPrepaidMembershipInvoice: async (_stripe, _contract, options) => {
@@ -114,7 +123,7 @@ async function fixture({ refundStatus = "succeeded", timeoutAfterCancel = false,
     "node:crypto": { randomUUID }, "@/lib/stripe/database": { getBillingDatabase: () => sql },
     "@/lib/stripe/commitment-account": { getMemberBillingCommitment: async () => contract },
     "@/lib/stripe/server": { getStripe: () => stripe, isStripeTaxEnabled: () => false },
-    "@/lib/stripe/cancellation-provider": provider, "@/lib/stripe/commitment-policy": policy,
+    "@/lib/stripe/cancellation-provider": provider, "@/lib/stripe/commitment-policy": executionPolicy,
     "@/lib/stripe/commitment-repository": repository,
     "@/lib/stripe/billing-repository": {
       getMembershipPrepayment: async () => { heldLocks.push("proof"); return proof; },
@@ -293,6 +302,15 @@ test("prepaid account summary resumes the same pending cancellation and requires
   assert.equal((await read()).canceledBeforeStart, true);
   row.prestartCanceled = false; proof.refundState = "none";
   assert.equal((await read()).status, "review_required", "external cancellation cannot imply money was returned");
+  row={...row,contractStatus:"active",subscriptionStatus:"trialing",terms:{...f.contract,agreementVersion:"ruined_membership-v4"}};
+  proof={refundState:"review_required",reviewReason:"cohort_cutoff_missed",amountPaid:f.payment.amount,amountRefunded:0,
+    activatedAt:null,cancellationId:null,canceledAt:null};
+  assert.equal((await read()).status,"rollover_pending","verified late payment with carryforward consent gets schedule confirmation, not a payment-error message");
+  assert.equal((await read()).canCancelBeforeStart,false,"pending rollover does not imply completed provider alignment");
+  row.terms={...row.terms,agreementVersion:"ruined_membership-v3"};
+  assert.equal((await read()).status,"review_required","old agreements stay a separate operator review");
+  row.terms={...row.terms,agreementVersion:"ruined_membership-v4"};proof.reviewReason="payment_adjustment";
+  assert.equal((await read()).status,"review_required","other payment issues cannot be relabeled as routine rollover");
 });
 
 
@@ -312,4 +330,17 @@ test("Link py_ payments quote, stop renewal and record one exact pyr_ refund", a
     assert.equal(f.proofs[0].amount, f.payment.amount);
     assert.deepEqual(f.calls.map(call => call.action), ["cancel", "refund"]);
   }
+});
+
+test("rolled member retains ordinary full refund rights until the effective service start, even after the original start",async()=>{
+  const f=await fixture({rolled:true});
+  const accepted=prepaid.acceptedPrepaidScheduleFromSubscription(f.sub);
+  assert.ok(Date.parse(f.contract.startsAt)>Date.parse(accepted.serviceStartsAt));
+  const quote=await f.service.createMemberCancellationQuote(f.contract.memberId,"cancel_before_start");
+  await f.service.confirmMemberCancellation(f.contract.memberId,quote.id);
+  assert.equal(f.calls.filter(call=>call.action==="cancel").length,1);
+  assert.equal(f.calls.filter(call=>call.action==="refund").length,1);
+  assert.ok(f.sub.canceled_at*1000>Date.parse(accepted.serviceStartsAt));
+  assert.ok(f.sub.canceled_at*1000<Date.parse(f.contract.startsAt));
+  assert.equal(f.cancellation().status,"completed");
 });
