@@ -19,7 +19,7 @@ const artworks: Record<string, { src: string; filename: string }> = {
   "open-door": { src: "/membership/badges/open-door-v2.png", filename: "ruined-open-door-badge.png" },
   "in-real-life": { src: "/membership/badges/in-real-life-v2.png", filename: "ruined-in-real-life-badge.png" },
 };
-const stampNumbers: Record<string, string> = { "early-supporter": "01", "one-year": "1" };
+const stampNumbers: Record<string, string> = { "early-supporter": "01", "one-year": "1", "foundations-4": "F4", "time-2026-12": "TIME" };
 export function badgeArtwork(badge: Pick<BadgeDisplay, "key">) { return artworks[badge.key]; }
 export function badgeStamp(badge: Pick<BadgeDisplay, "key" | "stamp">) { return badge.stamp ?? stampNumbers[badge.key] ?? "•"; }
 const earnedDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });

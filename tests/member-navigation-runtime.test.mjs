@@ -30,7 +30,7 @@ const expectedDestinations = {
   "/my/timeline": "Timeline",
   "/my/circle": "Circle",
   "/my/experiences": "Calendar",
-  "/my/foundations": "Foundations",
+  "/my/practice": "Practice",
   "/my/learn": "Academy",
   "/my/updates": "Updates",
   "/my/profile": "Edit profile",
@@ -147,10 +147,19 @@ test("Member route selection chooses the longest matching page and respects segm
     if (href !== "/my") assert.equal(currentMemberDestination(`${href}/example`), href);
   }
   assert.equal(currentMemberDestination("/my/timeline/new"), "/my/timeline");
-  assert.equal(currentMemberDestination("/my/foundations/experience"), "/my/foundations");
+  assert.equal(currentMemberDestination("/my/foundations/experience"), "/my/practice");
   for (const path of ["/my/learning", "/my/circles", "/my/cards", "/my/card-other", "/my/profile-other", "/my/supporting", "/my/unknown", "/my-other", "/ops"]) {
     assert.equal(currentMemberDestination(path), undefined, path);
   }
+});
+
+test("Practice owns Foundations aliases and monthly deep links without changing the public Timeline", () => {
+  for (const path of ["/my/practice", "/my/practice/deck/time", "/my/foundations", "/my/foundations/deck"]) {
+    assert.equal(currentMemberPrimaryDestination(path), "/my/practice");
+  }
+  assert.deepEqual(findMemberDestinations("foundations").map(row => row.href), ["/my/practice"]);
+  assert.deepEqual(findMemberDestinations("monthly").map(row => row.href), ["/my/practice"]);
+  assert.equal(currentMemberPrimaryDestination("/my/timeline"), "/my");
 });
 
 test("Member page search supports common task terms, whitespace, case, and multiple words", () => {

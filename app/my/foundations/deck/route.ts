@@ -28,7 +28,8 @@ export async function GET() {
   if (!context.data || !["authenticated", "preview"].includes(context.state)) redirect("/my/foundations");
   const ownerId = context.state === "authenticated" ? context.viewer?.authUserId : null;
   if (!await isFoundationsAvailableToMember(ownerId)) redirect("/my/foundations");
-  if (!memberCan(deriveMemberAccessPolicy(context.data), "foundations.write")) redirect("/my/foundations");
+  const access = deriveMemberAccessPolicy(context.data);
+  if (!memberCan(access, "foundations.write") && !memberCan(access, "foundations.revisit")) redirect("/my/foundations");
   if (context.state === "authenticated" && !ownerId) redirect("/my/access");
 
   // Slide resume is separate from the four-session completion record and stores

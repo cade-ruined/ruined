@@ -67,6 +67,8 @@ const nextConfig = {
     "/api/ops/emails/resend/review",
   ].map(route => [route, ["./public/fonts/CadeHandy2.otf"]])),
     "/my/foundations/deck": ["./src/data/foundations-deck/index.html"],
+    "/my/practice/deck/[course]": ["./src/data/practice-decks/**/*"],
+    "/my/practice/deck/[course]/resource/[...asset]": ["./src/data/practice-decks/**/*"],
   },
   async redirects() {
     return [

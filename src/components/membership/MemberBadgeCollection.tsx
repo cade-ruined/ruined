@@ -10,7 +10,8 @@ import styles from "./MemberBadgeCollection.module.css";
 
 const awardDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 const actions: Record<string, string> = {
-  "make-it-yours": "Edit your profile", "first-words": "Open your Journal", "your-story": "Open your Foundations timeline",
+  "make-it-yours": "Edit your profile", "first-words": "Open your Journal", "your-story": "Open your F1 assignment",
+  "foundations-4": "Open your future letter", "time-2026-12": "Open your TIME assignment",
   "on-the-record": "Open your public Timeline", groundwork: "Open Foundations", "in-the-room": "See the Calendar",
   "full-circle": "Open your Circle", "the-whole-month": "See the Calendar", "open-door": "Open your invitation", "in-real-life": "See the Calendar",
 };

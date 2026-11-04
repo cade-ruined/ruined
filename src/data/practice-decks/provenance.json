@@ -1,0 +1,45 @@
+{
+  "source": "Ruined Next Chapter approved review",
+  "extractedAt": "2026-11-04",
+  "audienceScenes": {
+    "f2": 24,
+    "f3": 24,
+    "f4": 22,
+    "time": 40
+  },
+  "boundary": "Audience deck only. No facilitator notes, review workspaces, stored answers, communications, or completion effects.",
+  "sources": {
+    "f2-data.js": "4f41093d29b522db5505ddf1f702f35ca71c1441362d31bdf4d050bcffb461dc",
+    "f2.js": "2a6034eb9c2b99f86aeb2de3ba6ff306addef252b39c5c9e077b3dd28e9abf4a",
+    "f2.css": "b652790ac820a2a4bb4495fd012cf676ce2258e196d40e82355f948a86556398",
+    "f34-data.js": "f21d70fb090f360d4fe2f096dc1af264dc4551c6d5e2786b8b7319eff52666b6",
+    "f34.js": "5eccbab39927a4a4dcf2b5457ce8ab9600626e14e97e8170cd84cc842a74129a",
+    "f34.css": "c91f28ce4cad84baeb68b3702d57ed76d68c46555c88bd5b78ce6517df474a6d",
+    "f34-mechanisms.js": "78d059df63f3762532f871d5b9fffb84450427282d79b8a8235a3a2ca2923988",
+    "f34-mechanisms.css": "6d66865eecfd54d80013e44719648266e8d03017717eeddb0af3b0abcc4b7fc7",
+    "creative-data.js": "68ee80d6f079ab35250009796cbc09f65b883d30459870c88bc6c4654aef5c93",
+    "creative.css": "371a33bedb570d886ed4a447ff01a2cd57150783260e46cd59754e9bfc189f76",
+    "monthly-deck.js": "35c91bc29760474dc5642caa898152684cd5f6b755cb402972d24809307fc369",
+    "monthly-deck.css": "55beae0ed340f7c8d25810ef975b55a8d2acc817f0e3ac88cf30138a9136bdca"
+  },
+  "assets": {
+    "assets/anton.ttf": "/membership/foundations/deck-v29/assets/fonts/anton.ttf",
+    "assets/green.webp": "/membership/foundations/deck-v29/assets/photoshop/polymailer-green.webp",
+    "assets/wordmark.svg": "/membership/foundations/deck-v29/assets/brand/ruined-wordmark.svg",
+    "foundations-01/assets/photoshop/straps-bracket.webp": "/membership/foundations/deck-v29/assets/photoshop/straps-bracket.webp",
+    "assets/woman.png": "/membership/foundations/deck-v29/assets/moving-fear/woman-cutout.png",
+    "foundations-01/assets/photoshop/polymailer-black.webp": "/membership/foundations/deck-v29/assets/photoshop/polymailer-black.webp",
+    "assets/paper.webp": "/membership/foundations/deck-v29/assets/figma/paper.webp",
+    "assets/meadow.webp": "/membership/foundations/deck-v29/assets/figma/meadow-figure.webp",
+    "assets/tiger.webp": "/membership/practice/tiger.webp",
+    "foundations-01/assets/fonts/inter.woff2": "/membership/foundations/deck-v29/assets/fonts/inter.woff2",
+    "assets/black.webp": "/membership/foundations/deck-v29/assets/photoshop/polymailer-black.webp",
+    "foundations-01/assets/figma/paper.webp": "/membership/foundations/deck-v29/assets/figma/paper.webp",
+    "assets/bloom.mp4": "/membership/practice/bloom.mp4",
+    "assets/bloom.webp": "/membership/practice/bloom.webp",
+    "foundations-01/assets/figma/storm.webp": "/membership/foundations/deck-v29/assets/figma/storm.webp",
+    "assets/tornado.mp4": "/membership/foundations/deck-v29/assets/video/tornado.mp4",
+    "foundations-01/assets/moving-fear/landscape-clean.png": "/membership/foundations/deck-v29/assets/moving-fear/landscape-clean.png",
+    "foundations-01/assets/moving-fear/woman-cutout.png": "/membership/foundations/deck-v29/assets/moving-fear/woman-cutout.png"
+  }
+}

@@ -8,6 +8,7 @@ import InstallRuined from "@/components/membership/InstallRuined";
 import MemberBadges from "@/components/membership/MemberBadges";
 import MemberJournal from "@/components/membership/MemberJournal";
 import MemberWelcome from "@/components/membership/MemberWelcome";
+import MemberPracticeCard from "@/components/membership/MemberPracticeCard";
 import type { MemberWelcomeSnapshot } from "@/lib/membership/welcome-model";
 import { useMemberPortrait } from "@/components/membership/MemberPortraitState";
 import { memberCan } from "@/lib/membership/access-policy";
@@ -78,6 +79,8 @@ export default function MemberHome({member,preview=false,welcome=null}:{member:M
       <div className={styles.identityActions}><Link className="member-button" href="/my/profile"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="m13 3 4 4M3 13 14 2l4 4L7 17l-5 1Z"/></svg>Edit profile</Link><Link className="member-button" href={publicProfileUrl}>View public profile ↗</Link><Link className="member-button" href="/my/card">My Card ↗</Link><Link className="member-button" href="/my/invitation">My Invitation ↗</Link></div>
       <div className={styles.earnedBadges}>{member.badges?.length ? <MemberBadges badges={member.badges} preview={preview}/> : null}<Link className={styles.badgeCollectionLink} href="/my/badges">Your badges <span aria-hidden="true">↗</span></Link></div>
     </header>
+
+    {memberCan(member.access,"foundations.write") || memberCan(member.access,"foundations.revisit") ? <MemberPracticeCard key={member.identity.authUserId} ownerId={member.identity.authUserId} preview={preview}/> : null}
 
     {member.access.mode === "full" || member.access.mode === "onboarding" ? <MemberWelcome key={member.identity.authUserId} ownerId={member.identity.authUserId} initialWelcome={welcome} preview={preview} profileReady={Boolean(avatarUrl && member.profile.bio?.trim() && member.profile.memberTag?.trim())} hasUpcomingCall={member.upcomingExperiences.some(event=>Boolean(event.meetingUrl) && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now())} onWritePrivate={()=>{select("journal");setPrivateComposeRequest(value=>value+1);}}/> : null}
 

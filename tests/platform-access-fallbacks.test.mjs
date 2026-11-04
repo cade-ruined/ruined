@@ -49,7 +49,7 @@ test("every member page context handles denied before its unavailable fallback",
   // The legacy Foundations experience now redirects to the separately gated
   // document reader; it no longer loads a member page context of its own.
   assert.equal(modernPages.length, 16);
-  assert.ok(modernPages.some(page => page.entry === "foundations/page.tsx"));
+  assert.ok(modernPages.some(page => page.entry === "practice/page.tsx"));
   assert.ok(!modernPages.some(page => page.entry === "foundations/experience/page.tsx"));
   const legacyFoundations = await readFile(new URL("../app/my/foundations/experience/page.tsx", import.meta.url), "utf8");
   assert.match(legacyFoundations, /redirect\("\/my\/foundations\/deck"\)/);
@@ -77,7 +77,8 @@ test("every operator page context uses operator permission copy for denied accou
   ];
   const overview = await readFile(new URL("../app/ops/page.tsx", import.meta.url), "utf8");
 
-  assert.equal(pages.length, 25);
+  assert.equal(pages.length, 26);
+  assert.ok(pages.some(page => page.entry === "practice/page.tsx"));
   assert.ok(pages.some(page => page.entry === "emails/page.tsx"));
   assert.ok(pages.some(page => page.entry === "email-automations/page.tsx"));
   for (const { contents, entry } of pages) {

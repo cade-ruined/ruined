@@ -22,7 +22,7 @@ const [
   platformMigration,
   platformModel,
   platformRepository,
-  memberFoundationsPage,
+  memberPracticePage,
   memberCirclePage,
   memberArtifactsPage,
   membershipPageContext,
@@ -47,7 +47,7 @@ const [
   source("db/migrations/20260819_platform_foundation.sql"),
   source("src/lib/platform/model.ts"),
   source("src/lib/platform/repository.ts"),
-  source("app/my/foundations/page.tsx"),
+  source("app/my/practice/page.tsx"),
   source("app/my/circle/page.tsx"),
   source("app/my/artifacts/page.tsx"),
   source("src/lib/membership/page-context.ts"),
@@ -112,15 +112,14 @@ test("paid active membership is a server-side boundary for private member areas"
     /insert into member_lifecycle \([\s\S]*member_id,[\s\S]*account_state,[\s\S]*billing_state,[\s\S]*program_state[\s\S]*'prospect'/,
   );
 
-  // Preview and authenticated members share the replacement home, after the
-  // page context and capability checks. There is no preview-only render branch.
-  assert.match(memberFoundationsPage, /getMembershipPageContext\(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Foundations"\)/);
-  assert.match(memberFoundationsPage, /context\.state === "signed_out"\) redirect\("\/my\/access"\)/);
-  assert.match(memberFoundationsPage, /context\.state === "denied"\) return <PlatformUnavailable reason="member_access"/);
-  assert.match(memberFoundationsPage, /context\.state === "authenticated" && !context\.viewer/);
-  assert.match(memberFoundationsPage, /!memberCan\(access, "foundations\.write"\)/);
-  assert.match(memberFoundationsPage, /return <MemberAccessNotice access=\{access\}/);
-  assert.ok(memberFoundationsPage.indexOf('!memberCan(access, "foundations.write")') < memberFoundationsPage.indexOf("return <MemberFoundationsHome"));
+  // The replacement Practice destination retains authenticated member gates.
+  assert.match(memberPracticePage, /getMembershipPageContext\(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Practice"\)/);
+  assert.match(memberPracticePage, /context\.state === "signed_out"\) redirect\("\/my\/access"\)/);
+  assert.match(memberPracticePage, /context\.state === "denied"\) return <PlatformUnavailable reason="member_access"/);
+  assert.match(memberPracticePage, /if \(!context\.viewer\)/);
+  assert.match(memberPracticePage, /!memberCan\(access, "foundations\.write"\) && !memberCan\(access, "foundations\.revisit"\)/);
+  assert.match(memberPracticePage, /return <MemberAccessNotice access=\{access\}/);
+  assert.ok(memberPracticePage.indexOf('!memberCan(access, "foundations.write")') < memberPracticePage.indexOf("await getMemberPracticeSnapshot"));
 
   for (const route of [memberCirclePage, memberArtifactsPage]) {
     assert.match(route, /getMembershipPageContext\(/);

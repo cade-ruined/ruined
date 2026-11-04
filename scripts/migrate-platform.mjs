@@ -136,6 +136,8 @@ const migrations = [
   "../db/migrations/20261102231559_member_sms_one_off_reviews.sql",
   "../db/migrations/20261103021417_member_paid_profile_release.sql",
   "../db/migrations/20261104162521_member_sms_templates.sql",
+  "../db/migrations/20261104180000_member_practice.sql",
+  "../db/migrations/20261104190000_member_practice_release_emails.sql",
   "../db/migrations/20261104190000_paid_foundations_cohort_rollover.sql",
   "../db/migrations/20261104190000_complimentary_foundations_cohorts.sql",
 ];

@@ -1,0 +1,4 @@
+export function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+export function ringSVG(seed=0){let rings='';for(let r=0;r<27;r++){let pts=[];for(let p=0;p<=180;p++){const a=p/180*Math.PI*2;const radius=14+r*7.6+Math.sin(a*3+.1*r+seed)*4+Math.sin(a*7+.2*r)*2.2+Math.cos(a*13+.2*r)*1.3;pts.push(`${p?'L':'M'}${(250+Math.cos(a)*radius*1.03).toFixed(2)},${(250+Math.sin(a)*radius*.92).toFixed(2)}`);}rings+=`<path d="${pts.join(' ')}Z" fill="none" stroke="currentColor" stroke-width="${r%5===0?2.4:1.1}"/>`;}return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-label="Irregular rings record growth over time">${rings}</svg>`;}
+
+export function announce(message){const el=document.getElementById('announcement');if(el){el.textContent=message;el.classList.add('visible');setTimeout(()=>el.classList.remove('visible'),5000);}}

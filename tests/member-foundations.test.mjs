@@ -144,15 +144,14 @@ test("legacy reflection content remains ephemeral and is never accepted by the c
 test("the member entry replaces the old presentation while the document route retains access gates", () => {
   assert.match(home, /href="\/my\/foundations\/deck"/);
   assert.doesNotMatch(home, /\/my\/foundations\/experience|\/api\/my\/foundations|initialState|completedUnits|Practice &|Circle will be revealed/);
-  assert.match(memberPage, /!memberCan\(access, "foundations\.write"\)/);
-  assert.match(memberPage, /return <MemberAccessNotice access=\{access\}/);
-  assert.match(memberPage, /isFoundationsAvailableToMember/);
+  assert.match(memberPage, /redirect\("\/my\/practice\?area=foundations"\)/);
   assert.doesNotMatch(memberPage, /getMemberFoundationsState|getMemberFoundationRequirements|memberPreviewFoundations|writable=/);
   assert.match(experiencePage, /redirect\("\/my\/foundations\/deck"\)/);
   assert.doesNotMatch(experiencePage, /\bMemberFoundationsExperience\b|getMemberFoundationsState|getMemberFoundationRequirements/);
   assert.match(deckRoute, /getMembershipPageContext/);
   assert.match(deckRoute, /isFoundationsAvailableToMember/);
-  assert.match(deckRoute, /memberCan\(deriveMemberAccessPolicy\(context\.data\), "foundations\.write"\)/);
+  assert.match(deckRoute, /memberCan\(access, "foundations\.write"\)/);
+  assert.match(deckRoute, /memberCan\(access, "foundations\.revisit"\)/);
   assert.doesNotMatch(deckRoute, /startMemberFoundations|recordMemberFoundationProgress|completeMemberFoundations/);
 });
 
