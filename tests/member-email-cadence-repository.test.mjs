@@ -79,6 +79,12 @@ async function fixture(t) {
   await installRegistrationProfileReleaseFunction(db);
   await db.exec(read("db/migrations/20261012230000_member_email_cadence.sql"));
   await db.exec(read("db/migrations/20261012233000_member_email_sequences.sql"));
+  await db.exec(`create role service_role;
+    alter table member_registration_access add column completion_basis text,add column test_ready boolean default true;
+    create function private.ruined_member_registration_ready(uuid) returns boolean language sql as
+      'select registered_at is not null and test_ready from public.member_registration_access where member_id=$1';`);
+  await db.exec(read("db/migrations/20261012200000_foundations_schedule_v3.sql"));
+  await db.exec(read("db/migrations/20261104190000_complimentary_foundations_cohorts.sql"));
   const sql = sqlBridge(db);
   const calendar=[];
   const env = { MEMBER_EMAIL_CADENCE_ENABLED: "true", MEMBER_EMAIL_CADENCE_ACTIVATED_AT: ago(2880), GOOGLE_COMMUNICATIONS_LIVEMODE: "true" };
@@ -611,6 +617,31 @@ test("reusable email sequences inherit only reviewed semantics and current autho
     assert.equal(plans[0].sequence_id, null); assert.equal(plans[0].snapshot.templateVersion, "manual override");
     assert.equal((await f.db.query("select count(*)::int as count from experience_registrations")).rows[0].count, 0);
     assert.deepEqual(f.calendar, []);
+  });
+  await t.test("completed complimentary members inherit all four assigned calls and skip late, unready and historical cancelled choices",async()=>{
+    await f.reset();const {event,actor,schedule}=await foundationSequence(f);
+    const events=[event];
+    for(let index=1;index<4;index++) {
+      const call=await f.event({kind:"member_event",visibility:"invite_only",registrationMode:"internal",startsAt:schedule.callStartsAt[index],endsAt:new Date(Date.parse(schedule.callStartsAt[index])+90*60_000).toISOString()});
+      await cadenceSequence(f,actor,call,{kind:`foundations_0${index+1}`});
+      await f.sql.begin(tx=>f.inheritance.saveCadenceEventBinding(tx,actor.authId,call.id,{kind:`foundations_0${index+1}`,track:"members",cohortMonth:schedule.cohortMonth},call));
+      events.push(call);
+    }
+    async function comp(at,ready=true) {
+      const person=await f.member({onboarding:true,complimentary:true});
+      await f.db.query("update member_registration_access set registered_at=$2,completion_basis='complimentary',test_ready=$3 where member_id=$1",[person.memberId,at,ready]);return person;
+    }
+    const completed=await comp(new Date(Date.parse(schedule.cutoffAt)-1).toISOString());
+    const late=await comp(schedule.cutoffAt);await comp(new Date(Date.parse(schedule.cutoffAt)-1).toISOString(),false);
+    const cancelled=await comp(new Date(Date.parse(schedule.cutoffAt)-1).toISOString());
+    await f.roster(cancelled,events[1],{status:"cancelled"});
+    assert.deepEqual(await reconcile(f),{plans:4,enrolled:7});
+    assert.deepEqual(await reconcile(f),{plans:0,enrolled:0});
+    assert.equal((await f.db.query("select count(*)::int n from experience_registrations where member_id=$1 and status='registered'",[completed.memberId])).rows[0].n,4);
+    assert.equal((await f.db.query("select count(*)::int n from experience_registrations where member_id=$1",[late.memberId])).rows[0].n,0);
+    assert.equal((await f.db.query("select status from experience_registrations where member_id=$1 and experience_id=$2",[cancelled.memberId,events[1].id])).rows[0].status,"cancelled");
+    assert.equal((await f.db.query("select count(*)::int n from member_consents")).rows[0].n,0);
+    assert.equal((await f.db.query("select profile_activated_at from member_registration_access where member_id=$1",[completed.memberId])).rows[0].profile_activated_at,null);
   });
   await t.test("verified payments without a Checkout Session inherit their cohort exactly once", async () => {
     await f.reset(); const { event, schedule } = await foundationSequence(f);

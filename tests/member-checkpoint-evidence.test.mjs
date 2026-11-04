@@ -31,7 +31,7 @@ const repository = load("src/lib/membership/registration-repository.ts", {
   "./registration-routing": load("src/lib/membership/registration-routing.ts"),
 });
 
-// Execute the actual reader and the shipped paid-evidence function. Stub only
+// Execute the actual reader and the shipped paid-evidence/schedule functions. Stub only
 // independently tested access/funding policies, so contradictory provider rows
 // can exercise this read model without bypassing its SQL or manufacturing a map.
 async function fixture(t) {
@@ -52,6 +52,7 @@ async function fixture(t) {
     create table member_payment_method_detachments(stripe_account_id text,livemode boolean,stripe_payment_method_id text);
     create table membership_commercial_participants(member_id uuid,person_id uuid,reservation_id uuid);
     create table membership_commercial_reservations(id uuid primary key,payer_member_id uuid,status text,stripe_subscription_id text,billing_schedule jsonb,kind text);
+    create table private.membership_cohort_rollovers(reservation_id uuid primary key,status text,effective_schedule jsonb);
     create table stripe_membership_prepaid_proofs(reservation_id uuid primary key,member_id uuid,contract_id uuid,
       stripe_subscription_id text,stripe_invoice_id text,livemode boolean,refund_state text,amount_refunded bigint,
       provider_canceled_at timestamptz,review_reason text,amount_paid bigint,dues_amount bigint,currency text,verified_at timestamptz,created_at timestamptz,service_starts_at timestamptz);
@@ -83,6 +84,13 @@ async function fixture(t) {
     create function private.ruined_registration_intake_eligibility_error(date,text) returns text language sql as
       $$select case when $1 is null or $2 is distinct from 'US' then 'incomplete' end$$;`);
   await db.exec(read("db/migrations/20261007110000_member_payment_evidence.sql"));
+  // The full migration suite exercises rollover writes and provider guards;
+  // this isolated read fixture still executes the exact shipped date overlay.
+  const rolloverMigration = read("db/migrations/20261104190000_paid_foundations_cohort_rollover.sql");
+  const effectiveStart = rolloverMigration.indexOf("create function private.ruined_effective_prepaid_schedule(");
+  const effectiveEnd = rolloverMigration.indexOf("$$;", effectiveStart);
+  assert.ok(effectiveStart >= 0 && effectiveEnd > effectiveStart, "The effective paid schedule helper must exist.");
+  await db.exec(rolloverMigration.slice(effectiveStart, effectiveEnd + 3));
   const tx = async (strings, ...values) => {
     const query = strings.reduce((text, piece, index) => text + (index ? `$${index}` : "") + piece, "");
     assert.match(query.trim(), /^select\b/i, "Checkpoint reads must not mutate registration or billing.");
@@ -105,14 +113,14 @@ async function fixture(t) {
     await db.query("insert into member_payment_method_setup_attempts values($1,$1,'acct_Checkpoint',false,'saved',null)", [memberId]);
   }
   async function paid(memberId, partnerId = null) {
-    const reservation = id(900), schedule = '{"cohortMonth":"2026-11"}';
+    const reservation = id(900), schedule = '{"cohortMonth":"2026-11","serviceStartsAt":"2026-11-05T22:00:00.000Z"}';
     for (const participant of [memberId, partnerId].filter(Boolean)) await db.query(`insert into membership_commercial_participants
       select id,person_id,$2 from ruined_members where id=$1`, [participant, reservation]);
     await db.query("insert into membership_commercial_reservations values($1,$2,'reserved','sub_checkpoint',$3,$4)", [reservation, memberId, schedule, partnerId ? "couple" : "individual"]);
     await db.query(`insert into stripe_membership_prepaid_proofs values($1,$2,$1,'sub_checkpoint','in_checkpoint',false,'none',0,null,null,34900,34900,'usd',$3,$3,'2026-11-05T22:00:00Z')`, [reservation, memberId, dates.paid]);
     await db.query(`insert into stripe_checkout_attempts values($1,$2,'cs_checkpoint','completed',$3,'acct_Checkpoint',false,'sub_checkpoint',$1,$4)`, [reservation, memberId, dates.paid, schedule]);
     await db.query("insert into stripe_checkout_sessions values('cs_checkpoint',$1,'complete','paid',false,'sub_checkpoint')", [memberId]);
-    await db.query(`insert into stripe_membership_commitments values($1,$2,$1,false,'cus_checkpoint','{"billingSchedule":{"cohortMonth":"2026-11"}}','active','sub_checkpoint')`, [reservation, memberId]);
+    await db.query(`insert into stripe_membership_commitments values($1,$2,$1,false,'cus_checkpoint',$3,'active','sub_checkpoint')`, [reservation, memberId, JSON.stringify({ billingSchedule: JSON.parse(schedule) })]);
     await db.query("insert into stripe_subscriptions values('sub_checkpoint',$1,'trialing','cus_checkpoint',null)", [memberId]);
     await db.query("insert into stripe_invoices values('in_checkpoint',$1,'sub_checkpoint','cus_checkpoint','paid','membership',34900,34900,'usd',$2)", [memberId, dates.paid]);
     if (partnerId) await db.query("update fixture_policies set partner_id=$2 where member_id=$1", [partnerId, memberId]);
@@ -180,6 +188,22 @@ test("canonical checkpoint evidence executes the reader SQL against provider and
     assert.equal(checkpoint(journey, "payment_method").state, "complete");
     assert.match(checkpoint(journey, "payment_method").detail, /Collected through Stripe checkout/);
     assert.equal(journey.next.key, "profile"); assert.equal(checkpoint(journey, "profile").state, "needed");
+  });
+  await isolated("service start follows only a completed rollover while accepted dates and payment evidence remain intact", async () => {
+    const member = await f.member(1); await f.paid(member);
+    const originalStart = "2026-11-05T22:00:00.000Z", effectiveStart = "2026-12-03T22:00:00.000Z";
+    assert.equal((await f.progress(member)).serviceStartsAt, originalStart);
+    await f.db.query("insert into private.membership_cohort_rollovers values($1,'pending',$2)",
+      [id(900), JSON.stringify({ cohortMonth: "2026-12", serviceStartsAt: effectiveStart })]);
+    assert.equal((await f.progress(member)).serviceStartsAt, originalStart, "Unconfirmed provider work cannot change the displayed start.");
+    await f.db.query("update private.membership_cohort_rollovers set status='completed' where reservation_id=$1", [id(900)]);
+    const row = await f.progress(member);
+    assert.equal(row.serviceStartsAt, effectiveStart); assert.equal(row.paymentConfirmed, true); assert.equal(row.paymentReceivedAt, dates.paid);
+    const original = (await f.db.query(`select reservation.billing_schedule,proof.service_starts_at
+      from membership_commercial_reservations reservation join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id
+      where reservation.id=$1`, [id(900)])).rows[0];
+    assert.equal(original.billing_schedule.serviceStartsAt, originalStart);
+    assert.equal(new Date(original.service_starts_at).toISOString(), originalStart);
   });
   await isolated("complimentary checkpoints use current funding, not a historical complimentary completion", async () => {
     const member = await f.member(1);

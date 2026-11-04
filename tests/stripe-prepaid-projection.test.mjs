@@ -22,13 +22,13 @@ const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto"
 const memberId = "22222222-2222-4222-8222-222222222222", partnerId = "11111111-1111-4111-8111-111111111111";
 const reservationId = "33333333-3333-4333-8333-333333333333", acceptanceId = "44444444-4444-4444-8444-444444444444";
 
-async function fixture({ existing = true } = {}) {
+async function fixture({ existing = true, rollover = false } = {}) {
   const schedule = schedules.foundationsBillingScheduleForMonth("2026-11", "monthly"), log = [], states = [], partners = [];
   const reservation = { id: reservationId, memberId, offerId: "individual_monthly", stripePriceId: "price_member",
     stripeSubscriptionId: "sub_member", billingSchedule: schedule, status: "reserved", participants: [{ memberId }, { memberId: partnerId }] };
   const contract = policy.buildMembershipCommitment({ id: reservationId, memberId, subscriptionId: "sub_member", customerId: "cus_member",
     livemode: false, offerId: reservation.offerId, priceId: "price_member", agreementAcceptanceId: acceptanceId,
-    agreementVersion: "ruined_membership-v3", agreementContentSha256: "a".repeat(64), acceptedAt: "2026-10-05T12:00:00.000Z",
+    agreementVersion: rollover ? "ruined_membership-v4" : "ruined_membership-v3", agreementContentSha256: "a".repeat(64), acceptedAt: "2026-10-05T12:00:00.000Z",
     startsAt: schedule.serviceStartsAt, billingTermsVersion: "membership-billing-v2", billingSchedule: schedule });
   const subscription = { id: contract.subscriptionId, customer: contract.customerId, status: "trialing", livemode: false,
     latest_invoice: "in_initial", start_date: Date.parse(contract.acceptedAt) / 1000, canceled_at: null,
@@ -41,10 +41,12 @@ async function fixture({ existing = true } = {}) {
   const invoice = { id: "in_initial", customer: contract.customerId, customer_email: "member@example.test", livemode: false,
     currency: "usd", status: "paid", amount_due: 52993, amount_paid: 52993, billing_reason: "subscription_create",
     status_transitions: { paid_at: Date.parse(contract.acceptedAt) / 1000 },
-    parent: { subscription_details: { subscription: subscription.id, metadata: { ruined_context: "membership" } } } };
+    parent: { subscription_details: { subscription: subscription.id, metadata: { ...subscription.metadata } } } };
   const state = { proof: existing ? { reservationId, refundState: "none", activatedAt: null } : null,
     contract: existing ? contract : null, inspectError: null, inspectedSubscription: null, reservationStatuses: [],
-    inspected: 0, recorded: [], created: [], activated: 0, released: 0 };
+    inspected: 0, recorded: [], created: [], activated: 0, released: 0, inTransaction: false,
+    processed: false, rolloverError: null, rolled: false, fulfilled: 0 };
+  if (rollover) Object.assign(state.proof, {refundState:"review_required",reviewReason:"cohort_cutoff_missed"});
   const tx = async (strings, ...values) => {
     const sql = strings.join("?");
     if (sql.includes("from ruined_members")) { log.push("members");assert.deepEqual(values[0], [partnerId, memberId]); }
@@ -73,7 +75,7 @@ async function fixture({ existing = true } = {}) {
     ensureBillingMember: async () => { log.push("ensureMember");return { id: memberId, membershipState: "active" }; },
     findMemberBySubscription: async () => { log.push("findMember");return null; },
     upsertSubscription: async () => { log.push("subscription"); },
-    claimWebhookEvent: async () => "claimed", completeWebhookEvent: async () => {}, recordWebhookFailure: async () => {},
+    claimWebhookEvent: async () => state.processed ? "duplicate" : "claimed", completeWebhookEvent: async () => { state.processed = true; }, recordWebhookFailure: async () => {},
     hasMembershipCheckoutConsent: async () => true,
   };
   const commitments = {
@@ -96,11 +98,25 @@ async function fixture({ existing = true } = {}) {
     "./billing-repository": billing, "./commitment-policy": policy, "./commitment-repository": commitments,
   });
   const webhook = await load("src/lib/stripe/webhook.ts", {
-    "node:crypto": { randomUUID }, "@/lib/membership/registration-repository": { reconcilePaidMemberRegistrations: async () => {} },
+    "node:crypto": { randomUUID }, "@/lib/membership/registration-repository": { reconcilePaidMemberRegistrations: async () => { state.fulfilled++; } },
+    "@/lib/stripe/cohort-rollover": { reconcilePaidFoundationsRollover: async () => {
+      assert.equal(state.inTransaction,false,"provider rollover runs after the original invoice transaction commits");
+      if (!rollover || state.rolled) return {handled:false,rolled:false,reviewRequired:false};
+      if (state.rolloverError) throw state.rolloverError;
+      const effective = schedules.foundationsBillingScheduleForMonth("2026-12","monthly");
+      reservation.effectiveBillingSchedule=effective;
+      state.contract={...contract,startsAt:effective.serviceStartsAt,initialTermEndsAt:effective.initialTermEndsAt,billingSchedule:effective};
+      Object.assign(subscription.metadata,prepaid.prepaidRolloverMetadata(effective,reservationId));
+      subscription.trial_end=Date.parse(effective.prepaidThrough)/1000;subscription.billing_cycle_anchor=subscription.trial_end;
+      Object.assign(state.proof,{refundState:"none",reviewReason:null});state.rolled=true;
+      return {handled:true,rolled:true,reviewRequired:false};
+    } },
     "@/lib/membership/badge-repository": { reconcileMemberBadgesForStripeEvent: async () => {} },
     "@/lib/membership/pricing": pricing, "@/lib/stripe/membership-state": membershipState, "@/lib/stripe/prepaid-policy": prepaid,
     "@/lib/stripe/price-policy": { recognizesMembershipSubscription: () => true, matchesMembershipInvoice: () => true, hasFullMembershipPayment: () => true },
-    "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: callback => callback(tx) }) },
+    "@/lib/stripe/database": { getBillingDatabase: () => ({ begin: async callback => {
+      state.inTransaction=true;try { return await callback(tx); } finally { state.inTransaction=false; }
+    } }) },
     "@/lib/stripe/server": { getStripe: () => stripe, getMembershipPriceConfiguration: () => ({}), isStripeTaxEnabled: () => false },
     "@/lib/stripe/checkout-consent": { reconcileNativeCheckoutConsent: async (_tx, _stripe, { subscription }) => {
       assert.equal(subscription.metadata.billing_consent_source, undefined, "these prior prepaid contracts already have stored member-approved consent");
@@ -193,4 +209,24 @@ test("live invoice path takes sorted participant locks before payer writes and p
   assert.ok(f.log.indexOf("commercial") < f.log.indexOf("proof"));
   assert.ok(f.log.indexOf("proof") < f.log.indexOf("contract"));
   assert.ok(f.log.indexOf("contract") < f.log.indexOf("invalidate"));
+});
+
+test("late paid webhook confirms its effective next group immediately after commit and before fulfillment",async()=>{
+  const f=await fixture({rollover:true});
+  await at("2026-11-04T22:00:01.000Z",()=>f.event("invoice.paid"));
+  assert.equal(f.state.rolled,true);assert.equal(f.state.activated,0);
+  assert.deepEqual(f.states.map(value=>value.state),["attention_required","pending"]);
+  assert.equal(f.state.contract.billingSchedule.cohortMonth,"2026-12");
+  assert.equal(f.state.fulfilled,1);assert.equal(f.state.processed,true);
+});
+
+test("post-commit rollover failure holds fulfillment and duplicate webhook retries without a new payment",async()=>{
+  const f=await fixture({rollover:true});f.state.rolloverError=new Error("Provider unavailable");
+  await at("2026-11-04T22:00:01.000Z",()=>assert.rejects(f.event("invoice.paid"),/Provider unavailable/));
+  assert.equal(f.state.processed,true);assert.equal(f.state.activated,0);assert.equal(f.state.fulfilled,0);
+  f.state.rolloverError=null;
+  const result=await at("2026-11-04T22:00:01.000Z",()=>f.event("invoice.paid"));
+  assert.equal(result.duplicate,true);assert.equal(f.state.rolled,true);
+  assert.equal(f.state.fulfilled,1);assert.equal(f.state.created.length,0);
+  assert.deepEqual(f.states.map(value=>value.state),["attention_required","pending"]);
 });

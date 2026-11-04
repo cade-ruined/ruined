@@ -18,28 +18,28 @@ async function load(path, dependencies = {}) {
 const pricing = await load("src/lib/membership/pricing.ts");
 const policy = await load("src/lib/stripe/commitment-policy.ts", { "node:crypto": { createHash }, "@/lib/membership/pricing": pricing });
 const prices = await load("src/lib/stripe/price-policy.ts", { "@/lib/membership/pricing": pricing, "./prepaid-policy": prepaid });
-const config = { livemode: false, offers: { individual_monthly: "price_member" } };
+const config = { livemode: false, offers: { individual_monthly: "price_member", individual_annual: "price_annual" } };
 const provider = await load("src/lib/stripe/prepaid-provider.ts", { "@/lib/stripe/commitment-policy": policy,
   "@/lib/stripe/prepaid-policy": prepaid, "@/lib/stripe/price-policy": prices,
   "@/lib/stripe/server": { getMembershipPriceConfiguration: () => config } });
 
-function fixture({ month = "2026-11", version } = {}) {
-  const billingSchedule = schedules.foundationsBillingScheduleForMonth(month, "monthly", version);
+function fixture({ month = "2026-11", version, plan = "monthly" } = {}) {
+  const billingSchedule = schedules.foundationsBillingScheduleForMonth(month, plan, version);
   const contract = policy.buildMembershipCommitment({ id: randomUUID(), memberId: randomUUID(), subscriptionId: "sub_member", customerId: "cus_member",
-    livemode: false, offerId: "individual_monthly", priceId: "price_member", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v3",
+    livemode: false, offerId: `individual_${plan}`, priceId: plan === "monthly" ? "price_member" : "price_annual", agreementAcceptanceId: randomUUID(), agreementVersion: "ruined_membership-v3",
     agreementContentSha256: "a".repeat(64), acceptedAt: "2026-10-05T20:00:00.000Z", startsAt: billingSchedule.serviceStartsAt,
     billingTermsVersion: "membership-billing-v2", billingSchedule });
   const subscription = { id: contract.subscriptionId, customer: contract.customerId, livemode: false, status: "trialing", start_date: Date.parse(contract.acceptedAt)/1000,
     trial_end: Date.parse(billingSchedule.prepaidThrough)/1000, billing_cycle_anchor: Date.parse(billingSchedule.prepaidThrough)/1000,
     metadata: { billing_terms_version: "membership-billing-v2", ruined_member_id: contract.memberId, ruined_checkout_attempt_id: contract.id,
       ruined_commercial_reservation_id: contract.id, agreement_acceptance_id: contract.agreementAcceptanceId, ruined_offer_id: contract.offerId,
-      ruined_billing_plan: "monthly", ...prepaid.prepaidBillingMetadata(billingSchedule) },
+      ruined_billing_plan: plan, ...prepaid.prepaidBillingMetadata(billingSchedule) },
     items: { has_more: false, data: [{ id: "si_member", quantity: 1, price: { id: contract.priceId, product: "prod_member", type: "recurring",
       unit_amount: contract.installmentDues, currency: "usd", livemode: false, billing_scheme: "per_unit", tax_behavior: "exclusive",
-      recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } } }] } };
+      recurring: { interval: plan === "monthly" ? "month" : "year", interval_count: 1, usage_type: "licensed" } } }] } };
   const line = { currency: "usd", livemode: false, quantity: 1, period: { start: subscription.start_date, end: subscription.trial_end } };
   const invoice = { id: "in_first", customer: contract.customerId, livemode: false, currency: "usd", status: "paid", billing_reason: "subscription_create",
-    total: 52993, total_excluding_tax: contract.installmentDues, amount_paid: 52993, amount_remaining: 0, customer_address: { country: "US" },
+    total: contract.installmentDues + 3093, total_excluding_tax: contract.installmentDues, amount_paid: contract.installmentDues + 3093, amount_remaining: 0, customer_address: { country: "US" },
     pre_payment_credit_notes_amount: 0, post_payment_credit_notes_amount: 0, starting_balance: 0, ending_balance: 0,
     parent: { subscription_details: { subscription: contract.subscriptionId } },
     lines: { has_more: false, data: [
@@ -54,7 +54,7 @@ function fixture({ month = "2026-11", version } = {}) {
   const charge = { id: "ch_first", payment_intent: "pi_first", status: "succeeded", paid: true, captured: true, disputed: false,
     customer: contract.customerId, currency: "usd", livemode: false, amount: invoice.total, amount_refunded: 0, refunded: false };
   const stripe = { subscriptions: { retrieve: async () => subscription },
-    invoices: { list: () => ({ async *[Symbol.asyncIterator]() { yield* invoices; } }), retrieve: async () => invoice },
+    invoices: { list: () => ({ async *[Symbol.asyncIterator]() { yield* invoices; } }), retrieve: async id => invoices.find(item=>item.id===id) },
     creditNotes: { list: async () => ({ data: [], has_more: false }) }, invoicePayments: { list: async () => ({ data: [payment], has_more: false }) },
     paymentIntents: { retrieve: async () => ({ id: "pi_first", latest_charge: charge.id, status: "succeeded", amount_received: invoice.total,
       currency: "usd", livemode: false, customer: contract.customerId }) }, charges: { retrieve: async () => charge },
@@ -146,4 +146,71 @@ test("provider inspection retains Link py_ charge identity and verifies matching
   assert.equal((await f.inspect({ allowRefund: true })).refund.id, "pyr_verified_link");
   f.refunds[0].charge = "py_other";
   await assert.rejects(f.inspect({ allowRefund: true }), /requires_review/);
+});
+
+const rollover = await load("src/lib/stripe/cohort-rollover.ts", {
+  "@/lib/membership/foundations-schedule": schedules, "./database": {}, "./server": {},
+  "./commitment-policy": policy, "./prepaid-provider": provider, "./prepaid-policy": prepaid,
+});
+function rolloverFixture(options = {}) {
+  const f = fixture(options), writes = [], pending = [];
+  f.contract.agreementVersion = "ruined_membership-v4";
+  f.invoice.status_transitions = { paid_at: Date.parse(f.contract.billingSchedule.cutoffAt)/1000 };
+  f.subscription.latest_invoice = f.invoice.id;
+  f.stripe.invoiceItems = { list: async () => ({data: pending, has_more: false}) };
+  f.stripe.subscriptions.update = async (subscriptionId, params, opts) => {
+    writes.push({subscriptionId,params,opts});
+    f.subscription.trial_end = params.trial_end;
+    f.subscription.billing_cycle_anchor = params.trial_end;
+    Object.assign(f.subscription.metadata, params.metadata);
+    const line={...f.invoice.lines.data[1],period:{start:Date.parse(f.contract.billingSchedule.prepaidThrough)/1000,end:params.trial_end}};
+    const adjustment={...f.invoice,id:"in_rollover_zero",billing_reason:"subscription_update",total:0,total_excluding_tax:0,
+      amount_due:0,amount_paid:0,amount_remaining:0,lines:{has_more:false,data:[line]}};
+    f.invoices.push(adjustment);f.subscription.latest_invoice=adjustment.id;
+    return f.subscription;
+  };
+  const target = schedules.resolveFoundationsEnrollmentSchedule(f.contract.billingSchedule,new Date(f.invoice.status_transitions.paid_at*1000),f.contract.billingPlan);
+  const now = new Date(f.invoice.status_transitions.paid_at*1000+60000);
+  return {...f,writes,pending,target,run:()=>rollover.reconcileCohortRolloverProvider(f.stripe,f.contract,target,now)};
+}
+test("late monthly and annual payment carries forward on the same subscription with no new charge; retry is readback only",async()=>{
+  for(const plan of ["monthly","annual"]) {
+    const f=rolloverFixture({plan,month:"2026-12"});
+    const original=JSON.stringify({contract:f.contract,invoice:f.invoice}), result=await f.run();
+    assert.equal(result.invoiceId,f.invoice.id);assert.equal(result.amountPaid,f.invoice.total);
+    assert.equal(f.writes.length,1);assert.equal(f.writes[0].subscriptionId,f.contract.subscriptionId);
+    assert.equal(f.writes[0].params.proration_behavior,"none");
+    assert.equal(f.writes[0].params.trial_end,Date.parse(f.target.prepaidThrough)/1000);
+    assert.deepEqual(Object.keys(f.writes[0].params).sort(),["metadata","proration_behavior","trial_end"]);
+    assert.equal(JSON.stringify({contract:f.contract,invoice:f.invoice}),original,"Original invoice/accepted agreement never rewritten");
+    assert.deepEqual(prepaid.acceptedPrepaidScheduleFromSubscription(f.subscription),f.contract.billingSchedule);
+    assert.deepEqual(prepaid.prepaidScheduleFromSubscription(f.subscription),f.target);
+    assert.equal(result.adjustmentInvoiceId,"in_rollover_zero");assert.equal(result.noAdditionalCharges,true);
+    assert.deepEqual(await f.run(),result);assert.equal(f.writes.length,1,"Provider success followed by lost database commit never repeats mutation");
+  }
+});
+test("provider timeout after successful rollover is recovered by readback with no additional update",async()=>{
+  const f=rolloverFixture(), mutate=f.stripe.subscriptions.update;
+  f.stripe.subscriptions.update=async(...args)=>{await mutate(...args);throw new Error("Timeout after provider success");};
+  await assert.rejects(f.run(),/Timeout/);assert.equal(f.writes.length,1);
+  await f.run();assert.equal(f.writes.length,1);
+});
+test("legacy terms, wrong invoice timing, refunds, pending charges and foreign rollover metadata cannot authorize a change",async()=>{
+  for(const change of [
+    f=>{f.contract.agreementVersion="ruined_membership-v3";},
+    f=>{f.invoice.status_transitions.paid_at-=1;},
+    f=>{f.pending.push({id:"ii_unrelated"});},
+    f=>{f.subscription.cancel_at_period_end=true;},
+    f=>{f.subscription.status="active";},
+    f=>{f.charge.disputed=true;},
+    f=>{f.subscription.metadata.ruined_effective_cohort_month="2099-01";},
+    f=>{f.subscription.metadata.ruined_billing_schedule_sha256="wrong";},
+  ]) {const f=rolloverFixture();change(f);await assert.rejects(f.run(),/requires_review|updated_agreement_required/);assert.equal(f.writes.length,0);}
+});
+test("wrong readback anchor or additional invoice never reports a completed rollover",async()=>{
+  for(const change of [f=>{f.subscription.billing_cycle_anchor-=3600;}, f=>{f.invoices.push({id:"in_unexpected",billing_reason:"manual"});}]) {
+    const f=rolloverFixture(), mutate=f.stripe.subscriptions.update;
+    f.stripe.subscriptions.update=async(...args)=>{const result=await mutate(...args);change(f);return result;};
+    await assert.rejects(f.run(),/requires_review/);assert.equal(f.writes.length,1);
+  }
 });

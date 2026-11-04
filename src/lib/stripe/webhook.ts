@@ -2,7 +2,7 @@ import "server-only";
 
 import type Stripe from "stripe";
 import { randomUUID } from "node:crypto";
-import { prepaidScheduleFromSubscription } from "@/lib/stripe/prepaid-policy";
+import { acceptedPrepaidScheduleFromSubscription, matchesCohortRolloverAdjustment, prepaidScheduleFromSubscription } from "@/lib/stripe/prepaid-policy";
 import { reconcileMemberBadgesForStripeEvent } from "@/lib/membership/badge-repository";
 
 import {
@@ -273,7 +273,7 @@ async function handleInvoice(
             offerId: subscription.metadata.ruined_offer_id,
             commercialReservationId: subscription.metadata.ruined_commercial_reservation_id,
             firstChargeAt: subscription.metadata.ruined_first_charge_at ?? null,
-            billingSchedule: prepaidScheduleFromSubscription(subscription),
+            billingSchedule: acceptedPrepaidScheduleFromSubscription(subscription),
           } : {}),
         });
     }
@@ -339,8 +339,19 @@ async function handleInvoice(
   const scheduledFirstCharge = subscription.metadata.ruined_first_charge_at;
   const scheduledPaymentEligible = !scheduledFirstCharge || (Number.isFinite(Date.parse(scheduledFirstCharge)) &&
     Date.parse(scheduledFirstCharge) <= Date.now() && invoice.lines.data[0]?.period.start >= Date.parse(scheduledFirstCharge) / 1000);
-  let verifiedPayment = hasFullMembershipPayment(invoice, subscription) && membershipPriceMatches && scheduledPaymentEligible;
-  if (v2 && verifiedPayment) {
+  let rolloverCoverage = false;
+  const effectivePrepaidSchedule = subscription.metadata.ruined_cohort_rollover_id ? prepaidScheduleFromSubscription(subscription) : null;
+  if (v2 && membershipPriceMatches && effectivePrepaidSchedule && Date.now() < Date.parse(effectivePrepaidSchedule.prepaidThrough)
+    && matchesCohortRolloverAdjustment(invoice, subscription)) {
+    const rows = await tx`select rollover.reservation_id from private.membership_cohort_rollovers rollover
+      join stripe_membership_prepaid_proofs proof on proof.reservation_id=rollover.reservation_id
+      where rollover.status='completed' and rollover.stripe_subscription_id=${subscription.id}
+        and rollover.provider_evidence->>'adjustmentInvoiceId'=${invoice.id}
+        and proof.refund_state='none' and proof.amount_refunded=0 and proof.provider_canceled_at is null`;
+    rolloverCoverage = rows.length === 1;
+  }
+  let verifiedPayment = (hasFullMembershipPayment(invoice, subscription) || rolloverCoverage) && membershipPriceMatches && scheduledPaymentEligible;
+  if (v2 && verifiedPayment && !rolloverCoverage) {
     const { hasVerifiedCommitmentInvoicePayment } = await import("@/lib/stripe/commitment-webhook");
     verifiedPayment = await hasVerifiedCommitmentInvoicePayment(getStripe(), invoice, subscription);
   }
@@ -573,6 +584,12 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
     const prepaidSubscriptionId = prepaidMetadata ? event.type.startsWith("customer.subscription.")
       ? prepaidObject.id : expandableId(prepaidObject.subscription ?? prepaidObject.parent?.subscription_details?.subscription) : null;
     if (prepaidSubscriptionId) {
+      // The paid proof must commit before moving the provider's billing dates.
+      // A delayed payment can then finish its next-group confirmation in this
+      // request; the scheduled worker remains the retry path after a failure.
+      const { reconcilePaidFoundationsRollover } = await import("@/lib/stripe/cohort-rollover");
+      const rollover = await reconcilePaidFoundationsRollover({ subscriptionId: prepaidSubscriptionId, livemode: event.livemode });
+      if (rollover.rolled) await projectCurrentPrepaidSubscription(prepaidSubscriptionId);
       const { reconcilePaidMemberRegistrations } = await import("@/lib/membership/registration-repository");
       await reconcilePaidMemberRegistrations(prepaidSubscriptionId);
     }
@@ -590,13 +607,22 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<We
 
 /** Internal scheduled reconciliation uses its own source identity. It is not a
  * Stripe webhook and is never inserted into the signed-provider event inbox. */
-export async function reconcilePrepaidMembershipSubscription(subscriptionId: string): Promise<void> {
+async function projectCurrentPrepaidSubscription(subscriptionId: string): Promise<Stripe.Subscription | null> {
   const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-  if (!subscription.metadata.ruined_billing_schedule_version) return;
+  if (!subscription.metadata.ruined_billing_schedule_version) return null;
   const source = { id: `prepaid_reconcile:${randomUUID()}`, created: Math.floor(Date.now() / 1000),
     livemode: subscription.livemode, type: "customer.subscription.updated", data: { object: subscription },
     object: "event", api_version: "2026-08-26.dahlia", pending_webhooks: 0, request: null } as Stripe.Event;
   await getBillingDatabase().begin(tx => handleSubscription(tx, source, subscription));
+  return subscription;
+}
+
+export async function reconcilePrepaidMembershipSubscription(subscriptionId: string): Promise<void> {
+  const subscription = await projectCurrentPrepaidSubscription(subscriptionId);
+  if (!subscription) return;
+  const { reconcilePaidFoundationsRollover } = await import("@/lib/stripe/cohort-rollover");
+  const rollover = await reconcilePaidFoundationsRollover({ subscriptionId, livemode: subscription.livemode });
+  if (rollover.rolled) await projectCurrentPrepaidSubscription(subscriptionId);
   const { reconcilePaidMemberRegistrations } = await import("@/lib/membership/registration-repository");
   await reconcilePaidMemberRegistrations(subscription.id);
 }

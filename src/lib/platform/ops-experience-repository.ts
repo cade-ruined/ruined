@@ -11,7 +11,7 @@ import {
   googleCommunicationUrlFromMetadata,
   safeGoogleCommunicationUrl,
 } from "@/lib/google/communications";
-import { memberEligibleForExperience, memberEligibleForOperatorInvitation } from "@/lib/platform/experience-member-access";
+import { memberEligibleForExperience, memberEligibleForOperatorInvitation, memberHasStandingFounderInvitation } from "@/lib/platform/experience-member-access";
 import {
   OpsOperatingRepositoryError,
 } from "@/lib/platform/ops-operating-repository";
@@ -531,7 +531,7 @@ async function writeRegistrationEvent(
 async function promoteWaitlist(
   tx: postgres.TransactionSql,
   experienceId: string,
-  actorAuthUserId: string | null,
+  actorAuthUserId: string,
 ): Promise<number> {
   const capacityRows = await tx<Array<{
     block_id: string | null;
@@ -577,9 +577,18 @@ async function promoteWaitlist(
     for update
   `;
   let promoted = 0;
+  const admissionAccess=await requireEventOperator(tx,actorAuthUserId,true);
+  const admissionExperience=await requireExperienceAccess(tx,admissionAccess,experienceId,"roster");
   for (const registration of candidates) {
     if (promoted >= available) break;
     if (!(await memberEligibleForExperience(tx, capacityRows[0]!, registration.member_id))) continue;
+    try {
+      await requireFoundationsRosterPlacement(tx,{access:admissionAccess,experience:admissionExperience,
+        memberId:registration.member_id,override:false,reason:null});
+    } catch(error) {
+      if(error instanceof OpsOperatingRepositoryError && error.code==="conflict") continue;
+      throw error;
+    }
     await tx`
       update experience_registrations registration
       set status = 'registered', promoted_at = statement_timestamp(),
@@ -1544,6 +1553,67 @@ export async function transitionOpsExperience(input: {
   });
 }
 
+async function requireFoundationsRosterPlacement(tx: postgres.TransactionSql,input: {
+  access: EventOperatorAccess; experience: ExperienceAccessRow; memberId: string|null; override: boolean; reason: string|null;
+}) {
+  if (!input.memberId) return;
+  const [schema]=await tx`select to_regclass('private.member_complimentary_foundations_cohorts') is not null as ready`;
+  if (!schema?.ready) return;
+  const [binding]=await tx<Array<{kind:string;cohortMonth:string}>>`select kind,cohort_month as "cohortMonth"
+    from private.member_email_cadence_event_bindings where experience_id=${input.experience.id}::uuid
+      and track='members' and kind in ('foundations_01','foundations_02','foundations_03','foundations_04')`;
+  if (!binding) return;
+  // The founding team's standing invitations cover every call; they are not
+  // students being moved from one Foundations group to another.
+  if (await memberHasStandingFounderInvitation(tx,input.memberId,true)) return;
+  const [registration]=await tx<Array<{schedule: {cohortMonth:string;callStartsAt:string[]}|null;registeredAt:Date|string|null;completionBasis:string}>>`
+    select registration.registered_at as "registeredAt",registration.completion_basis as "completionBasis",case
+      when private.ruined_member_paid_reservation(registration.member_id) is not null then
+        private.ruined_effective_prepaid_schedule(private.ruined_member_paid_reservation(registration.member_id))
+      when registration.completion_basis='complimentary' then private.ruined_assign_complimentary_foundations(registration.member_id)
+      else private.ruined_complimentary_foundations_schedule(registration.registered_at,null) end as schedule
+    from member_registration_access registration where registration.member_id=${input.memberId}::uuid`;
+  const index=Number(binding.kind.slice(-2))-1;
+  const [target]=await tx<Array<{schedule:{cutoffAt:string}}>>`select private.ruined_complimentary_foundations_schedule(clock_timestamp(),${binding.cohortMonth}) as schedule`;
+  const pastCall=Date.parse(new Date(input.experience.starts_at).toISOString())<=Date.now();
+  const assigned=registration?.schedule;
+  const needsOverride=pastCall || (assigned
+    ? assigned.cohortMonth!==binding.cohortMonth || Date.parse(assigned.callStartsAt[index])!==new Date(input.experience.starts_at).getTime()
+    : Date.now()>=Date.parse(target.schedule.cutoffAt));
+  if (!needsOverride) return;
+  if (!input.override) throw new OpsOperatingRepositoryError("conflict",
+    "This call is outside the member's assigned Foundations group or its signup cutoff. An administrator can approve a Foundations exception with a reason.");
+  if (!input.access.isAdmin) throw new OpsOperatingRepositoryError("forbidden","Only an administrator can approve a Foundations exception.");
+  if (!input.reason || input.reason.trim().length<10) throw new OpsOperatingRepositoryError("invalid_request","Explain the Foundations exception in at least 10 characters.");
+  const changesComplimentaryGroup=registration?.completionBasis==="complimentary" && binding.kind==="foundations_01";
+  if (changesComplimentaryGroup && pastCall) throw new OpsOperatingRepositoryError("conflict","Choose an upcoming Foundations 1 call when changing a complimentary member's group.");
+  await writeOperatorAudit(tx,{actorAuthUserId:input.access.authUserId,action:"experience.foundations_cutoff_override",
+    subjectType:"experience",subjectId:input.experience.id,memberId:input.memberId,reason:input.reason,
+    metadata:{assignedCohort:assigned?.cohortMonth ?? null,invitedCohort:binding.cohortMonth,callOnly:!changesComplimentaryGroup}});
+  return changesComplimentaryGroup ? binding.cohortMonth : undefined;
+}
+
+async function changeComplimentaryFoundationsGroup(tx:postgres.TransactionSql,input:{memberId:string;month:string;actor:string;reason:string}) {
+  // Lock obsolete auto invitations without waiting while the member is locked.
+  // A concurrent calendar/roster edit makes the whole exception retryable.
+  const obsolete=await tx<Array<{id:string;experienceId:string;personId:string}>>`select roster.id,roster.experience_id as "experienceId",roster.person_id as "personId"
+    from experience_registrations roster join experiences event on event.id=roster.experience_id
+    join private.member_email_cadence_event_bindings binding on binding.experience_id=event.id
+    where roster.member_id=${input.memberId}::uuid and roster.status='registered' and roster.source='ops'
+      and roster.metadata->>'source'='complimentary_foundations_cohort' and binding.track='members'
+      and binding.kind in ('foundations_01','foundations_02','foundations_03','foundations_04')
+      and binding.cohort_month<>${input.month} and event.starts_at>statement_timestamp()
+    order by event.id for update of event,roster nowait`;
+  for(const row of obsolete) await tx`select id from experience_calendar_links where experience_id=${row.experienceId}::uuid for update nowait`;
+  await tx`select private.ruined_override_complimentary_foundations(${input.memberId}::uuid,${input.month},${input.actor}::uuid,${input.reason})`;
+  for(const row of obsolete) {
+    await tx`update experience_registrations set status='cancelled',cancelled_at=clock_timestamp(),cancellation_reason=${input.reason},version=version+1,updated_at=clock_timestamp() where id=${row.id}::uuid`;
+    await writeRegistrationEvent(tx,{actorAuthUserId:input.actor,experienceId:row.experienceId,registrationId:row.id,personId:row.personId,
+      previousStatus:"registered",nextStatus:"cancelled",source:"ops",reason:`Foundations group changed: ${input.reason}`});
+    await markOpsExperienceCalendarPending(tx,{actorAuthUserId:input.actor,experienceId:row.experienceId,reason:"attendees"});
+  }
+}
+
 export async function setOpsExperienceRegistration(input: {
   action: "cancel" | "promote" | "register" | "waitlist";
   actorAuthUserId: string;
@@ -1551,6 +1621,7 @@ export async function setOpsExperienceRegistration(input: {
   memberId?: string | null;
   reason?: string;
   registrationId?: string | null;
+  foundationsCutoffOverride?: boolean;
 }): Promise<{ promotedCount: number; registrationId: string; status: string }> {
   const experienceId = requireUuid(input.experienceId, "Experience");
   const registrationId = input.registrationId
@@ -1651,10 +1722,15 @@ export async function setOpsExperienceRegistration(input: {
     }
     // Cancellation and reducing an existing confirmed place to the waitlist are
     // cleanup, not new admission. Keep those available for stale registrations.
+    let complimentaryGroupOverride:string|undefined;
     if (input.action === "register" || input.action === "promote" || (
       input.action === "waitlist" && !["registered", "waitlisted"].includes(current?.status ?? "")
     )) {
       await requireEligibleExperienceMember(tx, experience, memberId ?? current?.member_id ?? null, access.isAdmin ? access.authUserId : undefined);
+      if (current?.status !== "registered") complimentaryGroupOverride=await requireFoundationsRosterPlacement(tx, {
+        access, experience, memberId: memberId ?? current?.member_id ?? null,
+        override: input.foundationsCutoffOverride === true, reason,
+      });
     }
 
     const countRows = await tx<Array<{ registered_count: number }>>`
@@ -1681,6 +1757,9 @@ export async function setOpsExperienceRegistration(input: {
     if (current?.id && current.status === nextStatus) {
       return { promotedCount: 0, registrationId: current.id, status: nextStatus };
     }
+    if(complimentaryGroupOverride && nextStatus==="registered") await changeComplimentaryFoundationsGroup(tx,{
+      memberId:(memberId ?? current?.member_id)!,month:complimentaryGroupOverride,actor:access.authUserId,reason:reason!,
+    });
 
     if (!current?.id) {
       if (!member) {

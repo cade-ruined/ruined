@@ -308,7 +308,10 @@ test("prepaid registration replaces saved-card completion with payment while kee
   assert.match(html, /lower of \$1,500 or the remaining unpaid installments/);
   assert.match(html, /welcome email follows confirmed payment/);
   assert.match(html, /profile opens later by a separate email/);
-  assert.match(html, /signup cutoff is 24 hours before.*Payment must complete before the cutoff; at or after it/);
+  assert.match(html, /Each monthly group closes 24 hours before its first call/);
+  assert.match(html, /payment completed at or after that cutoff carries forward to the next eligible monthly group/);
+  assert.match(html, /service start and renewal dates moved together/);
+  assert.match(html, /You keep your payment; you do not pay again to move groups/);
   assert.doesNotMatch(html, /\$0 today|No payment is taken|Nothing is charged during registration|Save a card to complete registration|No payment is due now/);
   const unavailable = renderToStaticMarkup(React.createElement(c.Overview, { ...props, signupEnabled: false }));
   assert.match(unavailable, /Join the waitlist/);

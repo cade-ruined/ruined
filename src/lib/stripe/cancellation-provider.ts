@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type Stripe from "stripe";
 import { getMembershipPriceConfiguration, getStripe } from "@/lib/stripe/server";
 import { matchesMembershipInvoice, recognizesMembershipSubscription } from "@/lib/stripe/price-policy";
-import { prepaidScheduleFromSubscription, prepaidScheduleFingerprint, normalizePrepaidMembershipInvoiceCoverage } from "@/lib/stripe/prepaid-policy";
+import { prepaidScheduleFromSubscription, prepaidScheduleFingerprint, normalizePrepaidMembershipInvoiceCoverage, matchesCohortRolloverAdjustment } from "@/lib/stripe/prepaid-policy";
 import { MembershipCommitmentError, type CommitmentInvoice, type CommitmentPrestartProviderSnapshot, type CommitmentPrepaidProviderSnapshot,
   type MembershipCommitment } from "@/lib/stripe/commitment-policy";
 
@@ -109,6 +109,7 @@ export async function readCommitmentProviderEvidence(contract: MembershipCommitm
   }
   const invoices: CommitmentInvoice[] = [];
   for await (const invoice of stripe.invoices.list({ subscription: contract.subscriptionId, limit: 100 })) {
+    if (matchesCohortRolloverAdjustment(invoice, subscription)) continue; // A verified zero-dollar extension is not another paid installment.
     if (invoices.length >= 600) throw new MembershipCommitmentError("invoice_history_requires_review");
     if (stripeObjectId(invoice.customer) !== contract.customerId
       || !matchesMembershipInvoice(invoice, subscription, getMembershipPriceConfiguration())

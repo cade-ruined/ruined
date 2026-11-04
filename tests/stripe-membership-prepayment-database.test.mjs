@@ -29,9 +29,9 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   const billing=await load('src/lib/stripe/billing-repository.ts',{'@/lib/membership/commercial-repository':commercial,'@/lib/membership/pricing':pricing,'@/lib/stripe/database':{getBillingDatabase:()=>sql},'@/lib/stripe/membership-state':{normalizeEmail:v=>v.trim().toLowerCase()},'@/lib/platform/calendar-audience-invalidation':invalidation});
   const schedule=schedules.createFoundationsBillingSchedule(new Date(),'monthly');
   const clock=instant=>{Date.now=()=>Date.parse(instant);};
-  async function seed(n,{paidAt=new Date(),persist=true,quoteMinutes=60,acceptedSchedule=schedule,chargePrefix="ch"}={}){
+  async function seed(n,{paidAt=new Date(),persist=true,quoteMinutes=60,acceptedSchedule=schedule,chargePrefix="ch",agreementVersion=4}={}){
     const schedule=acceptedSchedule;
-    const member=id(n),auth=id(n+1),agreement=id(2),acceptance=id(n+3),reservationId=id(n+4),email=`prepaid-${n}@example.test`;
+    const member=id(n),auth=id(n+1),agreement=id(agreementVersion),acceptance=id(n+3),reservationId=id(n+4),email=`prepaid-${n}@example.test`;
     await db.query('insert into ruined_members(id,email,email_normalized) values($1,$2,$2)',[member,email]);
     const person=(await db.query('select person_id from ruined_members where id=$1',[member])).rows[0].person_id;
     await db.query("insert into member_lifecycle(member_id,account_state) values($1,'active')",[member]);
@@ -40,20 +40,20 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
     await db.query("update person_email_addresses set verification_state='verified',verified_at=now() where person_id=$1",[person]);
     await db.query("insert into person_profiles(person_id,display_name) values($1,'Synthetic Member') on conflict(person_id) do update set display_name=excluded.display_name",[person]);
     await db.query("insert into person_private_profiles(person_id,birth_date,default_fulfillment_address) values($1,'1990-01-01','{\"countryCode\":\"US\"}') on conflict(person_id) do update set birth_date=excluded.birth_date,default_fulfillment_address=excluded.default_fulfillment_address",[person]);
-    await db.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',$2,'Test paid terms','Test only',$3,'published',now()) on conflict(id) do nothing",[agreement,2,'a'.repeat(64)]);
+    await db.query("insert into membership_agreement_versions(id,agreement_key,version,title,body_text,content_sha256,status,published_at) values($1,'ruined_membership',$2,'Test paid terms','Test only',$3,'published',now()) on conflict(id) do nothing",[agreement,agreementVersion,'a'.repeat(64)]);
     const age=(await db.query("insert into member_consents(member_id,consent_type,policy_version,accepted_at,dedupe_key) values($1,'age_attestation','test-age',now(),$2) returning id",[member,`age-${n}`])).rows[0].id;
     await db.query(`insert into membership_agreement_acceptances(id,agreement_version_id,person_id,member_id,accepted_by_auth_user_id,age_attestation_id,signer_name_snapshot,signer_email_snapshot,affirmative_action,accepted_at,agreement_key_snapshot,agreement_version_snapshot,agreement_title_snapshot,agreement_content_sha256,agreement_body_snapshot,dedupe_key)
-      values($1,$2,$3,$4,$5,$6,'Synthetic Member',$7,'checkbox_and_submit',now(),'ruined_membership',$8,'Test paid terms',$9,'Test only',$10)`,[acceptance,agreement,person,member,auth,age,email,2,'a'.repeat(64),`acceptance-${n}`]);
+      values($1,$2,$3,$4,$5,$6,'Synthetic Member',$7,'checkbox_and_submit',now(),'ruined_membership',$8,'Test paid terms',$9,'Test only',$10)`,[acceptance,agreement,person,member,auth,age,email,agreementVersion,'a'.repeat(64),`acceptance-${n}`]);
     const quote=await commercial.reserveCommercialMembership({requestId:reservationId,memberId:member,kind:'individual',plan:'monthly',expiresAt:new Date(Date.now()+quoteMinutes*60000),billingSchedule:schedule});
     await commercial.bindCommercialMembershipPrice({reservationId,stripePriceId:'price_prepaid'});
-    const checkout=await billing.reserveMembershipCheckout({acceptanceId:acceptance,attemptId:reservationId,commercialReservationId:reservationId,authUserId:auth,email,plan:'monthly',stripePriceId:'price_prepaid',paidAgreementVersion:"ruined_membership-v2"});
+    const checkout=await billing.reserveMembershipCheckout({acceptanceId:acceptance,attemptId:reservationId,commercialReservationId:reservationId,authUserId:auth,email,plan:'monthly',stripePriceId:'price_prepaid',paidAgreementVersion:`ruined_membership-v${agreementVersion}`});
     assert.deepEqual(checkout.billingSchedule,schedule);assert.equal(checkout.firstChargeAt,null);
     const sub=`sub_prepaid_${n}`,invoice=`in_prepaid_${n}`,customer=`cus_prepaid_${n}`;
     await db.query("insert into stripe_subscriptions(id,member_id,stripe_customer_id,stripe_status,price_id,latest_invoice_id,last_event_created) values($1,$2,$3,'trialing','price_prepaid',$4,1)",[sub,member,customer,invoice]);
     await db.query("update stripe_checkout_attempts set status='completed',stripe_session_id=$2,stripe_subscription_id=$3 where id=$1",[reservationId,`cs_prepaid_${n}`,sub]);
     await db.query('update membership_commercial_reservations set stripe_subscription_id=$2 where id=$1',[reservationId,sub]);
     await db.query("insert into stripe_invoices(id,member_id,stripe_customer_id,stripe_subscription_id,purpose,stripe_status,currency,amount_due,amount_paid,paid_at,last_event_created) values($1,$2,$3,$4,'membership','paid','usd',35900,35900,$5,1)",[invoice,member,customer,sub,paidAt]);
-    const contract={id:reservationId,memberId:member,subscriptionId:sub,customerId:customer,currency:'usd',billingPlan:'monthly',billingTermsVersion:'membership-billing-v2',startsAt:schedule.serviceStartsAt,initialTermEndsAt:schedule.initialTermEndsAt,installmentDues:34900,billingSchedule:schedule};
+    const contract={id:reservationId,agreementVersion:`ruined_membership-v${agreementVersion}`,memberId:member,subscriptionId:sub,customerId:customer,currency:'usd',billingPlan:'monthly',billingTermsVersion:'membership-billing-v2',startsAt:schedule.serviceStartsAt,initialTermEndsAt:schedule.initialTermEndsAt,installmentDues:34900,billingSchedule:schedule};
     await db.query('insert into stripe_membership_commitments(id,member_id,checkout_attempt_id,agreement_acceptance_id,stripe_subscription_id,stripe_customer_id,livemode,terms_snapshot,terms_sha256) values($1,$2,$1,$3,$4,$5,false,$6,$7)',[reservationId,member,acceptance,sub,customer,JSON.stringify(contract),'b'.repeat(64)]);
     const input={reservationId,contractId:reservationId,memberId:member,subscriptionId:sub,invoiceId:invoice,paymentIntentId:`pi_prepaid_${n}`,chargeId:`${chargePrefix}_prepaid_${n}`,serviceStartsAt:schedule.serviceStartsAt,prepaidThrough:schedule.prepaidThrough,duesAmount:34900,amountPaid:35900,currency:'usd',livemode:false,verifiedAt:new Date(Date.now())};
     if(persist)await tx(sql=>billing.recordMembershipPrepayment(sql,input));
@@ -77,6 +77,7 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   }
   const active=await seed(10),refunded=await seed(30,{chargePrefix:"py"}),late=await seed(50,{persist:false}),missed=await seed(70);
   const linked=await seed(150,{persist:false});
+  const rolled=await seed(170,{persist:false,agreementVersion:4});
   const linkPayment={...linked.input,chargeId:'py_3ExampleLinkPayment12345678'};
   for(const chargeId of ['ch_','py_','py__','pi_not_charge','py_bad/slash']) {
     await assert.rejects(tx(sql=>billing.recordMembershipPrepayment(sql,{...linkPayment,chargeId})),/stripe_charge_id_check/);
@@ -159,7 +160,44 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   await db.query('update stripe_invoices set paid_at=$2 where id=$1',[late.invoice,schedule.cutoffAt]);
   await tx(sql=>billing.recordMembershipPrepayment(sql,{...late.input,verifiedAt:new Date(Date.now())}));
   const lateProof=await billing.getMembershipPrepayment(sql,{subscriptionId:late.sub});assert.equal(lateProof.refundState,'review_required');assert.equal(lateProof.reviewReason,'cohort_cutoff_missed');
-  assert.ok((await billing.listMembershipPrepaymentsDue({now:new Date(Date.now())})).some(p=>p.reservationId===late.reservationId),'late prepayments require immediate refund work before service');
+  assert.ok((await billing.listMembershipPrepaymentsDue({now:new Date(Date.now())})).some(p=>p.reservationId===late.reservationId),'late prepayments require immediate cohort reconciliation before service');
+  await db.query('update stripe_invoices set paid_at=$2 where id=$1',[rolled.invoice,schedule.cutoffAt]);
+  await tx(sql=>billing.recordMembershipPrepayment(sql,{...rolled.input,verifiedAt:new Date(Date.now())}));
+  const effective=schedules.resolveFoundationsEnrollmentSchedule(schedule,new Date(schedule.cutoffAt),'monthly');
+  const originalTerms=(await db.query('select terms_snapshot from stripe_membership_commitments where id=$1',[rolled.reservationId])).rows[0].terms_snapshot;
+  const insertRollover=target=>db.query(`insert into private.membership_cohort_rollovers(reservation_id,contract_id,stripe_subscription_id,stripe_invoice_id,paid_at,accepted_schedule,effective_schedule)
+    values($1,$1,$2,$3,$4,$5,$6)`,[rolled.reservationId,rolled.sub,rolled.invoice,schedule.cutoffAt,JSON.stringify(schedule),JSON.stringify(target)]);
+  await assert.rejects(insertRollover(schedules.foundationsBillingScheduleForMonth('2027-05','monthly')),/actual payment time/);
+  await insertRollover(effective);
+  assert.deepEqual((await db.query('select private.ruined_effective_prepaid_schedule($1) as schedule',[rolled.reservationId])).rows[0].schedule,schedule,'Pending provider work cannot move service dates or grant access');
+  await assert.rejects(db.query("update stripe_membership_prepaid_proofs set refund_state='none',review_reason=null where reservation_id=$1",[rolled.reservationId]),/cannot regress/);
+  const evidence={subscriptionId:rolled.sub,invoiceId:rolled.invoice,status:'trialing',trialEnd:effective.prepaidThrough,billingCycleAnchor:effective.nextChargeAt,
+    adjustmentInvoiceId:'in_rollover_zero',latestInvoiceId:'in_rollover_zero',noAdditionalCharges:true,noPendingInvoiceItems:true,amountPaid:35900,paymentIntentId:rolled.input.paymentIntentId,chargeId:rolled.input.chargeId};
+  await assert.rejects(db.query("update private.membership_cohort_rollovers set status='completed',completed_at=now(),provider_evidence=$2 where reservation_id=$1",[rolled.reservationId,JSON.stringify({...evidence,billingCycleAnchor:schedule.nextChargeAt})]),/verified provider billing/);
+  await tx(async sql=>{await sql`update private.membership_cohort_rollovers set status='completed',completed_at=clock_timestamp(),provider_evidence=${sql.json(evidence)}::jsonb where reservation_id=${rolled.reservationId}::uuid`;
+    await sql`update stripe_membership_prepaid_proofs set refund_state='none',review_reason=null where reservation_id=${rolled.reservationId}::uuid`;});
+  assert.deepEqual((await db.query('select private.ruined_effective_prepaid_schedule($1) as schedule',[rolled.reservationId])).rows[0].schedule,effective);
+  const effectiveTerms=(await db.query('select private.ruined_effective_membership_terms($1) as terms',[rolled.reservationId])).rows[0].terms;
+  assert.equal(effectiveTerms.startsAt,effective.serviceStartsAt);assert.equal(effectiveTerms.initialTermEndsAt,effective.initialTermEndsAt);
+  assert.deepEqual((await db.query('select terms_snapshot from stripe_membership_commitments where id=$1',[rolled.reservationId])).rows[0].terms_snapshot,originalTerms,'Signed contract preserved');
+  assert.deepEqual((await db.query('select billing_schedule from membership_commercial_reservations where id=$1',[rolled.reservationId])).rows[0].billing_schedule,schedule);
+  await assert.rejects(db.query("update private.membership_cohort_rollovers set effective_schedule=$2 where reservation_id=$1",[rolled.reservationId,JSON.stringify(schedule)]),/immutable/);
+  await tx(sql=>billing.recordMembershipPrepayment(sql,{...rolled.input,verifiedAt:new Date(Date.now())}));
+  const rolledProof=await billing.getMembershipPrepayment(sql,{reservationId:rolled.reservationId});
+  assert.equal(rolledProof.refundState,'none');assert.equal(rolledProof.serviceStartsAt.toISOString(),effective.serviceStartsAt);
+  clock(new Date(Date.parse(schedule.serviceStartsAt)+1000).toISOString());
+  await assert.rejects(commercial.activateCommercialMembership({reservationId:rolled.reservationId,stripeSubscriptionId:rolled.sub}),/required/,'Old service start must not activate rolled membership');
+  await db.query("insert into stripe_invoices(id,member_id,stripe_customer_id,stripe_subscription_id,purpose,stripe_status,currency,amount_due,amount_paid,paid_at,last_event_created) values('in_rollover_zero',$1,$2,$3,'membership','paid','usd',0,0,$4,2)",[rolled.member,rolled.customer,rolled.sub,new Date(Date.now())]);
+  await db.query("update stripe_subscriptions set latest_invoice_id='in_rollover_zero' where id=$1",[rolled.sub]);
+  clock(new Date(Date.parse(effective.serviceStartsAt)+1000).toISOString());
+  await tx(sql=>billing.recordMembershipPrepayment(sql,{...rolled.input,verifiedAt:new Date(Date.now())}));
+  await commercial.activateCommercialMembership({reservationId:rolled.reservationId,stripeSubscriptionId:rolled.sub});
+  assert.equal((await commercial.getCommercialMembershipReservation(rolled.reservationId)).status,'activated','Exact recorded $0 rollover invoice retains original paid coverage at the effective service start');
+  clock(new Date(Date.parse(effective.prepaidThrough)+1000).toISOString());
+  await tx(sql=>billing.recordMembershipPrepayment(sql,{...rolled.input,verifiedAt:new Date(Date.now())}));
+  await db.query("update stripe_subscriptions set stripe_status='active' where id=$1",[rolled.sub]);
+  await assert.rejects(commercial.activateCommercialMembership({reservationId:rolled.reservationId,stripeSubscriptionId:rolled.sub}),/required/,'The zero-dollar rollover adjustment cannot stand in for a paid renewal after coverage ends');
+
   clock(new Date(Date.parse(schedule.serviceStartsAt)+1000).toISOString());
   await assert.rejects(commercial.activateCommercialMembership({reservationId:active.reservationId,stripeSubscriptionId:active.sub}),/required/,'stale proof cannot activate');
   await tx(sql=>billing.recordMembershipPrepayment(sql,{...active.input,verifiedAt:new Date(Date.now())}));

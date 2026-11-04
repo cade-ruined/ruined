@@ -107,7 +107,7 @@ export async function getMembershipCommitment(tx: CommitmentTransaction, input: 
   memberId: string; subscriptionId: string; livemode: boolean;
 }): Promise<MembershipCommitmentRecord | null> {
   const rows = await tx<Array<{ terms_snapshot: MembershipCommitment; status: MembershipCommitmentRecord["status"]; ledger_revision: number }>>`
-    select terms_snapshot, status, ledger_revision from stripe_membership_commitments
+    select private.ruined_effective_membership_terms(id) as terms_snapshot, status, ledger_revision from stripe_membership_commitments
     where member_id = ${input.memberId}::uuid and stripe_subscription_id = ${input.subscriptionId} and livemode = ${input.livemode}
     for update
   `;
@@ -148,7 +148,7 @@ export type CommitmentReconciliationInput = {
  */
 export async function recordCommitmentReconciliation(tx: CommitmentTransaction, input: CommitmentReconciliationInput): Promise<number> {
   const rows = await tx<Array<{ terms_snapshot: MembershipCommitment; ledger_revision: number }>>`
-    select terms_snapshot, ledger_revision from stripe_membership_commitments where id = ${input.contractId}::uuid for update
+    select private.ruined_effective_membership_terms(id) as terms_snapshot, ledger_revision from stripe_membership_commitments where id = ${input.contractId}::uuid for update
   `;
   const row = rows[0];
   if (!row || row.terms_snapshot.subscriptionId !== input.sourceEvidence.subscriptionId
@@ -310,7 +310,7 @@ export async function confirmMembershipBillingStopped(tx: CommitmentTransaction,
   if (!cancellation) return false;
   const quote = cancellation.quote;
   const contractRows = await tx<Array<{ terms_snapshot: MembershipCommitment; ledger_revision: number }>>`
-    select terms_snapshot, ledger_revision from stripe_membership_commitments where id = ${quote.contractId}::uuid for update
+    select private.ruined_effective_membership_terms(id) as terms_snapshot, ledger_revision from stripe_membership_commitments where id = ${quote.contractId}::uuid for update
   `;
   const contract = contractRows[0];
   const missedCutoff = quote.invalidEnrollmentReason === "cohort_cutoff_missed"

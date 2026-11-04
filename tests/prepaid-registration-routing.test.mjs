@@ -192,6 +192,16 @@ test("paid held registrations can manage cancellation without being sent back to
   assert.equal(component.props.returnedFromCheckout, false);
 });
 
+test("billing page presents the completed rollover schedule without changing the accepted offer", async () => {
+  const next = schedules.createFoundationsBillingSchedule(new Date("2026-11-04T22:00:00Z"), "monthly");
+  const currentOffer = { billingSchedule: schedule, effectiveBillingSchedule: next, firstChargeAt: null };
+  const fixture = await activationPage({ currentOffer });
+  const component = nodes(await fixture.render()).find(node => node.type === Activation);
+  assert.equal(component.props.billingSchedule.cohortMonth, "2026-12");
+  assert.equal(component.props.billingSchedule.nextChargeAt, "2027-01-03T22:00:00.000Z");
+  assert.deepEqual(currentOffer.billingSchedule, schedule);
+});
+
 test("Stripe return still confirms registration when the payment webhook completed before the browser arrived", async () => {
   const fixture = await activationPage({ searchParams: { checkout: "returned" } });
   const component = nodes(await fixture.render()).find(node => node.type === Activation);
@@ -261,6 +271,25 @@ test("normal billing management retains refund controls and never polls or auto-
   assert.ok(nodes(fixture.render()).some(node => node.type === Cancellation));
   assert.deepEqual(fixture.reads, ["/api/stripe/cancellation"]);
   assert.deepEqual(fixture.navigations, []);
+});
+
+test("a cutoff rollover confirms automatically without offering another payment or obsolete service dates", async t => {
+  const fixture = await activationView({ completingRegistration: true, paymentConfirmed: false,
+    billing: { ...commitment, status: "rollover_pending", canCancelBeforeStart: false }, confirmationState: "needs_support" });
+  t.after(fixture.state.dispose);
+  const tree = fixture.render(), copy = visible(tree);
+  assert.match(copy, /Confirming your next Foundations group/);
+  assert.match(copy, /Your payment is saved.*next eligible month/);
+  assert.match(copy, /updates automatically; you do not need to pay again/);
+  assert.doesNotMatch(copy, /Initial commitment ends|Service begins|Billing needs review|couldn’t finish/);
+  assert.equal(nodes(tree).some(node => node.type === JoinForm || node.type === Cancellation), false);
+  assert.deepEqual(fixture.navigations, []);
+  assert.ok([...fixture.timers.values()].some(timer => timer.delay === 10000), "Billing dates refresh without a button click");
+  fixture.setPaymentConfirmed(true);
+  const poll = [...fixture.timers.values()].find(timer => timer.delay === 1500);
+  assert.ok(poll);
+  await poll.callback();
+  assert.deepEqual(fixture.navigations, ["/my/registered"]);
 });
 
 test("new onboarding advances automatically only after the server confirms paid registration", async t => {

@@ -14,6 +14,7 @@ type RegistrationBody = {
   memberId?: unknown;
   reason?: unknown;
   registrationId?: unknown;
+  foundationsCutoffOverride?: unknown;
 };
 
 export async function POST(
@@ -28,7 +29,7 @@ export async function POST(
     return opsJson({ error: "Choose a valid roster action." }, 400);
   }
   if (!Object.keys(body ?? {}).every((key) => (
-    key === "action" || key === "memberId" || key === "reason" || key === "registrationId"
+    key === "action" || key === "memberId" || key === "reason" || key === "registrationId" || key === "foundationsCutoffOverride"
   ))) {
     return opsJson({ error: "That roster action is not valid." }, 400);
   }
@@ -42,6 +43,7 @@ export async function POST(
       memberId: typeof body?.memberId === "string" ? body.memberId : null,
       reason: typeof body?.reason === "string" ? body.reason : "",
       registrationId: typeof body?.registrationId === "string" ? body.registrationId : null,
+      foundationsCutoffOverride: body?.foundationsCutoffOverride === true,
     });
     return opsJson({ registration });
   } catch (error) {

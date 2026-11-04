@@ -74,7 +74,7 @@ export default async function MembershipActivationPage({ searchParams }: {
   }
   const currentOffer = platformUser ? await getCurrentCommercialMembershipReservation(platformUser.memberId) : null;
   const prepaid = isMembershipCohortPrepaymentEnabled();
-  const billingSchedule = currentOffer ? currentOffer.billingSchedule ?? null
+  const billingSchedule = currentOffer ? currentOffer.effectiveBillingSchedule ?? currentOffer.billingSchedule ?? null
     : prepaid ? createFoundationsBillingSchedule(new Date(), initialPlan) : null;
   const firstChargeAt = currentOffer ? currentOffer.firstChargeAt?.toISOString() ?? null
     : billingSchedule ? null : preview ? "2026-11-01T06:00:00.000Z" : getMembershipFirstChargeAt()?.toISOString() ?? null;

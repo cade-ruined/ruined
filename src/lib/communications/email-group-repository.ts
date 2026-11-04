@@ -67,12 +67,12 @@ async function knownPeople(tx: TransactionSql, options: { emails?: string[]; que
 }
 async function paidCohort(tx: TransactionSql, cohortMonth?: string): Promise<EmailGroupMember[]> {
   const rows = await tx<Array<{ email: string; billingPlan: "monthly" | "annual"; schedule: unknown }>>`
-    select member.email_normalized as email,reservation.billing_plan as "billingPlan",reservation.billing_schedule as schedule
+    select member.email_normalized as email,reservation.billing_plan as "billingPlan",private.ruined_effective_prepaid_schedule(reservation.id) as schedule
     from member_registration_access registration join ruined_members member on member.id=registration.member_id and member.deleted_at is null
     join people identity on identity.id=member.person_id and identity.status='active'
     join membership_commercial_reservations reservation on reservation.id=private.ruined_member_paid_reservation(member.id)
     where registration.registered_at is not null and registration.payment_setup_livemode
-      and (${cohortMonth ?? null}::text is null or reservation.billing_schedule->>'cohortMonth'=${cohortMonth ?? null})
+      and (${cohortMonth ?? null}::text is null or private.ruined_effective_prepaid_schedule(reservation.id)->>'cohortMonth'=${cohortMonth ?? null})
       and exists(select 1 from person_email_addresses address where address.person_id=member.person_id
         and address.email_normalized=member.email_normalized and address.verification_state='verified' and address.retired_at is null)
     order by member.id limit ${EMAIL_GROUP_MEMBER_LIMIT + 1}`;
@@ -256,10 +256,10 @@ export async function listEmailGroupRuleOptions(actor: string): Promise<EmailGro
     const calls = await tx<Array<{ id: string; name: string }>>`select id,title || ' · ' || to_char(starts_at at time zone timezone,'YYYY-MM-DD HH24:MI') || ' ' || timezone as name from experiences
       where status='published' and cancelled_at is null and starts_at>statement_timestamp() and ends_at>starts_at
         and visibility<>'public' and registration_mode<>'external' and kind in ('weekly_call','circle_meeting','academy_session','member_event') order by starts_at,id limit 250`;
-    const cohorts = await tx<Array<{ cohortMonth: string; name: string }>>`select distinct reservation.billing_schedule->>'cohortMonth' as "cohortMonth",
-      reservation.billing_schedule->>'cohortMonth' || ' Foundations' as name from member_registration_access registration
+    const cohorts = await tx<Array<{ cohortMonth: string; name: string }>>`select distinct private.ruined_effective_prepaid_schedule(reservation.id)->>'cohortMonth' as "cohortMonth",
+      private.ruined_effective_prepaid_schedule(reservation.id)->>'cohortMonth' || ' Foundations' as name from member_registration_access registration
       join membership_commercial_reservations reservation on reservation.id=private.ruined_member_paid_reservation(registration.member_id)
-      where registration.registered_at is not null and reservation.billing_schedule->>'cohortMonth' ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'
+      where registration.registered_at is not null and private.ruined_effective_prepaid_schedule(reservation.id)->>'cohortMonth' ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'
       order by "cohortMonth" desc limit 100`;
     return { events, calls, cohorts };
   });

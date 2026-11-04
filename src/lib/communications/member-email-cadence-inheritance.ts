@@ -109,8 +109,8 @@ async function enrollPaidCohort(tx: TransactionSql,event: CadenceEventSnapshot,b
   const index=Number(binding.kind.slice(-2))-1;
   const candidates=await tx<Array<{memberId:string}>>`select registration.member_id as "memberId" from member_registration_access registration
     join membership_commercial_reservations reservation on reservation.id=private.ruined_member_paid_reservation(registration.member_id)
-    where registration.registered_at is not null and reservation.billing_schedule->>'cohortMonth'=${binding.cohortMonth}
-      and (reservation.billing_schedule->'callStartsAt'->>${index}::integer)::timestamptz=${event.startsAt}::timestamptz
+    where registration.registered_at is not null and private.ruined_effective_prepaid_schedule(reservation.id)->>'cohortMonth'=${binding.cohortMonth}
+      and (private.ruined_effective_prepaid_schedule(reservation.id)->'callStartsAt'->>${index}::integer)::timestamptz=${event.startsAt}::timestamptz
       and not exists(select 1 from experience_registrations roster where roster.experience_id=${event.id}::uuid and roster.member_id=registration.member_id)
     order by registration.member_id limit 501`;
   if (candidates.length>500) throw new CadenceDeliveryError("roster_exceeds_review_limit",true);
@@ -124,7 +124,7 @@ async function enrollPaidCohort(tx: TransactionSql,event: CadenceEventSnapshot,b
     const existing=await tx`select id from experience_registrations where experience_id=${event.id}::uuid and person_id=${member.personId}::uuid for update`;
     if (existing.length) continue;
     const [paid]=await tx<Array<{id:string;billingPlan:"monthly"|"annual";schedule:unknown}>>`
-      select reservation.id,reservation.billing_plan as "billingPlan",reservation.billing_schedule as schedule
+      select reservation.id,reservation.billing_plan as "billingPlan",private.ruined_effective_prepaid_schedule(reservation.id) as schedule
       from member_registration_access registration
       join membership_commercial_reservations reservation on reservation.id=private.ruined_member_paid_reservation(registration.member_id)
       join membership_commercial_participants participant on participant.reservation_id=reservation.id and participant.member_id=registration.member_id
@@ -158,6 +158,60 @@ async function enrollPaidCohort(tx: TransactionSql,event: CadenceEventSnapshot,b
     await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,member_id,reason,metadata,dedupe_key)
       values(${sequence.approvedBy}::uuid,'experience.registration_registered','experience_registration',${created.id},${candidate.memberId}::uuid,${reason},
         ${tx.json({experienceId:event.id,sequenceId:sequence.id,cohortMonth:binding.cohortMonth})}::jsonb,${`cadence-cohort:${created.id}`})`;
+    enrolled++;
+  }
+  if (enrolled) await markOpsExperienceCalendarPending(tx,{actorAuthUserId:sequence.approvedBy,experienceId:event.id,reason:"attendees"});
+  return enrolled;
+}
+
+/** Complimentary registrations use the same monthly cutoff, pinned at completion.
+ * Existing operator choices (including cancelled and waitlisted calls) win. */
+async function enrollComplimentaryCohort(tx: TransactionSql,event: CadenceEventSnapshot,binding: CadenceEventBinding,sequence: Sequence,deadline: number): Promise<number> {
+  if (!binding.kind.startsWith("foundations_") || binding.track!=="members" || !binding.cohortMonth) return 0;
+  const [schema]=await tx`select to_regclass('private.member_complimentary_foundations_cohorts') is not null as ready`;
+  if (!schema?.ready) return 0;
+  const candidates=await tx<Array<{memberId:string}>>`select registration.member_id as "memberId" from member_registration_access registration
+    left join private.member_complimentary_foundations_cohorts cohort on cohort.member_id=registration.member_id
+    left join lateral (select exception.schedule from private.member_complimentary_foundations_overrides exception
+      where exception.member_id=registration.member_id order by exception.created_at desc,exception.id desc limit 1) placement on true
+    where registration.registered_at is not null and registration.completion_basis='complimentary'
+      and private.ruined_member_registration_ready(registration.member_id)
+      and (private.ruined_member_has_complimentary_funding(registration.member_id) or private.ruined_member_has_operator_funding(registration.member_id))
+      and ((cohort.member_id is not null and coalesce(placement.schedule,cohort.schedule)->>'cohortMonth'=${binding.cohortMonth})
+        or (cohort.member_id is null and (private.ruined_complimentary_foundations_schedule(registration.registered_at,null)->>'cohortMonth'=${binding.cohortMonth}
+          or exists(select 1 from experience_registrations old_roster join private.member_email_cadence_event_bindings old_binding on old_binding.experience_id=old_roster.experience_id
+            where old_roster.member_id=registration.member_id and old_roster.source='ops' and old_roster.status='registered'
+              and old_binding.kind='foundations_01' and old_binding.track='members' and old_binding.cohort_month=${binding.cohortMonth}))))
+      and not exists(select 1 from experience_registrations roster
+        join private.member_email_cadence_event_bindings existing on existing.experience_id=roster.experience_id
+        where roster.member_id=registration.member_id and existing.kind=${binding.kind} and existing.track='members' and existing.cohort_month=${binding.cohortMonth})
+    order by registration.member_id limit 501`;
+  if (candidates.length>500) throw new CadenceDeliveryError("roster_exceeds_review_limit",true);
+  let enrolled=0;
+  const index=Number(binding.kind.slice(-2))-1;
+  for (const candidate of candidates) {
+    if (Date.now()>=deadline) break;
+    await tx`select private.ruined_lock_member_complimentary_funding(${candidate.memberId}::uuid)`;
+    await tx`select private.ruined_lock_member_operator_funding(${candidate.memberId}::uuid)`;
+    const [member]=await tx<Array<{personId:string}>>`select person_id as "personId" from ruined_members where id=${candidate.memberId}::uuid for update`;
+    if (!member) continue;
+    const [assigned]=await tx<Array<{schedule:unknown}>>`select private.ruined_assign_complimentary_foundations(${candidate.memberId}::uuid) as schedule`;
+    const schedule=parseFoundationsBillingSchedule(assigned?.schedule,"monthly");
+    if (!schedule || schedule.cohortMonth!==binding.cohortMonth || schedule.callStartsAt[index]!==event.startsAt
+      || !await memberEligibleForOperatorInvitation(tx,event,candidate.memberId,sequence.approvedBy)) continue;
+    const [capacity]=await tx<Array<{available:boolean}>>`select (capacity is null or capacity>(select count(*) from experience_registrations where experience_id=${event.id}::uuid and status='registered')) as available from experiences where id=${event.id}::uuid`;
+    if (!capacity?.available || Date.now()>=deadline) continue;
+    const [created]=await tx<Array<{id:string}>>`insert into experience_registrations(experience_id,person_id,member_id,status,source,metadata)
+      values(${event.id}::uuid,${member.personId}::uuid,${candidate.memberId}::uuid,'registered','ops',
+        ${tx.json({source:"complimentary_foundations_cohort",sequenceId:sequence.id,cohortMonth:schedule.cohortMonth})}::jsonb)
+      on conflict(experience_id,person_id) do nothing returning id`;
+    if (!created) continue;
+    const reason="Enrolled from the member's completed complimentary registration and Foundations cutoff.";
+    await tx`insert into experience_registration_events(registration_id,experience_id,person_id,previous_status,next_status,source,actor_auth_user_id,reason,dedupe_key)
+      values(${created.id}::uuid,${event.id}::uuid,${member.personId}::uuid,null,'registered','ops',${sequence.approvedBy}::uuid,${reason},${`complimentary-cohort:${created.id}`})`;
+    await tx`insert into operator_audit_events(actor_auth_user_id,action,subject_type,subject_id,member_id,reason,metadata,dedupe_key)
+      values(${sequence.approvedBy}::uuid,'experience.registration_registered','experience_registration',${created.id},${candidate.memberId}::uuid,${reason},
+        ${tx.json({experienceId:event.id,cohortMonth:schedule.cohortMonth,source:"complimentary_foundations_cohort"})}::jsonb,${`complimentary-cohort:${created.id}`})`;
     enrolled++;
   }
   if (enrolled) await markOpsExperienceCalendarPending(tx,{actorAuthUserId:sequence.approvedBy,experienceId:event.id,reason:"attendees"});
@@ -199,9 +253,12 @@ export async function reconcileCadenceInheritance(configuration: CadenceConfigur
           const binding=await classification(tx,event);
           if (!binding || binding.kind!==sequence.kind || binding.track!==sequence.track
             || (existing && (!sameCadenceEvent(event,existing.snapshot.event) || !sameBinding(existing.snapshot.inheritanceBinding,binding)))) return {plans:0,enrolled:0};
-          if (Date.now()>=deadline || !cadenceOccurrences(event,sequence.kind,sequence.track).some(item=>Date.parse(item.dueAt)>Date.now())) return {plans:0,enrolled:0};
+          if (Date.now()>=deadline) return {plans:0,enrolled:0};
+          // Invitations remain useful after the last reminder window. Do not
+          // replay reminders, but do finish genuine late roster enrollment.
+          const futureReminder=cadenceOccurrences(event,sequence.kind,sequence.track).some(item=>Date.parse(item.dueAt)>Date.now());
           let plans=0;
-          if (!existing || existing.sequenceRevision!==sequence.revision) {
+          if (futureReminder && (!existing || existing.sequenceRevision!==sequence.revision)) {
             const plan:InheritedPlan={...sequence.snapshot,eventId:event.id,event,kind:sequence.kind,track:sequence.track,inheritanceBinding:binding};
             if (existing) await tx`update private.member_email_cadence_plans set snapshot=${tx.json(plan)}::jsonb,
               sequence_revision=${sequence.revision},revision=revision+1,activated_at=clock_timestamp(),approved_by=${sequence.approvedBy}::uuid,updated_at=clock_timestamp() where id=${existing.id}::uuid`;
@@ -213,7 +270,9 @@ export async function reconcileCadenceInheritance(configuration: CadenceConfigur
             }
             plans++;
           }
-          return {plans,enrolled:await enrollPaidCohort(tx,event,binding,sequence,deadline)};
+          const paid=await enrollPaidCohort(tx,event,binding,sequence,deadline);
+          const complimentary=await enrollComplimentaryCohort(tx,event,binding,sequence,deadline);
+          return {plans,enrolled:paid+complimentary};
         });
         result.plans+=changes.plans;result.enrolled+=changes.enrolled;
       } catch(error) {

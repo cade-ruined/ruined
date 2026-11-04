@@ -22,6 +22,8 @@ export async function installPaidReservationFunction(db) {
     create table stripe_invoices(id text primary key,member_id uuid,stripe_subscription_id text,stripe_customer_id text,
       stripe_status text,purpose text,amount_paid integer,amount_due integer,currency text,paid_at timestamptz);
   `);
+  await db.exec(`create or replace function private.ruined_effective_prepaid_schedule(target_reservation_id uuid) returns jsonb
+    language sql stable as $$ select billing_schedule from membership_commercial_reservations where id=target_reservation_id $$;`);
   const migration = await readFile(new URL("../../db/migrations/20261007110000_member_payment_evidence.sql", import.meta.url), "utf8");
   const start = migration.indexOf("create function private.ruined_member_paid_reservation(");
   const end = migration.indexOf("$$;", start);

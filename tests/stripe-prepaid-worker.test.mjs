@@ -6,15 +6,16 @@ import ts from 'typescript';
 const source=path=>readFile(new URL(`../${path}`,import.meta.url),'utf8');
 async function load(path,deps,env={}){const code=ts.transpileModule(await source(path),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;const loaded={exports:{}};new Function('require','module','exports','process',code)(name=>{if(name==='server-only')return{};assert.ok(name in deps,name);return deps[name];},loaded,loaded.exports,{env});return loaded.exports;}
 const configured={DATABASE_URL:'in-memory-only',STRIPE_SECRET_KEY:'sk_test_fixture',STRIPE_MEMBERSHIP_ACTIVATION_ENABLED:'false',STRIPE_MEMBERSHIP_COMMERCIAL_ENABLED:'false'};
-async function worker({pending=[],due=[],fail=null,env=configured,limit=5}={}){
+async function worker({pending=[],due=[],fail=null,env=configured,limit=5,legacy=false}={}){
   const calls=[],remaining=[...due];
   const loaded=await load('src/lib/stripe/prepaid-worker.ts',{
     '@/lib/stripe/billing-repository':{listMembershipPrepaymentsDue:async options=>{assert.equal(options.livemode,false);return remaining.slice(0,options.limit);}},
     '@/lib/stripe/server':{getStripeLivemode:()=>false},
     '@/lib/stripe/webhook':{reconcilePrepaidMembershipSubscription:async id=>{calls.push(['reconcile',id]);if(id===fail)throw new Error('Synthetic provider unavailable');const i=remaining.findIndex(row=>row.subscriptionId===id);if(i>=0)remaining.splice(i,1);}},
+    '@/lib/stripe/cohort-rollover':{reconcilePaidFoundationsRollover:async input=>{calls.push(['rollover',input.subscriptionId]);return{handled:true,rolled:!legacy,reviewRequired:legacy};}},
     '@/lib/stripe/cancellation-service':{listPendingPrepaidMembershipCancellations:async()=>pending,
       reconcilePrepaidMembershipCancellation:async input=>{calls.push(['resume',input.subscriptionId]);return{handled:true,pending:true};},
-      refundMissedFoundationsEnrollment:async input=>{calls.push(['invalid-refund',input.subscriptionId]);return{handled:true};}},
+      refundMissedFoundationsEnrollment:()=>assert.fail('A cutoff never starts an automatic cancellation or refund')},
   },env);
   return{result:await loaded.processMembershipPrepayments(limit),calls};
 }
@@ -26,7 +27,12 @@ test('accepted prepaid obligations run with purchase flags off, isolate mode, re
     {subscriptionId:'sub_due',refundState:'none'},
   ]});
   assert.equal(result.ready,true);assert.equal(result.examined,4);assert.equal(result.reconciled,4);assert.equal(result.remainingDue,0);
-  assert.deepEqual(calls,[['resume','sub_pending'],['reconcile','sub_pending'],['invalid-refund','sub_cutoff'],['reconcile','sub_cutoff'],['reconcile','sub_refunded'],['reconcile','sub_due']]);
+  assert.deepEqual(calls,[['resume','sub_pending'],['reconcile','sub_pending'],['rollover','sub_cutoff'],['reconcile','sub_cutoff'],['reconcile','sub_refunded'],['reconcile','sub_due']]);
+});
+test('legacy late payments remain held without automatic refund or activation',async()=>{
+  const {result,calls}=await worker({legacy:true,due:[{subscriptionId:'sub_legacy',refundState:'review_required',reviewReason:'cohort_cutoff_missed'}]});
+  assert.equal(result.manualReview,1);assert.equal(result.cohortsRolled,0);assert.equal(result.remainingDue,1);
+  assert.deepEqual(calls,[['rollover','sub_legacy']]);
 });
 test('pending refunds cannot consume every slot when service starts are due',async()=>{
   const {calls}=await worker({limit:4,pending:[1,2,3,4].map(n=>({subscriptionId:`sub_pending_${n}`,livemode:false})),due:[{subscriptionId:'sub_start',refundState:'none'}]});

@@ -45,6 +45,10 @@ export async function checkStripeMembershipReadiness({ env = process.env, target
   record("Publishable and server keys use the same mode", value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY").startsWith(`pk_${mode}_`));
   record("Live payment release is enabled when using live credentials", mode === "test" || enabled("STRIPE_MEMBERSHIP_LIVE_ENABLED"));
   record("An explicit paid agreement version is configured", /^ruined_membership-v([2-9]|[1-9]\d+)$/.test(value("STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION")));
+  if (enabled("STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED")) {
+    record("Monthly cohort carry-forward is covered by the published paid agreement",
+      /^ruined_membership-v([4-9]|[1-9]\d+)$/.test(value("STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION")));
+  }
   record("Reviewed early-exit invoice collection is configured", value("STRIPE_MEMBERSHIP_BUYOUT_READY") === "true");
   if (activation) {
     record("Member-confirmed activation is enabled", enabled("STRIPE_MEMBERSHIP_ACTIVATION_ENABLED"));

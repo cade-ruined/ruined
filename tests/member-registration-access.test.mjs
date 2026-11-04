@@ -95,7 +95,9 @@ test("registration holds survive launch changes and release profiles only after 
   const legacyCheckoutMigration = "db/migrations/20261007111000_legacy_registration_checkout.sql";
   const operatorCheckoutMigration = "db/migrations/20261022140000_operator_membership_checkout.sql";
   const operatorSavedPaymentMigration = "db/migrations/20261102120000_operator_saved_membership_payment.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const rolloverMigration = "db/migrations/20261104190000_paid_foundations_cohort_rollover.sql";
+  const complimentaryCohortMigration = "db/migrations/20261104190000_complimentary_foundations_cohorts.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,rolloverMigration,complimentaryCohortMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -166,6 +168,8 @@ test("registration holds survive launch changes and release profiles only after 
   await db.exec(read(legacyCheckoutMigration));
   await db.exec(read(operatorCheckoutMigration));
   await db.exec(read(operatorSavedPaymentMigration));
+  await db.exec(read(rolloverMigration));
+  await db.exec(read(complimentaryCohortMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");

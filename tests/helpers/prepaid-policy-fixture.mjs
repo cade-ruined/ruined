@@ -24,6 +24,7 @@ export const prepaidFixtureDependencies = {
   "node:crypto": crypto,
   "@/lib/membership/foundations-schedule": foundationsScheduleFixture,
   "@/lib/stripe/prepaid-policy": prepaidPolicyFixture,
+  "@/lib/stripe/cohort-rollover": { reconcilePaidFoundationsRollover: async () => ({ handled: false, rolled: false, reviewRequired: false }) },
   "./prepaid-policy": prepaidPolicyFixture,
   "@/lib/membership/cohort-prepayment": { isMembershipCohortPrepaymentEnabled: () => false },
 };

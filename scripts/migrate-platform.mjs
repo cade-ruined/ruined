@@ -133,6 +133,8 @@ const migrations = [
   "../db/migrations/20261102120000_operator_saved_membership_payment.sql",
   "../db/migrations/20261102160000_operator_task_dismissal.sql",
   "../db/migrations/20261102201731_member_sms_body_snapshot.sql",
+  "../db/migrations/20261104190000_paid_foundations_cohort_rollover.sql",
+  "../db/migrations/20261104190000_complimentary_foundations_cohorts.sql",
 ];
 
 function migrationBody(migration, migrationName) {

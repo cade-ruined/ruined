@@ -1,4 +1,4 @@
-/** The accepted calendar is immutable; later cutoff changes never move an accepted cohort. */
+/** Keep the accepted offer intact; enrollment can separately carry a late payment forward. */
 export const FOUNDATIONS_BILLING_SCHEDULE_VERSION = "foundations-prepaid-v3" as const;
 export type FoundationsBillingScheduleVersion = "foundations-prepaid-v1" | "foundations-prepaid-v2" | typeof FOUNDATIONS_BILLING_SCHEDULE_VERSION;
 export const FOUNDATIONS_TIME_ZONE = "America/Denver" as const;
@@ -75,12 +75,31 @@ export function createFoundationsBillingSchedule(now: Date, plan: BillingPlan): 
   const local = parts(now);
   const month = `${String(local.year).padStart(4, "0")}-${String(local.month).padStart(2, "0")}`;
   let schedule = foundationsBillingScheduleForMonth(month < MINIMUM_COHORT ? MINIMUM_COHORT : month, plan);
-  if (now.getTime() >= Date.parse(schedule.cutoffAt)) {
+  // When the first call is on the 1st, its cutoff falls in the previous month.
+  // Check the next group as well instead of stopping after one month advance.
+  while (now.getTime() >= Date.parse(schedule.cutoffAt)) {
     const [year, cohortMonth] = schedule.cohortMonth.split("-").map(Number);
     const next = new Date(Date.UTC(year, cohortMonth, 1));
     schedule = foundationsBillingScheduleForMonth(`${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`, plan);
   }
   return schedule;
+}
+/** Resolve from the completion time, never from the time a webhook or worker runs.
+ * Before the cutoff, preserve even an older accepted holiday calendar exactly.
+ * At or after it, carry the payment to the next eligible month without changing
+ * the original offer or moving an explicitly later accepted cohort backwards. */
+export function resolveFoundationsEnrollmentSchedule(
+  accepted: FoundationsBillingSchedule,
+  completedAt: Date,
+  plan: BillingPlan,
+): FoundationsBillingSchedule {
+  const original = parseFoundationsBillingSchedule(accepted, plan);
+  if (!original) throw new RangeError("Invalid accepted Foundations schedule.");
+  if (!(completedAt instanceof Date) || !Number.isFinite(completedAt.getTime())) throw new RangeError("Invalid Foundations completion time.");
+  if (completedAt.getTime() < Date.parse(original.cutoffAt)) return original;
+  const next = createFoundationsBillingSchedule(completedAt, plan);
+  if (next.cohortMonth <= original.cohortMonth) throw new RangeError("Foundations rollover must move to a later group.");
+  return next;
 }
 /** Validate a stored snapshot in full, independently of whether its cutoff has since passed. */
 export function parseFoundationsBillingSchedule(value: unknown, plan: BillingPlan): FoundationsBillingSchedule | null {

@@ -4,7 +4,7 @@ import type { BillingTransaction } from "./billing-repository";
 import { isUuid } from "./membership-state";
 import { readOperatorSavedPaymentBinding } from "./operator-saved-payment-repository";
 import { OPERATOR_SAVED_PAYMENT_AUTHORITY_VERSION } from "./operator-membership-model";
-import { prepaidScheduleFromSubscription, prepaidScheduleFingerprint } from "./prepaid-policy";
+import { acceptedPrepaidScheduleFromSubscription, prepaidScheduleFingerprint, prepaidScheduleFromSubscription } from "./prepaid-policy";
 import type { FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
 
 const id = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id ?? null;
@@ -62,12 +62,12 @@ export async function reconcileOperatorSavedPaymentConsent(tx: BillingTransactio
     agreement_accepted_at: new Date(attempt.agreement_accepted_at).toISOString(),
     billing_consent_at: new Date(attempt.recurring_payment_accepted_at).toISOString(),
   };
-  const schedule = prepaidScheduleFromSubscription(subscription);
+  const schedule = acceptedPrepaidScheduleFromSubscription(subscription);
   if (Object.entries(expected).some(([key, value]) => subscription.metadata[key] !== value)
     || subscription.livemode !== binding.livemode || id(subscription.customer) !== binding.customerId
     || subscription.collection_method !== "charge_automatically" || subscription.automatic_tax.enabled !== binding.automaticTaxEnabled
     || subscription.items.has_more || subscription.items.data.length !== 1 || subscription.items.data[0].price.id !== attempt.stripe_price_id
-    || subscription.items.data[0].quantity !== 1 || !schedule || !attempt.billing_schedule
+    || subscription.items.data[0].quantity !== 1 || !schedule || !prepaidScheduleFromSubscription(subscription) || !attempt.billing_schedule
     || prepaidScheduleFingerprint(schedule) !== prepaidScheduleFingerprint(attempt.billing_schedule)
     // Later card updates must remain possible once the original subscription is pinned.
     || !binding.subscriptionId && id(subscription.default_payment_method) !== binding.paymentMethodId) return mismatch();

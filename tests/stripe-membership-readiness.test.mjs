@@ -62,6 +62,15 @@ test("sandbox readiness does not demand a live-release flag but uses matching te
   assert.equal((await f.check()).ready, true);
 });
 
+test("cohort carry-forward release requires the updated agreement instead of silently changing old terms", async () => {
+  for (const version of ["ruined_membership-v2", "ruined_membership-v3", "ruined_membership-v4"]) {
+    const result = await fixture({ STRIPE_MEMBERSHIP_COHORT_PREPAYMENT_ENABLED: "true", STRIPE_MEMBERSHIP_PAID_AGREEMENT_VERSION: version }).check();
+    const gate = result.checks.find(check => check.name === "Monthly cohort carry-forward is covered by the published paid agreement");
+    assert.equal(gate.passed, version === "ruined_membership-v4");
+    assert.equal(result.ready, version === "ruined_membership-v4");
+  }
+});
+
 test("tax configuration is checked only when automatic tax is explicitly enabled", async () => {
   const f = fixture({ STRIPE_TAX_ENABLED: "true", STRIPE_MEMBERSHIP_BUYOUT_TAX_CODE: "txcd_reviewed" });
   assert.equal((await f.check()).ready, false); assert.equal(f.taxReads(), 1);
