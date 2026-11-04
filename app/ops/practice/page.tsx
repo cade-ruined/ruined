@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import OperatorPracticeReleases from "@/components/platform/OperatorPracticeReleases";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getOperatorAccessContext } from "@/lib/platform/page-data";
-export const metadata: Metadata = { title: "Practice releases" };
+export const metadata: Metadata = { title: "The Work releases" };
 export const dynamic = "force-dynamic";
 export default async function OperationsPracticePage() {
   const context = await getOperatorAccessContext();

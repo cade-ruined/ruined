@@ -30,7 +30,7 @@ const expectedDestinations = {
   "/my/timeline": "Timeline",
   "/my/circle": "Circle",
   "/my/experiences": "Calendar",
-  "/my/practice": "Practice",
+  "/my/practice": "The Work",
   "/my/learn": "Academy",
   "/my/updates": "Updates",
   "/my/profile": "Edit profile",

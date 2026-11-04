@@ -113,7 +113,7 @@ test("paid active membership is a server-side boundary for private member areas"
   );
 
   // The replacement Practice destination retains authenticated member gates.
-  assert.match(memberPracticePage, /getMembershipPageContext\(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "Practice"\)/);
+  assert.match(memberPracticePage, /getMembershipPageContext\(PREVIEW_MEMBER_IDENTITY, getMemberIdentity, "The Work"\)/);
   assert.match(memberPracticePage, /context\.state === "signed_out"\) redirect\("\/my\/access"\)/);
   assert.match(memberPracticePage, /context\.state === "denied"\) return <PlatformUnavailable reason="member_access"/);
   assert.match(memberPracticePage, /if \(!context\.viewer\)/);

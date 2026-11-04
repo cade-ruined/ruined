@@ -52,7 +52,7 @@ export const validPracticeRevision = (value: unknown): value is string => typeof
 
 export function parsePracticeAction(value: unknown): PracticeAction {
   if (!object(value) || typeof value.action !== "string" || !text(value.ownerId, 36) || !UUID.test(value.ownerId)
-    || !validPracticeRevision(value.expectedRevision)) throw new PracticeError(400, "A valid Practice action is required.");
+    || !validPracticeRevision(value.expectedRevision)) throw new PracticeError(400, "A valid action is required.");
   const keepTimeline = value.action === "keep_timeline_entry";
   if (!keys(value, ["action", "ownerId", "expectedRevision", "fields"], keepTimeline ? ["expectedTimelineRevision"] : [])
     || (keepTimeline && !validPracticeRevision(value.expectedTimelineRevision)) || !object(value.fields)) {
@@ -83,7 +83,7 @@ export function parsePracticeAction(value: unknown): PracticeAction {
       || fields.category === fields.sourceCategory || fields.minutes <= 0 || fields.minutes > fields.sourceMinutes)) {
       throw new PracticeError(400, "Choose your action and fund its time from a different area of your week.");
     }
-  } else throw new PracticeError(400, "That Practice action is not supported.");
+  } else throw new PracticeError(400, "That action is not supported.");
   return value as PracticeAction;
 }
 
