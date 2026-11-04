@@ -47,7 +47,7 @@ test("Foundations work links open the private assignment while preserving explic
   await assert.rejects(page({ searchParams: Promise.resolve({ new: "1" }) }), { href: "/my/practice?course=f1" });
   await assert.rejects(page({ searchParams: Promise.resolve({ moment: "entry-id" }) }), { href: "/my/timeline?moment=entry-id" });
   const overview = load("app/my/foundations/timeline/page.tsx", { "next/navigation": { redirect } }).default;
-  await assert.rejects(overview(), { href: "/my/practice?course=f1" });
+  await assert.rejects(overview({}), { href: "/my/practice?course=f1" });
   await assert.rejects(overview({ searchParams: Promise.resolve({ moment: "entry-id" }) }), { href: "/my/timeline?moment=entry-id" });
 });
 
