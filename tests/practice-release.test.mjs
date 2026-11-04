@@ -35,8 +35,13 @@ async function fixture(t) {
  return {...f,repository,worker,state,sends,providerChecks,release,rows};
 }
 
-test('recap copy is generic, escaped, points to the member assignment, and contains no remote imagery',()=>{
- for(const course of ['f1','f4','time']){const p=email.renderPracticeRecap(course,'<private name>','member@example.test','Ruined <hello@example.test>');assert.match(p.html,/&lt;private name&gt;/);assert.doesNotMatch(p.html,/<img|<private name>/);assert.match(p.text,new RegExp('/my/practice\\?course='+course));}
+test('recap copy is escaped, points to The Work, and uses only the course badge image',()=>{
+ for(const course of ['f1','f4','time']){
+  const p=email.renderPracticeRecap(course,'<private name>','member@example.test','Ruined <hello@example.test>');
+  assert.match(p.html,/&lt;private name&gt;/);assert.doesNotMatch(p.html,/<private name>/);assert.match(p.text,new RegExp('/my/practice\\?course='+course));
+  const images=[...p.html.matchAll(/<img\b[^>]*src="([^"]+)"/g)].map(match=>match[1]);
+  assert.deepEqual(images,course==='time'?[]:[`https://members.theruinedproject.com/membership/badges/foundations-${course}-v1.png`]);
+ }
  assert.equal(model.isPracticeReleaseCourse('f2'),false);assert.equal(model.isPracticeReleaseCourse('f3'),false);
  assert.equal(model.practiceDeliveryMustStop(6,null),true);assert.equal(model.practiceDeliveryMustStop(2,new Date(Date.now()-24*60*60_000)),true);
 });

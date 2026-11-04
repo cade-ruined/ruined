@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
 
 import type { MemberTimelineEntry } from "@/lib/membership/model";
 import { PRACTICE_CATEGORIES, type PracticeAction, type PracticeCourse, type PracticeSnapshot, type PracticeTimeFields, type PracticeTimelineDraft } from "@/lib/practice/model";
@@ -28,7 +29,9 @@ const categoryLabel = (id: string) => PRACTICE_CATEGORIES.find(category => categ
 const duration = (minutes: number) => `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}h` : ""}${minutes % 60 ? `${minutes >= 60 ? " " : ""}${minutes % 60}m` : ""}` || "0m";
 
 function Badge({ course, earned = false }: { course: PracticeCourse; earned?: boolean }) {
-  return <span className={`${styles.badge} ${course === "time" ? styles.badgeTime : ""} ${earned ? styles.earned : ""}`} role="img" aria-label={`${course.toUpperCase()} Badge${earned ? " earned" : " not yet earned"}`}>{course.toUpperCase()}</span>;
+  return <span className={`${styles.badge} ${course === "time" ? styles.badgeTime : styles.badgeArtwork} ${earned ? styles.earned : ""}`} role="img" aria-label={`${course.toUpperCase()} Badge${earned ? " earned" : " not yet earned"}`}>
+    {course === "time" ? "TIME" : <Image src={`/membership/badges/foundations-${course}-v1.png`} alt="" width={160} height={160} sizes="(max-width: 640px) 74px, 112px" draggable={false} />}
+  </span>;
 }
 function Lock() {
   return <svg className={styles.lock} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" role="img" aria-label="Locked"><path d="M8 10V7a4 4 0 0 1 8 0v3" /><rect x="5" y="10" width="14" height="11" rx="1" /></svg>;

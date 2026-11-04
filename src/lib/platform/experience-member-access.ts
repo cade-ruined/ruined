@@ -40,13 +40,25 @@ export async function getStandingFounderInvitationMemberIds(
   return [...new Set((await standingFounderMembers(tx, null, lockEvidence)).map(row => row.id))];
 }
 
+/** Reminder enrollment follows the current invitation, never a backfilled call roster. */
+export async function getStandingFounderInvitationEnrolledAt(
+  tx: postgres.Sql | postgres.TransactionSql,
+  memberId: string,
+  lockEvidence = false,
+): Promise<Date | string | null> {
+  return (await standingFounderMembers(tx, memberId, lockEvidence, true))[0]?.enrolledAt ?? null;
+}
+
 async function standingFounderMembers(
   tx: postgres.Sql | postgres.TransactionSql,
   memberId: string | null,
   lockEvidence: boolean,
-): Promise<Array<{ id: string }>> {
-  return tx<Array<{ id: string }>>`
-    select member.id
+  includeEnrollment = false,
+): Promise<Array<{ id: string; enrolledAt?: Date | string }>> {
+  return tx<Array<{ id: string; enrolledAt?: Date | string }>>`
+    select member.id ${includeEnrollment
+      ? tx`, greatest(assignment.assigned_at,circle.activated_at,member_grant.granted_at,admin_grant.granted_at) as "enrolledAt"`
+      : tx``}
     from ruined_members member
     join people person on person.id = member.person_id and person.status = 'active'
     join member_lifecycle lifecycle on lifecycle.member_id = member.id
@@ -267,14 +279,25 @@ export async function memberEligibleForExperienceSnapshot(
   return evaluateExperienceMemberAccess(tx, experience, memberId, false);
 }
 
+/** Lets reminders distinguish ordinary call access from the additional standing invitation. */
+export async function memberEligibleForExperienceWithoutStandingInvitation(
+  tx: postgres.TransactionSql,
+  experience: ExperienceMemberAudience,
+  memberId: string | null,
+  lockEvidence = false,
+): Promise<boolean> {
+  return evaluateExperienceMemberAccess(tx, experience, memberId, lockEvidence, false);
+}
+
 async function evaluateExperienceMemberAccess(
   tx: postgres.TransactionSql,
   experience: ExperienceMemberAudience,
   memberId: string | null,
   lockEvidence: boolean,
+  allowStandingInvitation = true,
 ): Promise<boolean> {
   if (!memberId) return false;
-  if (await memberHasStandingFounderInvitation(tx, memberId, lockEvidence)) {
+  if (allowStandingInvitation && await memberHasStandingFounderInvitation(tx, memberId, lockEvidence)) {
     const standingInvitation = await standingFounderExperienceAvailable(tx, experience.id ?? experience.experience_id, memberId, lockEvidence);
     if (standingInvitation !== null) return standingInvitation;
   }

@@ -72,6 +72,7 @@ function fixture({ initial = snapshot(), initialArea, initialCourse, connected =
   new Function("require", "module", "exports", "window", "document", "fetch", "CustomEvent", output)(name => {
     if (name === "react") return react;
     if (name === "react/jsx-runtime") return require(name);
+    if (name === "next/image") return { __esModule: true, default: "img" };
     if (name === "@/lib/practice/model") return model;
     if (name === "./MemberPracticeDraftState") return { usePracticeDraftStore: () => draftStore };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, property) => property }) };

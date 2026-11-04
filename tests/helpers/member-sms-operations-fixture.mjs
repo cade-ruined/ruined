@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { configuration, id, loader, read, installMemberSmsTemplateFixture } from "./member-sms-fixture.mjs";
 import { installMemberSmsFundingFixture } from "./member-sms-funding-fixture.mjs";
 import { installCircleRevealFunction } from "./circle-reveal-fixture.mjs";
-import { installOperatorFundingFunctions } from "./operator-funding-fixture.mjs";
+import { installCurrentOperatorFundingFunctions } from "./operator-funding-fixture.mjs";
 function sqlBridge(engine, queries, readOnly = false) {
   class Query {
     constructor(strings, values) { this.strings = strings; this.values = values; }
@@ -44,7 +44,7 @@ export async function operationsFixture() {
     create table person_private_profiles(person_id uuid primary key,mobile_e164 text);
     create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
     create table platform_users(auth_user_id uuid primary key,member_id uuid,person_id uuid,status text,email_normalized text);
-    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz);
+    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz,granted_at timestamptz default statement_timestamp()-interval '2 days');
     create table member_lifecycle(member_id uuid primary key,account_state text,administrative_onboarding_state text,
       billing_state text,cancellation_effective_at timestamptz,foundations_state text,program_state text,standing_state text,current_progression_level_slug text);
     create table member_registration_access(member_id uuid primary key,profile_activated_at timestamptz);
@@ -54,7 +54,7 @@ export async function operationsFixture() {
     create table circle_member_assignments(id bigint generated always as identity primary key,member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table membership_blocks(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
-    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text);
+    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text,track text default 'members');
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
       progression_level_slug text,registration_mode text,status text,starts_at timestamptz,cancelled_at timestamptz);
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,member_id uuid,status text,source text default 'member');
@@ -63,7 +63,7 @@ export async function operationsFixture() {
   const profileMigration = read("db/migrations/20260930140000_member_registration_access.sql");
   const start = profileMigration.indexOf("create function private.ruined_member_profile_released(");
   await db.exec(profileMigration.slice(start, profileMigration.indexOf("$$;", start) + 3));
-  await installOperatorFundingFunctions(db);
+  await installCurrentOperatorFundingFunctions(db);
   await installMemberSmsFundingFixture(db);
   await installCircleRevealFunction(db);
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));

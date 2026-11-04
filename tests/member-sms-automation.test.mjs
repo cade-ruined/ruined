@@ -4,7 +4,7 @@ import { installMemberSmsFundingFixture } from "./helpers/member-sms-funding-fix
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { configuration, id, sid, loader, read, installMemberSmsTemplateFixture } from "./helpers/member-sms-fixture.mjs";
-import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
+import { installCurrentOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 
 // Lazy fragments reproduce postgres-js nested SQL without opening a network client.
 function sqlBridge(engine, testClock = () => null) {
@@ -65,7 +65,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     create table person_private_profiles(person_id uuid primary key,mobile_e164 text);
     create table person_email_addresses(person_id uuid,email_normalized text,is_primary boolean,retired_at timestamptz,verification_state text);
     create table platform_users(auth_user_id uuid primary key,member_id uuid,person_id uuid,status text,email_normalized text);
-    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz);
+    create table platform_role_grants(id uuid primary key default gen_random_uuid(),auth_user_id uuid,role_slug text,revoked_at timestamptz,granted_at timestamptz default statement_timestamp()-interval '2 days');
     create table member_lifecycle(member_id uuid primary key,account_state text,administrative_onboarding_state text,
       billing_state text,cancellation_effective_at timestamptz,foundations_state text,program_state text,standing_state text,current_progression_level_slug text);
     create table member_registration_access(member_id uuid primary key,profile_activated_at timestamptz);
@@ -75,7 +75,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     create table circle_member_assignments(id bigint generated always as identity primary key,member_id uuid,circle_id uuid,ended_at timestamptz,assigned_at timestamptz);
     create table membership_blocks(id uuid primary key,status text,activated_at timestamptz,ends_at timestamptz);
     create table block_circle_assignments(id uuid primary key default gen_random_uuid(),circle_id uuid,block_id uuid,ended_at timestamptz,assigned_at timestamptz);
-    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text);
+    create table private.member_email_cadence_event_bindings(experience_id uuid primary key,kind text,track text default 'members');
     create table experiences(id uuid primary key,title text,timezone text,kind text,visibility text,circle_id uuid,block_id uuid,
       progression_level_slug text,registration_mode text,status text,starts_at timestamptz,cancelled_at timestamptz);
     create table experience_registrations(id uuid primary key default gen_random_uuid(),experience_id uuid,person_id uuid,member_id uuid,status text,source text default 'member');
@@ -84,7 +84,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
   const profileMigration = read("db/migrations/20260930140000_member_registration_access.sql");
   const start = profileMigration.indexOf("create function private.ruined_member_profile_released(");
   await db.exec(profileMigration.slice(start, profileMigration.indexOf("$$;", start) + 3));
-  await installOperatorFundingFunctions(db);
+  await installCurrentOperatorFundingFunctions(db);
   await installMemberSmsFundingFixture(db);
   await installCircleRevealFunction(db);
   await db.exec(read("db/migrations/20261008220000_member_sms_transport.sql"));
@@ -140,6 +140,13 @@ test("durable SMS automation exercises current calendar access and no-retry beha
       values($1,$2,'opt_in_confirmation',$3,$4,$5,'accepted',$6)`,
     [m.memberId, `consent:${consentId}`, m.phone, consentId, "0".repeat(64), sid(serial++)]);
   }
+  async function standingFounder(m) {
+    const circle="e140cf3c-dd56-4164-b7e4-6c97fbd39d3e";
+    await db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[m.authId]);
+    await db.query("update member_lifecycle set billing_state='pending' where member_id=$1",[m.memberId]);
+    await db.query("insert into circles(id,status,activated_at) values($1,'active',$2) on conflict do nothing",[circle,ago(2880)]);
+    await db.query("insert into circle_member_assignments(member_id,circle_id,assigned_at) values($1,$2,$3)",[m.memberId,circle,ago(2880)]);
+  }
   async function reset() {
     await db.exec(`truncate private.member_sms_automation_jobs,private.member_sms_delivery_attempts,private.member_sms_inbound_receipts,
       private.member_sms_phone_suppressions,member_consents,ruined_members,people,person_private_profiles,person_email_addresses,platform_users,platform_role_grants,
@@ -172,6 +179,77 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     assert.match(sends[0].body, /You opted in/);
     assert.equal((await db.query("select reminder_key from private.member_sms_delivery_attempts")).rows[0].reminder_key, `consent:${consentId}`);
     assert.equal((await automation.runMemberSmsAutomation()).processed, 0);
+  });
+  await t.test("current operator funding works without Stripe and only the standing team receives unrostered private calls", async () => {
+    await reset(); const m=await member(); await consent(m); await standingFounder(m); const e=await event();
+    await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+    const [funding]=(await db.query("select private.ruined_member_has_complimentary_funding($1) as eligible",[m.memberId])).rows;
+    assert.equal(funding.eligible,true,"the shipped complimentary predicate already composes operator funding");
+    const result=await automation.runMemberSmsAutomation(); assert.equal(result.accepted,1); assert.equal(sends.length,2);
+    assert.equal((await db.query("select count(*)::int n from experience_registrations")).rows[0].n,0);
+    await reset(); const operator=await member(); await consent(operator); await standingFounder(operator);
+    await db.query("delete from circle_member_assignments where member_id=$1",[operator.memberId]);
+    const privateCall=await event(); await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[privateCall.eventId]);
+    await automation.runMemberSmsAutomation(); assert.equal(sends.length,0,"ops_admin alone is not a private-call invitation");
+  });
+  await t.test("standing team reminders preserve roster choices and public/external registration requirements", async () => {
+    for (const status of ["cancelled","waitlisted","attended"]) {
+      await reset(); const m=await member(); await consent(m); await standingFounder(m); const e=await event();
+      await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+      await db.query("insert into experience_registrations(experience_id,person_id,status) values($1,$2,$3)",[e.eventId,m.personId,status]);
+      await automation.runMemberSmsAutomation(); assert.equal(sends.length,0);
+    }
+    for (const [visibility,mode] of [["public","internal"],["all_members","external"]]) {
+      await reset(); const m=await member(); await consent(m); await standingFounder(m); const e=await event();
+      await db.query("update experiences set visibility=$2,registration_mode=$3 where id=$1",[e.eventId,visibility,mode]);
+      await automation.runMemberSmsAutomation(); assert.equal(sends.length,0);
+    }
+  });
+  await t.test("queued standing team reminders recheck revoked funding, invitation, standing and consent", async () => {
+    for (const revoke of [
+      m=>db.query("update platform_role_grants set revoked_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]),
+      m=>db.query("update circle_member_assignments set ended_at=clock_timestamp() where member_id=$1",[m.memberId]),
+      m=>db.query("update member_lifecycle set standing_state='paused' where member_id=$1",[m.memberId]),
+      m=>consent(m,ago(0),{decision:"withdrawn"}),
+      m=>db.query("insert into private.member_sms_phone_suppressions(phone_e164,latest_message_sid) values($1,$2)",[m.phone,sid(serial++)]),
+    ]) {
+      await reset(); const m=await member(); const consentId=await consent(m); await acceptedConfirmation(m,consentId); await standingFounder(m);
+      const e=await event(); await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+      const {input,options}=await nextReminder(); const reservation=await transport.reserveMemberSmsAttempt(sql,input,"fixture",options);
+      assert.ok(reservation.attemptId); await revoke(m);
+      assert.equal((await transport.dispatchReservedMemberSms(sql,input,reservation,()=>assert.fail("revoked team reminder"),options)).status,"blocked");
+    }
+  });
+  await t.test("founder test SMS requires its explicit admin roster and cannot inherit a standing invitation", async () => {
+    for (const source of [null,"member","ops"]) {
+      await reset(); const m=await member(); await consent(m); await standingFounder(m); const e=await event();
+      await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+      await db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind,track) values($1,'foundations_02','founder_test')",[e.eventId]);
+      if (source) await db.query("insert into experience_registrations(experience_id,person_id,member_id,status,source) values($1,$2,$3,'registered',$4)",[e.eventId,m.personId,m.memberId,source]);
+      const result=await automation.runMemberSmsAutomation(); assert.equal(result.accepted,source==="ops"?1:0);
+    }
+    await reset();const m=await member();const c=await consent(m);await acceptedConfirmation(m,c);await standingFounder(m);const e=await event();
+    await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+    const {input,options}=await nextReminder();const reservation=await transport.reserveMemberSmsAttempt(sql,input,"fixture",options);assert.ok(reservation.attemptId);
+    await db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind,track) values($1,'foundations_02','founder_test')",[e.eventId]);
+    assert.equal((await transport.dispatchReservedMemberSms(sql,input,reservation,()=>assert.fail("test audience changed"),options)).status,"blocked");
+  });
+  await t.test("a new standing invitation cannot authorize an existing SMS occurrence", async () => {
+    for (const lateEvidence of [
+      m=>db.query("update circle_member_assignments set assigned_at=clock_timestamp() where member_id=$1",[m.memberId]),
+      m=>db.query("update platform_role_grants set granted_at=clock_timestamp() where auth_user_id=$1 and role_slug='ops_admin'",[m.authId]),
+      ()=>db.query("update circles set activated_at=clock_timestamp()"),
+    ]) {
+      await reset();const m=await member();const c=await consent(m);await acceptedConfirmation(m,c);await standingFounder(m);const e=await event();
+      await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
+      const {input,options}=await nextReminder();const reservation=await transport.reserveMemberSmsAttempt(sql,input,"fixture",options);assert.ok(reservation.attemptId);
+      await lateEvidence(m);
+      assert.equal((await transport.dispatchReservedMemberSms(sql,input,reservation,()=>assert.fail("late invitation"),options)).status,"blocked");
+    }
+    await reset();const m=await member();await consent(m);await standingFounder(m);const e=await event();
+    await db.query("update experiences set visibility='circle',circle_id=$2 where id=$1",[e.eventId,id(serial++)]);
+    await db.query("update circle_member_assignments set assigned_at=clock_timestamp() where member_id=$1",[m.memberId]);
+    await automation.runMemberSmsAutomation();assert.equal(sends.length,0,"scope-only standing access also respects its enrollment time");
   });
   await t.test("one hour call reminder includes local time/calendar link and replays never send twice", async () => {
     await reset(); const m = await member(); await consent(m); await event();
@@ -225,7 +303,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
   await t.test("day-before respects the same explicit Foundations binding and confirmed audience", async () => {
     await reset(); const m = await member(); await consent(m); const e = await event({ startsAt: ago(-1438), title: "Foundations 01" });
     await db.exec("update private.member_sms_templates set enabled=true where id='day_before'");
-    await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')", [e.eventId]);
+    await db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')", [e.eventId]);
     assert.equal((await automation.runMemberSmsAutomation()).queued, 0, "invalid Foundations binding cannot fall back to a public reminder");
     await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1", [e.eventId]);
     assert.equal((await automation.runMemberSmsAutomation()).accepted, 0, "confirmed invitation is required");
@@ -267,7 +345,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     for (const minutes of [151,148,139,58]) {
       await reset(); const m=await member(); await consent(m); const e=await event({ startsAt:ago(-minutes), title:"First call" });
       await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
-      await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[e.eventId]);
+      await db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')",[e.eventId]);
       await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')",[e.eventId,m.personId]);
       const result=await automation.runMemberSmsAutomation();
       assert.equal(result.accepted,minutes===148 ? 1 : 0, `${minutes} minutes`);
@@ -293,7 +371,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
       await reset(); const m=await member(); const consentId=await consent(m); await acceptedConfirmation(m,consentId);
       const e=await event({startsAt:ago(-148)});
       await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
-      await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[e.eventId]);
+      await db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')",[e.eventId]);
       await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')",[e.eventId,m.personId]);
       const {input,options}=await nextReminder();const reservation=await transport.reserveMemberSmsAttempt(sql,input,"fixture",options);
       assert.ok(reservation.attemptId);await mutation(m,e);
@@ -301,7 +379,7 @@ test("durable SMS automation exercises current calendar access and no-retry beha
     }
     await reset();const m=await member();const e=await event({startsAt:ago(-148)});
     await db.query("update experiences set visibility='invite_only',registration_mode='internal' where id=$1",[e.eventId]);
-    await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01')",[e.eventId]);
+    await db.query("insert into private.member_email_cadence_event_bindings(experience_id,kind) values($1,'foundations_01')",[e.eventId]);
     await db.query("insert into experience_registrations(experience_id,person_id,status,source) values($1,$2,'registered','ops')",[e.eventId,m.personId]);
     assert.equal((await automation.runMemberSmsAutomation()).processed,0,"explicit roster never implies SMS consent");
   });
