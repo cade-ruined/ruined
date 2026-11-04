@@ -24,7 +24,7 @@ test("the legacy presentation URL keeps the independently gated complete deck", 
 });
 test("legacy Foundations work links use authorized Practice while explicit moment links retain owner routing", async () => {
   const overview = load("app/my/foundations/timeline/page.tsx");
-  await assert.rejects(overview(), /^Error: redirect:\/my\/practice\?course=f1$/);
+  await assert.rejects(overview({}), /^Error: redirect:\/my\/practice\?course=f1$/);
   await assert.rejects(overview({ searchParams: Promise.resolve({ moment: "old&moment" }) }), /^Error: redirect:\/my\/timeline\?moment=old%26moment$/);
   const partOne = load("app/my/foundations/timeline/part-1/page.tsx");
   await assert.rejects(partOne({ searchParams: Promise.resolve({ new: "1" }) }), /^Error: redirect:\/my\/practice\?course=f1$/);
