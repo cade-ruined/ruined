@@ -87,8 +87,9 @@ export async function reconcileMemberBadgeCollection(tx: TransactionSql, memberI
   await reconcileMemberBadges(tx, memberId);
   await tx`
     insert into member_badge_awards(member_id, badge_key, earned_at, source_event_id, rule_version, public_visible)
-    select ${memberId}::uuid, progress.badge_key, progress.earned_at, progress.source_event_id, 1,
-      progress.badge_key <> 'first-words'
+    select ${memberId}::uuid, progress.badge_key, progress.earned_at, progress.source_event_id,
+      case when progress.badge_key in ('your-story','foundations-4','time-2026-12') then 2 else 1 end,
+      progress.badge_key not in ('first-words','foundations-4','time-2026-12')
     from private.ruined_member_badge_progress(${memberId}::uuid) progress
     where progress.progress >= progress.target and progress.earned_at is not null
       and progress.earned_at <= statement_timestamp()

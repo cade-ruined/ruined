@@ -1,0 +1,2 @@
+import {monthlyDeck,mountMonthlyDeck,cleanMonthlyDeckPosition} from './monthly-deck.js';
+const key=document.body.dataset.resumeKey;let saved;try{saved=JSON.parse(sessionStorage.getItem(key));}catch{}const position=cleanMonthlyDeckPosition(saved),root=document.querySelector('[data-time]');root.innerHTML=monthlyDeck({position});mountMonthlyDeck(root,position,{onChange:p=>{try{sessionStorage.setItem(key,JSON.stringify(p));}catch{}},onReturn:()=>location.assign('/my/practice?course=time')});

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { MemberTimelineEntry, MemberTimelineSnapshot } from "@/lib/membership/model";
+import type { MemberTimelineEntry } from "@/lib/membership/model";
 import { JOURNAL_BODY_LENGTH, JOURNAL_MAX_IMAGES, JOURNAL_MEDIA_ACCEPT, journalFilePolicy, type JournalEntry, type JournalSnapshot } from "@/lib/membership/journal-model";
 import Image from "next/image";
 import { TIMELINE_MONTHS, formatTimelineDate, timelineFormIsDirty, type TimelineFormValue } from "./timeline-model";
@@ -85,8 +85,6 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
   const active = useRef(true);
   const [missingAfterReview, setMissingAfterReview] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
-  const [foundation, setFoundation] = useState<{ allowed: boolean; completedAt: string | null } | null>(null);
-  const [completing, setCompleting] = useState(false);
   const initialEntry = !startNew && initialEntryId ? timeline.entries.find(entry => entry.id === initialEntryId) : undefined;
   const [missingRequested, setMissingRequested] = useState(!startNew && Boolean(initialEntryId) && !initialEntry);
   const [editingId, setEditingId] = useState<string | null>(initialEntry?.id ?? null);
@@ -147,17 +145,6 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
     const urls = media.files.map(file => URL.createObjectURL(file)); setFileUrls(urls);
     return () => urls.forEach(url => URL.revokeObjectURL(url));
   }, [media.files]);
-  useEffect(() => {
-    if (preview || !ownerId) return;
-    const controller = new AbortController();
-    fetch("/api/my/timeline", { cache: "no-store", headers: { "x-ruined-session-owner": ownerId }, signal: controller.signal })
-      .then(async response => response.ok ? response.json() : null)
-      .then((result: { timeline?: MemberTimelineSnapshot } | null) => {
-        if (!controller.signal.aborted && result?.timeline) setFoundation({ allowed: result.timeline.access.capabilities.includes("foundations.write"), completedAt: result.timeline.completedAt });
-      }).catch(() => { /* Optional Foundations status must not block the Timeline editor. */ });
-    return () => controller.abort();
-  }, [ownerId, preview]);
-
   useEffect(() => {
     if (confirmation) { dialog.current?.showModal(); cancelButton.current?.focus(); }
     else { dialog.current?.close(); trigger.current?.focus(); }
@@ -393,19 +380,6 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
     setBaseline(formFor(selected)); setNeedsReview(false); setReviewLoaded(false); setUncertain(false);
     setError(""); setStatus("Draft kept. Review it, then choose whether to publish or save privately.");
   }
-  async function completeFoundation() {
-    if (!foundation?.allowed || completing || pending || dirty || needsReview || preview) return;
-    setCompleting(true); setError("");
-    try {
-      const result = await request<{ requirements?: { timeline?: { completedAt?: string | null } } }>("/api/my/timeline", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "complete" }),
-      });
-      const completedAt = result.requirements?.timeline?.completedAt;
-      if (!completedAt) throw new Error("Completion could not be confirmed. Your saved stories are unchanged.");
-      if (active.current) { setFoundation({ allowed: true, completedAt }); setStatus("Foundations Timeline step complete. Your story keeps going."); window.dispatchEvent(new CustomEvent("ruined:member-progress")); }
-    } catch (caught) { if (active.current) setError(caught instanceof Error ? caught.message : "Completion could not be recorded."); }
-    finally { if (active.current) setCompleting(false); }
-  }
   function downloadDraft() {
     const blob = new Blob([JSON.stringify({ title: "Ruined Timeline", unfinishedMoment: { id: editingId ?? draftId, ...form } }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a");
@@ -489,7 +463,6 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       {visibleCount < matchingEntries.length ? <button className={styles.more} onClick={() => setVisibleCount(count => count + 40)}>Show more posts</button> : null}
       {timeline.hasMore ? <button className={styles.more} disabled={pageLoading || pending} onClick={() => void loadMore()}>{pageLoading ? "Loading…" : "Load more stories"}</button> : null}
     </section>
-    {foundation?.completedAt ? <p className={styles.foundationStatus}>Foundations Timeline step complete. Your story keeps going.</p> : foundation?.allowed && timeline.entries.some(entry => entry.journal.eventYear !== null && entry.title.trim() && (!isPublished(entry) || entry.journal.timelineReflection)) ? <div className={styles.foundationStatus}><span>Ready to mark your Foundations Timeline step complete?</span><button type="button" disabled={completing || pending || dirty || needsReview} onClick={() => void completeFoundation()}>{completing ? "Recording…" : "Complete Foundations step"}</button></div> : foundation?.allowed ? <p className={styles.foundationStatus}>Working on Foundations? Add a reflection under Go deeper to complete your Timeline step.</p> : null}
     <dialog ref={dialog} className={styles.confirmation} aria-labelledby="timeline-confirm-title" onCancel={event => { event.preventDefault(); setConfirmation(null); }}>
       <h2 id="timeline-confirm-title">{confirmation?.kind === "leave" ? "Leave this moment?" : "Discard this draft?"}</h2><p>{confirmation?.kind === "leave" ? preview ? "This is a preview. Leaving will reset the examples and unfinished writing." : memberNavigation ? "You have unsaved writing. Stay to publish it or save a private draft. Your draft stays available while you move around the member area." : "Leaving the member area will lose this unfinished draft. Stay to publish it or save a private draft first." : "Your saved timeline will stay as it is. Only these unfinished changes will be discarded."}</p><div><button ref={cancelButton} type="button" onClick={() => setConfirmation(null)}>Keep writing</button><button type="button" onClick={confirm}>{confirmation?.kind === "leave" ? !preview && memberNavigation ? "Leave with draft" : "Leave without saving" : "Discard draft"}</button></div>
     </dialog>

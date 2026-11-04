@@ -3,7 +3,9 @@ import { memberTier } from "./member-number";
 export const MEMBERSHIP_BADGES = {
   "make-it-yours": { label: "Make It Yours", description: "Add your profile photo, bio, and member tag." },
   "first-words": { label: "First Words", description: "Write your first private journal entry." },
-  "your-story": { label: "Your Story", description: "Complete your Foundations timeline." },
+  "your-story": { label: "F1 Badge", description: "Keep three complete Foundations timeline entries." },
+  "foundations-4": { label: "F4 Badge", description: "Write and keep a letter to your future self." },
+  "time-2026-12": { label: "TIME Badge", description: "Choose one action and make room for it in MY 168." },
   "on-the-record": { label: "On the Record", description: "Publish your first public Timeline entry." },
   groundwork: { label: "Groundwork", description: "Complete Foundations." },
   "in-the-room": { label: "In the Room", description: "Attend your first confirmed Foundations or Membership call." },

@@ -10,6 +10,7 @@ import MemberBadgeCelebration from "@/components/membership/MemberBadgeCelebrati
 import MemberPortraitState from "@/components/membership/MemberPortraitState";
 import MemberTimelineDraftState from "@/components/membership/MemberTimelineDraftState";
 import MemberJournalDraftState from "@/components/membership/MemberJournalDraftState";
+import MemberPracticeDraftState from "@/components/membership/MemberPracticeDraftState";
 import { resolveCurrentPlatformSession } from "@/lib/auth/session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
@@ -64,6 +65,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
     <MemberPortraitState ownerId={viewer?.authUserId}>
     <MemberTimelineDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
     <MemberJournalDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
+    <MemberPracticeDraftState ownerId={viewer?.authUserId} temporarilyUnavailable={session?.status === "unavailable"}>
     <MemberJourneyShell
       configuration={configuration}
       operatorRole={operatorRole}
@@ -74,6 +76,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
     </MemberJourneyShell>
+    </MemberPracticeDraftState>
     </MemberJournalDraftState>
     </MemberTimelineDraftState>
     </MemberPortraitState>

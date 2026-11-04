@@ -3374,7 +3374,7 @@ export async function getMemberHome(
   };
 }
 
-async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, memberId: string) {
+export async function readTimelineRecord(sql: postgres.Sql | postgres.TransactionSql, memberId: string) {
   // Entries and revision share one database snapshot. Immutable version IDs
   // advance for edits and deletions too, including an empty -> populated ->
   // empty Timeline, so a stale tab cannot overwrite newer work.
@@ -3449,7 +3449,7 @@ export type MemberTimelineInput = Array<{
   year: number;
 }>;
 
-function validateTimelineInput(input: MemberTimelineInput) {
+export function validateTimelineInput(input: MemberTimelineInput) {
   if (!Array.isArray(input)) {
     throw new MembershipInputError("A valid list of Timeline entries is required.");
   }
@@ -3543,7 +3543,7 @@ export async function requireLockedMemberWriteAccess(tx: postgres.TransactionSql
 
 type LegacyJournalRow = { id:string; kind:string; title:string|null; body:string|null; foundations_meaning:string|null; foundations_belief:string|null; foundations_present_impact:string|null; foundations_perspective:string|null; event_year:number; event_month:number|null; event_day:number|null; timeline_position:number };
 
-async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:MemberIdentity,entry:ReturnType<typeof validateTimelineInput>[number]) {
+export async function writeLegacyTimelineEntry(tx:postgres.TransactionSql,identity:MemberIdentity,entry:ReturnType<typeof validateTimelineInput>[number]) {
   if(entry.id) {
     const [current]=await tx<LegacyJournalRow[]>`select id,kind,title,body,foundations_meaning,foundations_belief,foundations_present_impact,foundations_perspective,event_year,event_month,event_day,timeline_position from member_journal_entries
       where id=${entry.id}::uuid and member_id=${identity.memberId}::uuid and include_on_timeline and deleted_at is null and visibility = 'private' for update`;
