@@ -1,6 +1,7 @@
 export const MEMBER_SMS_AUTOMATION_LOOKBACK_MINUTES = 10;
 export const MEMBER_SMS_CALL_NOTICE_MINUTES = 60;
 export const MEMBER_SMS_FOUNDATIONS_01_NOTICE_MINUTES = 150;
+export const MEMBER_SMS_DAY_BEFORE_NOTICE_MINUTES = 1440;
 export const MEMBER_SMS_AUTOMATION_BATCH_SIZE = 100;
 
 export type MemberSmsAutomationConfiguration = {
@@ -20,8 +21,8 @@ export function readMemberSmsAutomationConfiguration(env: NodeJS.ProcessEnv = pr
 
 /** Keep the original occurrence identity even when its notice time changes; the
  * legacy suffix must never permit a second reminder for the same call start. */
-export function memberSmsCallReminderKey(eventId: string, startsAt: Date | string): string {
-  return `call:${eventId}:${new Date(startsAt).getTime()}:60m`;
+export function memberSmsCallReminderKey(eventId: string, startsAt: Date | string, stage?: "day_before"): string {
+  return `call:${eventId}:${new Date(startsAt).getTime()}:${stage === "day_before" ? "24h" : "60m"}`;
 }
 
 export type MemberSmsAutomationSummary = {

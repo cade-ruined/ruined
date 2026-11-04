@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { configuration, id, loader, read } from "./member-sms-fixture.mjs";
+import { configuration, id, loader, read, installMemberSmsTemplateFixture } from "./member-sms-fixture.mjs";
 import { installMemberSmsFundingFixture } from "./member-sms-funding-fixture.mjs";
 import { installCircleRevealFunction } from "./circle-reveal-fixture.mjs";
 import { installOperatorFundingFunctions } from "./operator-funding-fixture.mjs";
@@ -29,7 +29,7 @@ function sqlBridge(engine, queries, readOnly = false) {
   sql.begin = (options, run) => {
     assert.equal(options, "isolation level repeatable read read only");
     return engine.transaction(async tx => {
-      await tx.exec("set transaction read only");
+      await tx.exec("set transaction isolation level repeatable read read only");
       return run(sqlBridge(tx, queries, true));
     });
   };
@@ -70,6 +70,7 @@ export async function operationsFixture() {
   await db.exec(read("db/migrations/20261008230000_member_sms_automation.sql"));
   await db.exec(read("db/migrations/20261102201731_member_sms_body_snapshot.sql"));
   await db.exec(read("db/migrations/20261102231559_member_sms_one_off_reviews.sql"));
+  await installMemberSmsTemplateFixture(db);
 
   await db.exec("create table person_profiles(person_id uuid primary key,display_name text)");
   const queries = [], sql = sqlBridge(db, queries);

@@ -7,6 +7,7 @@ import { acceptedMemberSmsConsentSql } from "@/lib/membership/member-sms-consent
 import { memberSmsFundedEligibilitySql } from "./member-sms-eligibility";
 import type { MemberSmsReminder } from "./member-sms-model";
 import { memberSmsCallReminderKey, type MemberSmsAutomationConfiguration } from "./member-sms-automation-model";
+import { readMemberSmsTemplates } from "./member-sms-template-repository";
 
 type Job = {
   id: string;
@@ -24,6 +25,7 @@ export async function enqueueMemberSmsAutomation(sql: Sql, config: MemberSmsAuto
   return await sql.begin(async tx => {
     await tx`set local lock_timeout = '3s'`;
     await tx`set local statement_timeout = '10s'`;
+    await readMemberSmsTemplates(tx); // A partial configuration must fail closed.
     const inserted = await tx<Array<{ id: string }>>`
       with consent_candidates as (
         select member.id as member_id,member.person_id,${memberSmsFundedEligibilitySql(tx,tx`member.id`)} as funded_eligible,
@@ -46,25 +48,29 @@ export async function enqueueMemberSmsAutomation(sql: Sql, config: MemberSmsAuto
         select consent.member_id,'opt_in_confirmation'::text as kind,'consent:'||consent.consent_id::text as reminder_key,
           consent.consent_id,null::uuid as experience_id,null::timestamptz as starts_at,
           consent.accepted_at as due_at,consent.accepted_at+interval '10 minutes' as expires_at
-        from consent_candidates consent
+        from consent_candidates consent join private.member_sms_templates template on template.id='opt_in_confirmation' and template.enabled
         where consent.accepted_at>=${config.activatedAt}::timestamptz
+          and consent.accepted_at>=template.effective_at
           and consent.accepted_at>=statement_timestamp()-interval '10 minutes'
           and consent.accepted_at<=statement_timestamp()
         union all
         select consent.member_id,'call_reminder',
-          'call:'||experience.id::text||':'||((extract(epoch from experience.starts_at)*1000)::bigint)::text||':60m',
+          'call:'||experience.id::text||':'||((extract(epoch from experience.starts_at)*1000)::bigint)::text
+            ||case when template.id='day_before' then ':24h' else ':60m' end,
           consent.consent_id,experience.id,experience.starts_at,
-          experience.starts_at-make_interval(mins=>notice.minutes),experience.starts_at-make_interval(mins=>notice.minutes-10)
+          experience.starts_at-make_interval(mins=>template.notice_minutes),experience.starts_at-make_interval(mins=>template.notice_minutes-10)
         from consent_candidates consent cross join experiences experience
         left join private.member_email_cadence_event_bindings binding on binding.experience_id=experience.id
-        cross join lateral (select case when binding.kind='foundations_01' and experience.visibility='invite_only'
-          and experience.registration_mode='internal' then 150 else 60 end as minutes) notice
+        join private.member_sms_templates template on template.enabled and
+          (template.id='day_before' or template.id=case when binding.kind='foundations_01' then 'foundations_01' else 'call_reminder' end)
         where consent.funded_eligible
+          and (binding.kind is distinct from 'foundations_01' or (experience.visibility='invite_only' and experience.registration_mode='internal'))
           and experience.kind in ('weekly_call','circle_meeting','academy_session','member_event','public_event')
           and experience.status='published' and experience.cancelled_at is null
-          and experience.starts_at-make_interval(mins=>notice.minutes)>=${config.activatedAt}::timestamptz
-          and experience.starts_at>statement_timestamp()+make_interval(mins=>notice.minutes-10)
-          and experience.starts_at<=statement_timestamp()+make_interval(mins=>notice.minutes)
+          and experience.starts_at-make_interval(mins=>template.notice_minutes)>=${config.activatedAt}::timestamptz
+          and experience.starts_at-make_interval(mins=>template.notice_minutes)>=template.effective_at
+          and experience.starts_at>statement_timestamp()+make_interval(mins=>template.notice_minutes-10)
+          and experience.starts_at<=statement_timestamp()+make_interval(mins=>template.notice_minutes)
           and exists(select 1 from integration_entity_links meeting where meeting.provider='google'
             and meeting.local_entity_type='experience' and meeting.local_entity_id=experience.id::text
             and meeting.external_entity_type='meet_space' and meeting.livemode=${googleCommunicationLivemode()})
@@ -113,7 +119,8 @@ export async function memberSmsAutomationReminder(sql: Sql, job: Job): Promise<M
   const meetingUrl = meetings.map(item=>googleCommunicationUrlFromMetadata("meet",item.metadata)).find(Boolean) ?? undefined;
   if (!event) return null;
   return { memberId: job.memberId, kind: job.kind, reminderKey: job.reminderKey, expectedConsentId: job.expectedConsentId ?? undefined,
-    callDetails: { eventId: job.eventId, startsAt: new Date(job.startsAt).toISOString(), title: event.title, timeZone: event.timeZone, foundations01: event.foundations01, ...(event.foundations01 ? { meetingUrl } : {}) } };
+    callDetails: { eventId: job.eventId, startsAt: new Date(job.startsAt).toISOString(), title: event.title, timeZone: event.timeZone, foundations01: event.foundations01,
+      ...(job.reminderKey.endsWith(":24h") ? { reminderStage: "day_before" as const } : {}), ...(event.foundations01 ? { meetingUrl } : {}) } };
 }
 
 export async function finishMemberSmsAutomationJob(sql: Sql, id: string, outcome: string): Promise<void> {
@@ -134,25 +141,35 @@ export async function memberSmsConfirmationAccepted(sql: Sql, input: MemberSmsRe
 export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, input: MemberSmsReminder,
   config: MemberSmsAutomationConfiguration): Promise<boolean> {
   if (!config.activatedAt) return false;
+  const templates = await readMemberSmsTemplates(tx, true);
   const lazyConfirmation = input.kind === "opt_in_confirmation" && Boolean(input.callDetails);
+  const confirmationTemplate = templates.find(item => item.id === "opt_in_confirmation")!;
   const sourceKind = lazyConfirmation ? "call_reminder" : input.kind;
-  const sourceKey = lazyConfirmation ? memberSmsCallReminderKey(input.callDetails!.eventId, input.callDetails!.startsAt) : input.reminderKey;
-  const [job] = await tx`select id from private.member_sms_automation_jobs where member_id=${input.memberId}::uuid
+  const sourceKey = lazyConfirmation ? memberSmsCallReminderKey(input.callDetails!.eventId, input.callDetails!.startsAt, input.callDetails!.reminderStage) : input.reminderKey;
+  const [job] = await tx<Array<{ id: string; dueAt: string; expiresAt: string }>>`select id,
+    to_char(due_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "dueAt",
+    to_char(expires_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as "expiresAt"
+    from private.member_sms_automation_jobs where member_id=${input.memberId}::uuid
     and reminder_kind=${sourceKind} and reminder_key=${sourceKey} and status='processing'
     and expected_consent_id=${input.expectedConsentId ?? null}::bigint
     and due_at>=${config.activatedAt}::timestamptz and due_at<=statement_timestamp() and expires_at>statement_timestamp()
+    and (${!lazyConfirmation} or due_at>=${confirmationTemplate.effectiveAt}::timestamptz)
     for share`;
   if (!job) return false;
   if (input.kind === "opt_in_confirmation" && !lazyConfirmation) {
+    const template = confirmationTemplate;
+    if (!template.enabled) return false;
     if (!input.expectedConsentId || input.reminderKey !== `consent:${input.expectedConsentId}`) return false;
     const [consent] = await tx`select id from member_consents where id=${input.expectedConsentId}::bigint
       and member_id=${input.memberId}::uuid and accepted_at>=${config.activatedAt}::timestamptz
+      and accepted_at>=${template.effectiveAt}::timestamptz
+      and accepted_at=${job.dueAt}::timestamptz and accepted_at+interval '10 minutes'=${job.expiresAt}::timestamptz
       and accepted_at>statement_timestamp()-interval '10 minutes' and accepted_at<=statement_timestamp() for share`;
     return Boolean(consent); // Exact current consent and account evidence are enforced by the transport gate.
   }
   if ((!lazyConfirmation && input.kind !== "call_reminder") || !input.callDetails
     || (lazyConfirmation ? input.reminderKey !== `consent:${input.expectedConsentId}`
-      : input.reminderKey !== memberSmsCallReminderKey(input.callDetails.eventId, input.callDetails.startsAt))) return false;
+      : input.reminderKey !== memberSmsCallReminderKey(input.callDetails.eventId, input.callDetails.startsAt, input.callDetails.reminderStage))) return false;
   if (!lazyConfirmation) {
     const [confirmation] = await tx`select id from private.member_sms_delivery_attempts
       where member_id=${input.memberId}::uuid and reminder_kind='opt_in_confirmation'
@@ -164,7 +181,10 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
   const bindings = await tx<Array<{ kind: string }>>`select kind from private.member_email_cadence_event_bindings
     where experience_id=${input.callDetails.eventId}::uuid for share`;
   const foundations01 = bindings[0]?.kind === "foundations_01";
-  const noticeMinutes = foundations01 ? 150 : 60;
+  const templateId = input.callDetails.reminderStage === "day_before" ? "day_before" : foundations01 ? "foundations_01" : "call_reminder";
+  const template = templates.find(item => item.id === templateId)!;
+  if (!template.enabled || template.noticeMinutes === null) return false;
+  const noticeMinutes = template.noticeMinutes;
   const [event] = await tx<Array<{ id: string; visibility: string; circle_id: string | null; block_id: string | null;
     progression_level_slug: string | null; registration_mode: string }>>`
     select id,visibility,circle_id,block_id,progression_level_slug,registration_mode from experiences
@@ -172,6 +192,9 @@ export async function validateMemberSmsAutomationOccurrence(tx: TransactionSql, 
       and title=${input.callDetails.title} and timezone=${input.callDetails.timeZone}
       and kind in ('weekly_call','circle_meeting','academy_session','member_event','public_event')
       and status='published' and cancelled_at is null
+      and starts_at-make_interval(mins=>${noticeMinutes})=${job.dueAt}::timestamptz
+      and starts_at-make_interval(mins=>${noticeMinutes}-10)=${job.expiresAt}::timestamptz
+      and starts_at-make_interval(mins=>${noticeMinutes})>=${template.effectiveAt}::timestamptz
       and starts_at>statement_timestamp()+make_interval(mins=>${noticeMinutes}-10)
       and starts_at<=statement_timestamp()+make_interval(mins=>${noticeMinutes})
     for share`;

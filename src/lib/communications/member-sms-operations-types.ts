@@ -3,9 +3,15 @@ import type { CommunicationItem } from "./communications-catalog";
 
 /** Read-only operations projections. Forecasts are rechecked by the sender. */
 export type MemberSmsOperationTemplate = {
-  id: "opt_in_confirmation" | "call_reminder" | "foundations_01";
+  id: "opt_in_confirmation" | "call_reminder" | "foundations_01" | "day_before";
   title: string;
   body: string;
+  editableBody: string;
+  enabled: boolean;
+  revision: number;
+  effectiveAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
   timing: string;
   audience: string;
   trigger: string;
@@ -25,10 +31,12 @@ export type MemberSmsOperationCall = {
   startsAt: string;
   timeZone: string;
   foundations01: boolean;
+  reminderStage?: "day_before";
 };
 export type MemberSmsUpcomingItem = {
   id: string;
   kind: "opt_in_confirmation" | "call_reminder";
+  reminderStage?: "day_before";
   reminderKey: string;
   recipient: MemberSmsOperationRecipient;
   call: MemberSmsOperationCall | null;
@@ -45,6 +53,7 @@ export type MemberSmsUpcomingItem = {
 export type MemberSmsHistoryItem = {
   id: string;
   kind: "opt_in_confirmation" | "call_reminder" | "membership_reminder" | "one_off";
+  reminderStage?: "day_before";
   actorName?: string | null;
   reminderKey: string;
   recipient: MemberSmsOperationRecipient;
@@ -63,6 +72,7 @@ export type MemberSmsHistoryItem = {
 export type MemberSmsOperationJob = {
   id: string;
   kind: "opt_in_confirmation" | "call_reminder";
+  reminderStage?: "day_before";
   recipient: MemberSmsOperationRecipient;
   call: MemberSmsOperationCall | null;
   dueAt: string;

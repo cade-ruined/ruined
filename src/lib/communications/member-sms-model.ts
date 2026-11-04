@@ -9,7 +9,7 @@ export type MemberSmsReminder = {
   oneOff?: { reviewId: string; actorAuthUserId: string; body: string };
   /** Confirmation is bound to the exact authenticated checkbox event. */
   expectedConsentId?: string;
-  callDetails?: { eventId: string; title: string; startsAt: string; timeZone: string; foundations01?: boolean; meetingUrl?: string };
+  callDetails?: { eventId: string; title: string; startsAt: string; timeZone: string; foundations01?: boolean; meetingUrl?: string; reminderStage?: "day_before" };
 };
 export type MemberSmsBlockedReason = "member_inactive" | "phone_missing" | "no_current_consent" | "phone_suppressed" | "source_ineligible";
 export type MemberSmsSendResult =

@@ -48,6 +48,8 @@
 .manual { margin-top: 2rem; }
 .manual h3 { font-size: 1rem; font-weight: 650; }
 .action { display: inline-flex; align-items: center; min-height: 2.75rem; margin-top: .5rem; font-size: .8125rem; text-decoration: underline; text-underline-offset: .2em; }
+.editTemplate { display: inline-flex; align-items: center; min-height: 2.75rem; margin-top: 1rem; padding: .5rem .9rem; border: 1px solid var(--operator-line); font-size: .8125rem; }
+.editTemplate:hover { border-color: var(--operator-ink); background: var(--operator-surface-muted); }
 .workspace button:disabled { opacity: .5; cursor: not-allowed; }
 .workspace button:focus-visible, .workspace summary:focus-visible, .workspace input:focus-visible, .workspace select:focus-visible { outline: 2px solid var(--operator-focus); outline-offset: 3px; }
 @media (min-width: 700px) { .card { padding: 1.5rem; } .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

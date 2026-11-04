@@ -6,6 +6,8 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { readMemberSmsConfiguration } from "./member-sms-config";
 import { memberSmsReminderBody, type MemberSmsReminder, type MemberSmsSendResult } from "./member-sms-model";
 import { dispatchReservedMemberSms, reserveMemberSmsAttempt } from "./member-sms-repository";
+import { memberSmsTemplateId, renderMemberSmsTemplate } from "./member-sms-template-model";
+import { readMemberSmsTemplates, memberSmsTemplateRevisionAllowed } from "./member-sms-template-repository";
 
 /**
  * Internal transport: the automation supplies a source guard under the same locks.
@@ -17,9 +19,16 @@ export async function sendMemberSmsReminder(input: MemberSmsReminder, options: M
   const config = readMemberSmsConfiguration();
   if (!config.enabled) return { status: "disabled" };
   if (!config.sendReady || !config.publicOrigin) return { status: "unconfigured" };
-  const body = memberSmsReminderBody(input, config.publicOrigin);
   const sql = getApplicationDatabase();
-  const reservation = await reserveMemberSmsAttempt(sql, input, body, options);
+  const templateId = memberSmsTemplateId(input);
+  const template = templateId ? (await readMemberSmsTemplates(sql)).find(item => item.id === templateId)! : null;
+  if (template && !template.enabled) return { status: "blocked", reason: "source_ineligible" };
+  const body = template ? renderMemberSmsTemplate(template, input, config.publicOrigin) : memberSmsReminderBody(input, config.publicOrigin);
+  // Freeze one rendered body. A later edit blocks this occurrence at reservation
+  // or dispatch; the durable attempt identity still prevents automatic retries.
+  const guarded: MemberSmsDispatchOptions = template ? { guard: async tx =>
+    await memberSmsTemplateRevisionAllowed(tx, template.id, template.revision) && (!options.guard || await options.guard(tx)) } : options;
+  const reservation = await reserveMemberSmsAttempt(sql, input, body, guarded);
   if ("status" in reservation) return reservation;
   try {
     return await dispatchReservedMemberSms(sql, input, reservation, async phone => {
@@ -34,7 +43,7 @@ export async function sendMemberSmsReminder(input: MemberSmsReminder, options: M
         statusCallback: `${config.statusUrl}?attempt=${reservation.attemptId}`,
       });
       return message.sid;
-    }, options);
+    }, guarded);
   } catch {
     // The reservation committed before dispatch. A DB/connection failure here
     // cannot prove whether Twilio accepted the request. Never retry it.
