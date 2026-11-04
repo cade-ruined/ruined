@@ -174,7 +174,7 @@ test("approved examples remain presentation-only and in chronological order", ()
   );
 });
 
-test("profile and Foundations navigation lead to the same guided public Timeline", async () => {
+test("profile Timeline stays public while Foundations work opens the private Practice assignment", async () => {
   const [navigation, home, page, repository] = await Promise.all([
     readFile(new URL("../src/lib/membership/navigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/components/platform/MemberHome.tsx", import.meta.url), "utf8"),
@@ -184,7 +184,7 @@ test("profile and Foundations navigation lead to the same guided public Timeline
 
   assert.match(navigation, /href: "\/my\/timeline", label: "Timeline"/);
   assert.match(home, /"timeline","journal"/);
-  assert.match(page, /redirect\("\/my\/timeline"\)/);
+  assert.match(page, /redirect\("\/my\/practice\?course=f1"\)/);
   assert.match(repository, /href: "\/my\/timeline"/);
   assert.doesNotMatch(repository, /Build your private Foundations timeline/);
 });

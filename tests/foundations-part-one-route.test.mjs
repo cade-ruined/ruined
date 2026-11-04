@@ -41,13 +41,14 @@ function fixture({ state = "authenticated", readable = true, failure = false, se
   return { page, reads, logs };
 }
 
-test("Foundations links resolve to the same public Timeline editor and preserve the chosen moment", async () => {
+test("Foundations work links open the private assignment while preserving explicit historical moments", async () => {
   const page = load("app/my/foundations/timeline/part-1/page.tsx", { "next/navigation": { redirect } }).default;
-  await assert.rejects(page({ searchParams: Promise.resolve({}) }), { href: "/my/timeline" });
-  await assert.rejects(page({ searchParams: Promise.resolve({ new: "1" }) }), { href: "/my/timeline/new" });
+  await assert.rejects(page({ searchParams: Promise.resolve({}) }), { href: "/my/practice?course=f1" });
+  await assert.rejects(page({ searchParams: Promise.resolve({ new: "1" }) }), { href: "/my/practice?course=f1" });
   await assert.rejects(page({ searchParams: Promise.resolve({ moment: "entry-id" }) }), { href: "/my/timeline?moment=entry-id" });
   const overview = load("app/my/foundations/timeline/page.tsx", { "next/navigation": { redirect } }).default;
-  assert.throws(overview, { href: "/my/timeline" });
+  await assert.rejects(overview(), { href: "/my/practice?course=f1" });
+  await assert.rejects(overview({ searchParams: Promise.resolve({ moment: "entry-id" }) }), { href: "/my/timeline?moment=entry-id" });
 });
 
 test("public Timeline authoring keeps sign-in destination and rejects unavailable identities before reads", async () => {

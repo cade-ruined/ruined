@@ -460,6 +460,7 @@ test("layout withholds premature badge celebrations and fails navigation closed 
       "@/components/membership/MemberJourneyShell": Shell, "@/components/membership/MemberSessionContinuity": Session,
       "@/components/membership/MemberBadgeCelebration": Celebration, "@/components/membership/MemberPortraitState": Stub,
       "@/components/membership/MemberTimelineDraftState": Stub, "@/components/membership/MemberJournalDraftState": Stub,
+      "@/components/membership/MemberPracticeDraftState": Stub,
       "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: "new-member", email: "new@example.test" } }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
       "@/lib/platform/repository": { getOperatorRole: async () => null },

@@ -1,0 +1,15 @@
+import {SCENES} from './data.js';
+import {paint,bind} from './interactions.js';
+const $=s=>document.querySelector(s),stage=$('[data-stage]'),player=$('.practice-player'),count=SCENES.length;
+const key=document.body.dataset.resumeKey;
+let saved=0;try{saved=Number(sessionStorage.getItem(key))||0;}catch{}
+const hash=Number(location.hash.match(/^#slide-(\d+)$/)?.[1]);
+let index=Math.max(0,Math.min(count-1,Number.isInteger(hash)&&hash>0?hash-1:saved));
+const titles=$('[data-slide-select]');titles.innerHTML=SCENES.map((s,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=String(i+1).padStart(2,'0')+' · '+s.title;return option.outerHTML;}).join('');
+function render(){stage.querySelectorAll('video').forEach(v=>v.pause());const scene=SCENES[index];stage.innerHTML=scene.html;stage.dataset.theme=scene.theme??'';stage.dataset.kind=scene.kind??scene.type??'';stage.dataset.mechanism=String(scene.mechanism??false);stage.setAttribute('aria-label',document.title+', slide '+(index+1)+' of '+count);paint(stage);bind(stage,()=>go(index+1));stage.querySelectorAll('video').forEach(v=>{v.muted=true;if(matchMedia('(prefers-reduced-motion: reduce)').matches){v.autoplay=false;v.pause();}else v.play().catch(()=>{});});$('[data-prev]').disabled=index===0;$('[data-next]').textContent=index===count-1?'Back to assignment →':'Next slide →';$('[data-counter]').textContent=String(index+1).padStart(2,'0')+' / '+count;titles.value=String(index);history.replaceState(null,'','#slide-'+String(index+1).padStart(2,'0'));try{sessionStorage.setItem(key,String(index));}catch{}}
+function go(next){if(next>=count){location.assign(document.body.dataset.returnUrl);return;}index=Math.max(0,Math.min(count-1,Math.trunc(next)));render();}
+$('[data-prev]').onclick=()=>go(index-1);$('[data-next]').onclick=()=>go(index+1);titles.onchange=e=>go(Number(e.target.value));$('[data-fullscreen]').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await player.requestFullscreen();}catch{}};
+document.addEventListener('fullscreenchange',()=>{$('[data-fullscreen]').textContent=document.fullscreenElement?'Exit full screen':'Enlarge ↗';});
+document.addEventListener('keydown',e=>{if(e.defaultPrevented||e.target.closest('input,select,textarea,button,a,dialog,[contenteditable]')||document.querySelector('dialog[open]'))return;if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();go(index+1);}else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(index-1);}});
+window.addEventListener('hashchange',()=>{const n=Number(location.hash.match(/^#slide-(\d+)$/)?.[1]);if(Number.isInteger(n)&&n>0&&n<=count)go(n-1);});
+let swipe=null;stage.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'&&!e.target.closest('button,input,select,dialog,a'))swipe={x:e.clientX,y:e.clientY};});stage.addEventListener('pointerup',e=>{if(swipe){const dx=e.clientX-swipe.x,dy=e.clientY-swipe.y;if(Math.abs(dx)>65&&Math.abs(dx)>Math.abs(dy)*1.6)go(index+(dx<0?1:-1));swipe=null;}});render();

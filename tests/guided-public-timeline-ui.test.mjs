@@ -97,6 +97,16 @@ test("the page starts with a blank composer instead of editing the first saved s
   ui.unmount();
 });
 
+test("the public Timeline never offers legacy one-entry Foundations completion", async () => {
+  const ui = fixture({ initialJournal: snapshot([entry({ timelineReflection: responses })]), fetchOverride: request => request.url === "/api/my/timeline" ? json({ timeline: { access: { capabilities: ["foundations.write"] }, completedAt: "2026-11-03T12:00:00Z" } }) : null });
+  ui.render(); await tick();
+  assert.doesNotMatch(text(ui.render()), /Foundations.*complete|Complete Foundations step|Working on Foundations/);
+  assert.equal(ui.requests.some(request => request.url === "/api/my/timeline"), false);
+  assert.equal(ui.writes().length, 0);
+  assert.ok(button(ui.render(), "Post"));
+  ui.unmount();
+});
+
 test("Posts and Drafts keep private entries separate and editing is an explicit action", async () => {
   const published = entry({ visibility: "public", title: "A public moment", body: "A visible thought." });
   const privateDraft = entry({ id: "33333333-3333-4333-8333-333333333333", title: "My private draft", body: "Private unfinished context.", legacyTimelineReflection: responses });

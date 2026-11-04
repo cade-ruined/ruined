@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import OpsSection from "@/components/platform/OpsSection";
@@ -17,11 +18,14 @@ export default async function OperationsFoundationsPage() {
   if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
 
   return (
+    <>
+    {context.role === "ops_admin" ? <div className="mb-4 flex justify-end"><Link className="operator-button" href="/ops/practice">Practice releases &amp; recap emails →</Link></div> : null}
     <OpsSection
       canPlaceMembers={context.role === "ops_admin"}
       configuration={context.configuration}
       dashboard={context.dashboard}
       section="foundations"
     />
+    </>
   );
 }

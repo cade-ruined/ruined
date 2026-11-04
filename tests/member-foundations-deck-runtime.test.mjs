@@ -19,6 +19,7 @@ function fixture({
   launched = true,
   state = "authenticated",
   eligible = true,
+  revisit = false,
   role = null,
   roleFailure = false,
   ownerId = fixtureOwner,
@@ -55,8 +56,8 @@ function fixture({
       memberCan: (access, capability) => {
         calls.push(["capability", capability]);
         assert.equal(access, identity);
-        assert.equal(capability, "foundations.write");
-        return eligible;
+        assert.ok(["foundations.write", "foundations.revisit"].includes(capability));
+        return capability === "foundations.write" ? eligible : revisit;
       },
     },
     "@/lib/membership/page-context": {
@@ -278,4 +279,11 @@ test("member reader removes presenter controls and cross-tab syncing while retai
   f.emit("keydown", { ...event, target: new f.context.Element(true) });
   f.emit("keydown", { ...event, ctrlKey: true });
   assert.equal(blocked, 2, "typing and browser shortcuts must remain available");
+});
+
+
+test("existing read-only Foundations revisit access can read the deck without granting write access", async () => {
+  const f=fixture({eligible:false,revisit:true});
+  const response=await f.GET();assert.equal(response.status,200);
+  assert.ok(f.calls.some(([kind,value])=>kind === "capability" && value === "foundations.revisit"));
 });
