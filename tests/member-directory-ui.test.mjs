@@ -30,9 +30,10 @@ const libby = { name: "Libby Zaritsky", memberTag: "libby", bio: "A creative pra
 const riley = { name: "Riley Jordan", memberTag: null, bio: null, memberNumber: 201, href: "/profile/riley_jordan", avatarUrl: null };
 const snapshot = (results = [alex, cherry], changes = {}) => ({ query: "", page: 1, results, hasMore: false, ...changes });
 
-function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = {}) {
+function fixture(t, { initialSearch = snapshot(), previewMode = false, href, routeHref } = {}) {
   const slots = [], effectSlots = new Set(), timers = new Map(), calls = [], history = [];
   let cursor = 0, dirty = false, tree, timerId = 0;
+  let routeOverride = routeHref;
   const portraitSlots = new Map();
   let currentPortraitSlots = null, portraitCursor = 0;
   const initialUrl = new URL("https://members.example.test/my/members?source=menu#directory");
@@ -66,6 +67,7 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = 
     react: hooks,
     "next/link": { __esModule: true, default: "a" },
     "next/image": { __esModule: true, default: "img" },
+    "next/navigation": { useSearchParams: () => new URL(routeOverride ?? browser.location.href).searchParams },
     "./MemberIcon": { __esModule: true, default: "svg" },
     "@/lib/membership/member-number": tiers,
     "@/lib/membership/member-search-model": model,
@@ -100,6 +102,11 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = 
     calls, history, timers, render, find, button,
     location: () => new URL(browser.location.href),
     navigate(href) { browser.location.href = new URL(href, browser.location.href).href; },
+    route(href, nextInitialSearch) {
+      routeOverride = new URL(href, browser.location.href).href;
+      if (nextInitialSearch) initialSearch = nextInitialSearch;
+      render();
+    },
     input: () => find(node => node.type === "input" && node.props.name === "q"),
     profiles: () => nodes(render()).filter(node => node.type === "a" && node.props.className === "member"),
     portrait(href) {
@@ -217,6 +224,133 @@ test("name and @tag searches debounce, replace results, and preserve a shareable
     assert.equal(url.searchParams.has("page"), false);
     assert.equal(url.hash, "#directory");
   }
+});
+
+test("a menu search uses the incoming route before the address bar catches up", t => {
+  for (const previous of ["/my/members", "/my/members?q=alex", "/my/profile"]) {
+    const f = fixture(t, {
+      initialSearch: snapshot([libby], { query: "libby" }),
+      href: `https://members.example.test${previous}`,
+      routeHref: "https://members.example.test/my/members?q=%40libby",
+    });
+    assert.equal(f.input().props.value, "libby");
+    assert.deepEqual(f.profiles().map(node => node.props.href), [libby.href]);
+    assert.equal(f.results().props["aria-busy"], false);
+    assert.equal(f.timers.size, 0, "the outgoing query must not replace the incoming results");
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.history, []);
+  }
+});
+
+test("a menu browse link clears the incoming filter even while the old query is in the address bar", t => {
+  const f = fixture(t, {
+    initialSearch: snapshot(),
+    href: "https://members.example.test/my/members?q=libby",
+    routeHref: "https://members.example.test/my/members",
+  });
+  assert.equal(f.input().props.value, "");
+  assert.equal(f.results().props["aria-busy"], false);
+  assert.deepEqual(f.profiles().map(node => node.props.href), [alex.href, cherry.href]);
+  assert.equal(f.timers.size, 0);
+});
+
+test("repeating a menu search after clearing it updates the reused directory", async t => {
+  const f = fixture(t, { initialSearch: snapshot([libby], { query: "libby" }) });
+  f.click("Clear member search"); f.startTimer();
+  await f.reply(0, snapshot());
+  assert.equal(f.input().props.value, "");
+  assert.equal(f.location().searchParams.get("q"), null);
+  f.route("/my/members?q=libby");
+  assert.equal(f.input().props.value, "libby");
+  assert.equal(f.results().props["aria-busy"], true);
+  assert.equal(f.profiles().length, 0);
+  f.startTimer();
+  assert.equal(request(f.calls[1]).searchParams.get("q"), "libby");
+  assert.equal(request(f.calls[1]).searchParams.get("page"), "1");
+  await f.reply(1, snapshot([libby], { query: "libby" }));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [libby.href]);
+});
+
+test("menu navigation replaces an in-flight local query without a stale response rewriting it", async t => {
+  const f = fixture(t);
+  f.change("alex"); f.startTimer();
+  f.route("/my/members?q=libby");
+  assert.equal(f.input().props.value, "libby");
+  assert.equal(f.calls[0].options.signal.aborted, true);
+  f.startTimer();
+  await f.reply(1, snapshot([libby], { query: "libby" }));
+  await f.reply(0, snapshot([alex], { query: "alex" }));
+  assert.equal(f.input().props.value, "libby");
+  assert.deepEqual(f.profiles().map(node => node.props.href), [libby.href]);
+  assert.equal(f.location().searchParams.get("q"), "libby");
+});
+
+test("a delayed acknowledgement of our URL update cannot erase newer typing", async t => {
+  const f = fixture(t, { routeHref: "https://members.example.test/my/members" });
+  f.change("alex"); f.startTimer();
+  await f.reply(0, snapshot([alex], { query: "alex" }));
+  f.change("libby"); f.startTimer();
+  f.route("/my/members?q=alex");
+  assert.equal(f.input().props.value, "libby");
+  assert.equal(f.calls[1].options.signal.aborted, false);
+  await f.reply(1, snapshot([libby], { query: "libby" }));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [libby.href]);
+});
+
+test("sequential and coalesced acknowledgements preserve the latest typing and then allow external navigation", async t => {
+  for (const acknowledged of [["alex", "cherry"], ["cherry"]]) {
+    const f = fixture(t, { routeHref: "https://members.example.test/my/members" });
+    f.change("alex"); f.startTimer();
+    await f.reply(0, snapshot([alex], { query: "alex" }));
+    f.change("cherry"); f.startTimer();
+    await f.reply(1, snapshot([cherry], { query: "cherry" }));
+    f.change("libby"); f.startTimer();
+    for (const query of acknowledged) {
+      f.route(`/my/members?q=${query}`);
+      assert.equal(f.input().props.value, "libby");
+      assert.equal(f.calls[2].options.signal.aborted, false);
+    }
+    f.route("/my/members?q=riley");
+    assert.equal(f.input().props.value, "riley");
+    assert.equal(f.calls[2].options.signal.aborted, true);
+  }
+});
+
+test("returning to an acknowledged query while other local URL writes are pending preserves newer typing", async t => {
+  const f = fixture(t, { initialSearch: snapshot([alex], { query: "alex" }), routeHref: "https://members.example.test/my/members?q=alex" });
+  f.change("cherry"); f.startTimer();
+  await f.reply(0, snapshot([cherry], { query: "cherry" }));
+  f.change("alex"); f.startTimer();
+  await f.reply(1, snapshot([alex], { query: "alex" }));
+  f.change("libby"); f.startTimer();
+  for (const query of ["cherry", "alex"]) {
+    f.route(`/my/members?q=${query}`);
+    assert.equal(f.input().props.value, "libby");
+    assert.equal(f.calls[2].options.signal.aborted, false);
+  }
+});
+
+test("a server menu navigation overrides leftover local writes coalesced back to the acknowledged route", async t => {
+  const f = fixture(t, { initialSearch: snapshot([cherry], { query: "cherry" }), routeHref: "https://members.example.test/my/members?q=cherry" });
+  f.change("alex"); f.startTimer();
+  await f.reply(0, snapshot([alex], { query: "alex" }));
+  f.route("/my/members?q=alex");
+  f.change("cherry"); f.startTimer();
+  await f.reply(1, snapshot([cherry], { query: "cherry" }));
+  f.change("alex"); f.startTimer();
+  await f.reply(2, snapshot([alex], { query: "alex" }));
+  f.change("libby"); f.startTimer();
+  f.route("/my/members?q=alex");
+  assert.equal(f.input().props.value, "libby", "coalesced local history does not replace newer typing");
+  assert.equal(f.calls[3].options.signal.aborted, false);
+  f.route("/my/members?q=cherry", snapshot([cherry], { query: "cherry" }));
+  assert.equal(f.input().props.value, "cherry", "the menu destination wins even though its server key is unchanged");
+  assert.equal(f.calls[3].options.signal.aborted, true);
+  f.startTimer();
+  await f.reply(4, snapshot([cherry], { query: "cherry" }));
+  await f.reply(3, snapshot([libby], { query: "libby" }));
+  assert.equal(f.input().props.value, "cherry");
+  assert.deepEqual(f.profiles().map(node => node.props.href), [cherry.href]);
 });
 
 test("Back restores the URL filter instead of a cached directory snapshot and refetches only the current query", async t => {

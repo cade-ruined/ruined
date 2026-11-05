@@ -489,7 +489,7 @@ export default function PlatformShell({
         </footer> : null}
       </div>
 
-      {member && !threshold && !foundationsExperience ? <MemberNavigationFab /> : null}
+      {member && !threshold && !foundationsExperience ? <MemberNavigationFab preview={preview} /> : null}
     </div>
   );
 }
