@@ -20,6 +20,7 @@ function load(path, dependencies = {}, document) {
 }
 
 const navigation = load("src/lib/membership/navigation.ts");
+const searchModel = load("src/lib/membership/member-search-model.ts");
 const { MEMBER_DESTINATIONS, currentMemberDestination, currentMemberPrimaryDestination, findMemberDestinations } = navigation;
 const expectedDestinations = {
   "/my": "Profile",
@@ -47,7 +48,7 @@ function text(node) {
   return node == null || typeof node === "boolean" ? "" : Array.isArray(node) ? node.map(text).join("") : typeof node === "object" ? text(node.props?.children) : String(node);
 }
 
-function fixture(initialPath = "/my") {
+function fixture(initialPath = "/my", props = {}) {
   const states = [], refs = [], effects = [];
   const document = { body: { style: { overflow: "clip" } } };
   let stateIndex, refIndex, effectIndex, dirty, tree, pathname = initialPath, focused;
@@ -74,6 +75,8 @@ function fixture(initialPath = "/my") {
     "@/components/membership/MemberIcon": {__esModule:true,default:"svg"},
     "next/navigation": { usePathname: () => pathname },
     "@/lib/membership/navigation": navigation,
+    "@/lib/membership/member-search-model": searchModel,
+    "./MemberQuickSearch": { __esModule: true, default: "member-quick-search" },
     "./MemberNavigationFab.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, name) => String(name) }) },
     react: {
       ...React,
@@ -103,7 +106,7 @@ function fixture(initialPath = "/my") {
       assert.ok(++passes < 10, "navigation settles after effects");
       dirty = false;
       stateIndex = 0; refIndex = 0; effectIndex = 0;
-      tree = Component();
+      tree = Component(props);
       for (const node of nodes(tree).filter((node) => node.props?.ref)) {
         node.props.ref.current = node.type === "dialog" ? dialog : {
           focus: (options) => { focused = { type: node.type, label: node.props["aria-label"], options }; },
@@ -123,7 +126,7 @@ function fixture(initialPath = "/my") {
     trigger: () => find((node) => node.type === "button" && node.props["aria-haspopup"] === "dialog"),
     sheet: () => find((node) => node.type === "dialog"),
     search: () => find((node) => node.type === "input" && node.props.type === "search"),
-    menu: () => find((node) => node.type === "nav" && node.props["aria-label"] === "Membership"),
+    menu: () => nodes(tree).find((node) => node.type === "nav" && node.props["aria-label"] === "Membership"),
     focused: () => focused,
     calls: () => ({ show: showCalls, close: closeCalls }),
     unmount: () => { for (const effect of effects) effect.cleanup?.(); },
@@ -210,15 +213,66 @@ test("Member search stays available when page search has no results and preserve
     const target = new URL(memberSearch().props.href, "https://members.example.test");
     assert.equal(target.origin, "https://members.example.test");
     assert.equal(target.pathname, "/my/members");
-    assert.equal(target.searchParams.get("q"), query.trim());
+    assert.equal(target.searchParams.get("q"), searchModel.normalizeMemberSearchQuery(query));
     assert.equal(target.hash, "");
     assert.equal(target.searchParams.size, 1);
-    assert.match(text(memberSearch()), /Search members/);
+    assert.match(text(memberSearch()), /View all member results/);
   }
   memberSearch().props.onClick(); f.draw();
   assert.equal(f.dialog.open, false);
   assert.equal(f.document.body.style.overflow, "clip");
   assert.equal(f.focused().label, "Search members and pages");
+  f.unmount();
+});
+
+test("inline member matching is wired to the open search dialog and keeps the full-results link", () => {
+  for (const preview of [false, true]) {
+    const f = fixture("/my", { preview });
+    const quickSearch = () => f.find(node => node.type === "member-quick-search");
+    assert.equal(quickSearch().props.open, false);
+    assert.equal(quickSearch().props.query, "");
+    assert.equal(quickSearch().props.preview, preview);
+    f.trigger().props.onClick(); f.draw();
+    for (const value of ["  Cade   Mangelson  ", " @ @ cade ", "@cade&alex/?#\u0000", "x".repeat(90)]) {
+      f.search().props.onChange({ target: { value } }); f.draw();
+      const expected = searchModel.normalizeMemberSearchQuery(value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 80));
+      assert.equal(quickSearch().props.open, true);
+      assert.equal(quickSearch().props.query, expected);
+      assert.equal(quickSearch().props.id, f.search().props["aria-controls"]);
+      const allResults = f.find(node => node.type === "a" && node.props.className === "memberSearch");
+      const destination = new URL(allResults.props.href, "https://members.example.test");
+      assert.equal(destination.pathname, "/my/members");
+      assert.equal(destination.searchParams.get("q"), expected);
+      assert.equal(destination.searchParams.size, 1);
+      assert.equal(destination.hash, "");
+      assert.match(text(allResults), /View all member results/);
+    }
+    quickSearch().props.onNavigate(); f.draw();
+    assert.equal(f.dialog.open, false);
+    assert.equal(quickSearch().props.open, false);
+    assert.equal(f.document.body.style.overflow, "clip");
+    assert.equal(f.focused().label, "Search members and pages");
+    f.unmount();
+  }
+});
+
+test("settings never mounts member search and keeps appearance, account links and dialog dismissal", () => {
+  const changes = [];
+  const f = fixture("/my", { trigger: "settings", appearance: "ink", onAppearanceChange: value => changes.push(value), preview: true, viewerLabel: "Preview member" });
+  assert.equal(f.trigger().props["aria-label"], "Settings and appearance");
+  f.trigger().props.onClick(); f.draw();
+  assert.equal(f.dialog.open, true);
+  assert.equal(f.all().some(node => node.type === "member-quick-search" || node.type === "input" && node.props.type === "search"), false);
+  const radios = f.all().filter(node => node.type === "input" && node.props.type === "radio");
+  assert.deepEqual(radios.map(node => node.props.value), ["paper", "ink", "system"]);
+  assert.deepEqual(radios.map(node => node.props.checked), [false, true, false]);
+  radios[0].props.onChange(); assert.deepEqual(changes, ["paper"]);
+  const account = f.find(node => node.type === "nav" && node.props["aria-label"] === "Account settings");
+  assert.deepEqual(nodes(account).filter(node => node.type === "a").map(node => node.props.href), ["/my/profile", "/my/account", "/my/support"]);
+  assert.equal(f.all().some(node => node.type === "form" && node.props.action?.includes("sign-out")), false);
+  f.escape(); assert.equal(f.dialog.open, false);
+  assert.equal(f.focused().label, "Settings and appearance");
+  assert.equal(f.document.body.style.overflow, "clip");
   f.unmount();
 });
 
@@ -293,14 +347,17 @@ test("Opening the menu calls showModal, focuses search, and exposes every destin
   assert.deepEqual(f.calls(), { show: 1, close: 0 }, "a stable render never reopens the dialog");
 });
 
-test("Search changes the rendered pages, announces no matches, and resets when reopened", () => {
+test("Search changes page links, removes empty page navigation and resets when reopened", () => {
   const f = fixture();
   f.trigger().props.onClick(); f.draw();
   f.search().props.onChange({ target: { value: "billing" } }); f.draw();
   assert.deepEqual(nodes(f.menu()).filter((node) => node.type === "a").map((node) => node.props.href), ["/my/account"]);
   f.search().props.onChange({ target: { value: "no-such-page" } }); f.draw();
   assert.equal(nodes(f.menu()).some((node) => node.type === "a"), false);
-  assert.match(text(f.find((node) => node.props?.role === "status")), /No matching pages/);
+  assert.equal(f.menu(), undefined);
+  assert.doesNotMatch(text(f.sheet()), /No matching pages/);
+  assert.equal(f.find(node => node.type === "member-quick-search").props.query, "no-such-page");
+  assert.ok(f.find(node => node.type === "a" && node.props.href === "/my/members?q=no-such-page"));
   f.find((node) => node.type === "button" && node.props["aria-label"] === "Close menu").props.onClick(); f.draw();
   assert.equal(f.dialog.open, false);
   assert.equal(f.document.body.style.overflow, "clip");

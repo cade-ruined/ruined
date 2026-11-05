@@ -7,6 +7,8 @@ import MemberIcon from "@/components/membership/MemberIcon";
 import type { MemberAppearance } from "@/components/membership/MemberJourneyShell";
 import type { OperatorNavigationRole } from "@/lib/platform/operations-navigation";
 import { currentMemberDestination, findMemberDestinations } from "@/lib/membership/navigation";
+import { MEMBER_SEARCH_LIMIT, normalizeMemberSearchQuery } from "@/lib/membership/member-search-model";
+import MemberQuickSearch from "./MemberQuickSearch";
 import styles from "./MemberNavigationFab.module.css";
 
 export default function MemberNavigationFab({appearance = "system", onAppearanceChange, preview, operatorRole, viewerLabel, trigger = "search"}: {
@@ -22,7 +24,7 @@ export default function MemberNavigationFab({appearance = "system", onAppearance
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const destinations = findMemberDestinations(query);
-  const memberQuery = query.trim().slice(0, 80);
+  const memberQuery = normalizeMemberSearchQuery(query.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, MEMBER_SEARCH_LIMIT));
   const memberSearchHref = memberQuery ? `/my/members?${new URLSearchParams({ q: memberQuery })}` : "/my/members";
   useEffect(() => { setOpen(false); }, [pathname]);
   useEffect(() => {
@@ -55,12 +57,13 @@ export default function MemberNavigationFab({appearance = "system", onAppearance
           {viewerLabel ? <p className={styles.viewer}>{viewerLabel}</p> : null}
           {viewerLabel && !preview ? <form method="post" action="/api/auth/sign-out?next=/access"><button className="member-button" type="submit">Sign out</button></form> : null}
         </> : <>
-          <label className={styles.search}><span className={styles.srOnly}>Find a member or membership page</span><MemberIcon name="search"/><input ref={searchRef} type="search" autoComplete="off" maxLength={80} placeholder="Name, @tag, or page…" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setOpen(false); } }} /></label>
-          <Link className={styles.memberSearch} href={memberSearchHref} onClick={() => setOpen(false)}><span><strong>{memberQuery ? "Search members" : "Browse members"}</strong><small>{memberQuery ? `Find “${memberQuery}” by name or @tag` : "Explore profiles or find someone by name or @tag"}</small></span><MemberIcon name="arrow" /></Link>
-          <nav aria-label="Membership" className={styles.destinations}>{(["Your record", "Your membership", "Your account"] as const).map(group => {
+          <label className={styles.search}><span className={styles.srOnly}>Find a member or membership page</span><MemberIcon name="search"/><input ref={searchRef} type="search" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={MEMBER_SEARCH_LIMIT} aria-controls={memberQuery ? `${menuId}-member-results` : undefined} placeholder="Name, @tag, or page…" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setOpen(false); } }} /></label>
+          <MemberQuickSearch id={`${menuId}-member-results`} query={memberQuery} open={open} preview={preview} onNavigate={() => setOpen(false)} />
+          <Link className={styles.memberSearch} href={memberSearchHref} onClick={() => setOpen(false)}><span><strong>{memberQuery ? "View all member results" : "Browse members"}</strong><small>{memberQuery ? `Find “${memberQuery}” by name or @tag` : "Explore profiles or find someone by name or @tag"}</small></span><MemberIcon name="arrow" /></Link>
+          {destinations.length ? <nav aria-label="Membership" className={styles.destinations}>{(["Your record", "Your membership", "Your account"] as const).map(group => {
             const items = destinations.filter(destination => destination.group === group);
             return items.length ? <section key={group}><h3>{group}</h3><ul>{items.map(({href,label}) => <li key={href}><Link href={href} aria-current={currentHref === href ? "page" : undefined} onClick={() => setOpen(false)}><span>{label}</span><span aria-hidden="true">↗</span></Link></li>)}</ul></section> : null;
-          })}{!destinations.length ? <p role="status">No matching pages. Search members above, or try “profile”, “events”, or “help”.</p> : null}</nav>
+          })}</nav> : null}
         </>}
       </div>
     </dialog>

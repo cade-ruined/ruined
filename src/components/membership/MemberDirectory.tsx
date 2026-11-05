@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import MemberIcon from "./MemberIcon";
 import { memberTier } from "@/lib/membership/member-number";
@@ -21,18 +22,19 @@ function DirectoryPortrait({ name, avatarUrl }: { name: string; avatarUrl: strin
   </span>;
 }
 
-function initialQuery(fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  const url = new URL(window.location.href);
-  if (url.pathname !== "/my/members") return fallback;
-  return normalizeMemberSearchQuery((url.searchParams.get("q") ?? "")
+function initialQuery(params: Pick<URLSearchParams, "get"> | null, fallback: string): string {
+  // The router knows the destination before the address bar commits a navigation.
+  // Its query also restores the current filter when Back reuses a cached page.
+  return normalizeMemberSearchQuery((params ? params.get("q") ?? "" : fallback)
     .replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, MEMBER_SEARCH_LIMIT));
 }
 
 export default function MemberDirectory({ initialSearch, preview = false }: {
   initialSearch: MemberSearchSnapshot; preview?: boolean;
 }) {
-  const [input, setInput] = useState(() => initialQuery(initialSearch.query));
+  const routeParams = useSearchParams();
+  const routeQuery = initialQuery(routeParams, initialSearch.query);
+  const [input, setInput] = useState(routeQuery);
   const [page, setPage] = useState(initialSearch.page);
   const [search, setSearch] = useState(initialSearch);
   const [pending, setPending] = useState(false);
@@ -40,10 +42,37 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
   const [attempt, setAttempt] = useState(0);
   const firstRequest = useRef(true);
   const requestVersion = useRef(0);
+  const previousRouteQuery = useRef(routeQuery);
+  const previousInitialSearch = useRef(initialSearch);
+  const ownRouteQueries = useRef<string[]>([]);
   const query = normalizeMemberSearchQuery(input);
   const queryChanged = search.query !== query;
   const visibleResults = queryChanged || error?.signIn || error?.denied ? [] : search.results;
   const busy = pending || queryChanged && !error;
+
+  useEffect(() => {
+    const navigated = previousInitialSearch.current !== initialSearch;
+    if (!navigated && previousRouteQuery.current === routeQuery) return;
+    previousInitialSearch.current = initialSearch;
+    previousRouteQuery.current = routeQuery;
+    // Next can acknowledge our history writes after someone has typed more.
+    // Those acknowledgements must not replace their newer input.
+    const ownUpdate = ownRouteQueries.current.indexOf(routeQuery);
+    // A server navigation is authoritative even when it reuses the same query
+    // key and a coalesced history write left that query in the local queue.
+    if (!navigated && ownUpdate >= 0) {
+      ownRouteQueries.current.splice(0, ownUpdate + 1);
+      return;
+    }
+    ownRouteQueries.current = [];
+    // Menu navigation can reuse this component after a locally edited search.
+    // Our own URL updates already match the input and retain loaded pages.
+    if (routeQuery === query) return;
+    setInput(routeQuery);
+    setPage(1);
+    setAttempt(0);
+    setError(null);
+  }, [routeQuery, query, initialSearch]);
 
   useEffect(() => {
     if (firstRequest.current) {
@@ -81,6 +110,8 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
         if (url.pathname === "/my/members") {
           if (query) url.searchParams.set("q", query); else url.searchParams.delete("q");
           url.searchParams.delete("page");
+          if ((query !== previousRouteQuery.current || ownRouteQueries.current.length)
+              && ownRouteQueries.current.at(-1) !== query) ownRouteQueries.current.push(query);
           window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
         }
       } catch {
