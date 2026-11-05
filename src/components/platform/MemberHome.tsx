@@ -80,9 +80,9 @@ export default function MemberHome({member,preview=false,welcome=null}:{member:M
       <div className={styles.earnedBadges}>{member.badges?.length ? <MemberBadges badges={member.badges} preview={preview}/> : null}<Link className={styles.badgeCollectionLink} href="/my/badges">Your badges <span aria-hidden="true">↗</span></Link></div>
     </header>
 
-    {memberCan(member.access,"foundations.write") || memberCan(member.access,"foundations.revisit") ? <MemberPracticeCard key={member.identity.authUserId} ownerId={member.identity.authUserId} preview={preview}/> : null}
+    {memberCan(member.access,"foundations.write") || memberCan(member.access,"foundations.revisit") ? <MemberPracticeCard key={`practice-${member.identity.authUserId}`} ownerId={member.identity.authUserId} preview={preview}/> : null}
 
-    {member.access.mode === "full" || member.access.mode === "onboarding" ? <MemberWelcome key={member.identity.authUserId} ownerId={member.identity.authUserId} initialWelcome={welcome} preview={preview} profileReady={Boolean(avatarUrl && member.profile.bio?.trim() && member.profile.memberTag?.trim())} hasUpcomingCall={member.upcomingExperiences.some(event=>Boolean(event.meetingUrl) && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now())} onWritePrivate={()=>{select("journal");setPrivateComposeRequest(value=>value+1);}}/> : null}
+    {member.access.mode === "full" || member.access.mode === "onboarding" ? <MemberWelcome key={`welcome-${member.identity.authUserId}`} ownerId={member.identity.authUserId} initialWelcome={welcome} preview={preview} profileReady={Boolean(avatarUrl && member.profile.bio?.trim() && member.profile.memberTag?.trim())} hasUpcomingCall={member.upcomingExperiences.some(event=>Boolean(event.meetingUrl) && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now())} onWritePrivate={()=>{select("journal");setPrivateComposeRequest(value=>value+1);}}/> : null}
 
     <InstallRuined variant="profile"/>
 

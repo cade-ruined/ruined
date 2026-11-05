@@ -65,6 +65,7 @@ function fixture({ server = backend(), intercept, recoveryDraft = null, writable
     return response({ entry: structuredClone(value) });
   }
   const window = {
+    location: { hash: "" }, history: { state: null, replaceState(_state, _title, hash) { window.location.hash = hash; } }, addEventListener() {}, removeEventListener() {},
     dispatchEvent(event) { events.push(event.type); return true; },
     requestAnimationFrame(callback) { const key = ++timerId; frames.set(key, callback); return key; }, cancelAnimationFrame(key) { frames.delete(key); },
     setTimeout(callback) { const key = ++timerId; timers.set(key, callback); return key; }, clearTimeout(key) { timers.delete(key); },
@@ -77,7 +78,7 @@ function fixture({ server = backend(), intercept, recoveryDraft = null, writable
     if (name === "react/jsx-runtime") return require(name);
     if (name === "@/lib/membership/journal-model") return journalModel.exports;
     if (name === "./timeline-model") return timelineModel;
-    if (name === "./TimelineExportStudio" || name === "./TimelineStoryContent") return { __esModule: true, default: () => null };
+    if (name === "./TimelineGraphics" || name === "./TimelineExportStudio" || name === "./TimelineStoryContent") return { __esModule: true, default: () => null };
     if (name === "./useJournalDraftGuard") return { __esModule: true, default: () => ({ ownerId: id(900), recoveryDraft, dismissRecovery() { recoveryDraft = null; }, clearDraft() { recoveryDraft = null; } }) };
     if (name === "next/link") return { __esModule: true, default: "a" };
     if (name === "next/navigation") return { useRouter: () => ({ push: href => navigations.push(href) }) };

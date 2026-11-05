@@ -11,6 +11,7 @@
 .toggle:focus-visible, .retry:focus-visible { outline: 2px solid var(--member-ink); outline-offset: 4px; }
 .toggle:disabled, .retry:disabled { cursor: not-allowed; opacity: .5; }
 .panel { padding: 20px; border-top: 1px solid var(--member-rule); }
+.graphics[data-expanded="true"] .panel { border-top:0; }
 .panel [data-timeline-export-studio] { padding: 0; }
 .status, .error p, .note, .sample { margin: 0; color: var(--member-muted); font: 400 12px/1.7 var(--font-body); }
 .note { margin-bottom: 18px; }

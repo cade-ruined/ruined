@@ -22,11 +22,12 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : typeof node === "string" || typeof node === "number" ? String(node) : "";
 const nodes = node => !React.isValidElement(node) ? [] : [node, ...(node.type.name === "Dialog" && !node.props.open ? [] : React.Children.toArray(node.props.children).flatMap(nodes))];
 
-function fixture({ initialEntries = [entry()], writable = true, preview = false, previewEmpty = false, initialMode = "all", view = "journal", sharingEnabled = false, publicUrl = "/journal/public-member-token", renderLayout, pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false } = {}) {
+function fixture({ initialEntries = [entry()], writable = true, preview = false, previewEmpty = false, initialMode = "all", view = "journal", sharingEnabled = false, publicUrl = "/journal/public-member-token", renderLayout, pageSize = 30, intercept, recoveryDraft = null, timelineCapabilities = ["foundations.write"], ownerId = id(900), captureRenders = false, initialHash = "" } = {}) {
   const slots = [], calls = [], guards = [], rendered = [], events = [], eventDetails = [], navigations = [], timers = new Map(), frames = new Map(), revoked = [], createdUrls = [];
   const entries = new Map(initialEntries.map(value => [value.id, structuredClone(value)]));
   const media = new Map(initialEntries.flatMap(value => value.media.map(item => [item.id, item])));
   const Export = () => null;
+  const Graphics = () => null;
   const StoryContent = () => null;
   let cursor = 0, queued = [], changed = false, tree, uuid = 100, timerId = 0, urlId = 0, cleared = 0, focused = 0, confirmResult = true;
   const props = { writable, preview, previewEmpty, initialMode, view, sharingEnabled, renderLayout, onModeChange(mode) { props.initialMode = mode; } };
@@ -43,7 +44,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     const params = url.searchParams;
     const values = [...entries.values()].filter(value => (params.get("saved") !== "true" || value.saved)
       && (!params.get("collection") || (params.get("collection") === "public" ? value.visibility === "public" && value.includeOnTimeline : !(value.visibility === "public" && value.includeOnTimeline)))
-      && (params.get("view") !== "timeline" || params.get("collection") === "private" || value.includeOnTimeline)
+      && (params.get("view") !== "timeline" || value.includeOnTimeline)
       && (!params.get("year") || String(value.eventYear) === params.get("year"))
       && (!params.get("search") || `${value.title} ${value.body}`.toLowerCase().includes(params.get("search").toLowerCase())));
     if (params.get("view") === "timeline") values.sort((a, b) => (params.get("order") === "newest" ? -1 : 1) * ((a.eventYear ?? 0) - (b.eventYear ?? 0)) || (a.eventMonth ?? 13) - (b.eventMonth ?? 13));
@@ -82,13 +83,16 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     static createObjectURL(file) { const url = `blob:journal-${++urlId}`; createdUrls.push({ file, url }); return url; }
     static revokeObjectURL(url) { revoked.push(url); }
   }
-  const window = { dispatchEvent(event) { events.push(event.type); eventDetails.push(event.detail); return true; }, requestAnimationFrame(callback) { const key = ++timerId; frames.set(key, callback); return key; }, cancelAnimationFrame(key) { frames.delete(key); }, setTimeout(callback) { const key = ++timerId; timers.set(key, callback); return key; }, clearTimeout(key) { timers.delete(key); }, confirm: () => confirmResult };
+  const listeners = new Map();
+  const location = { hash: initialHash };
+  const window = { location, history: { state: null, replaceState(_state, _title, hash) { location.hash = hash; } }, addEventListener(type, callback) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(callback); }, removeEventListener(type, callback) { listeners.get(type)?.delete(callback); }, dispatchEvent(event) { events.push(event.type); eventDetails.push(event.detail); return true; }, requestAnimationFrame(callback) { const key = ++timerId; frames.set(key, callback); return key; }, cancelAnimationFrame(key) { frames.delete(key); }, setTimeout(callback) { const key = ++timerId; timers.set(key, callback); return key; }, clearTimeout(key) { timers.delete(key); }, confirm: () => confirmResult };
   const loaded = { exports: {} };
   new Function("require", "module", "exports", "window", "fetch", "URL", "crypto", compiled)(name => {
     if (name === "react") return hooks;
     if (name === "react/jsx-runtime") return require(name);
     if (name === "@/lib/membership/journal-model") return journalModel.exports;
     if (name === "./timeline-model") return timelineModel;
+    if (name === "./TimelineGraphics") return { __esModule: true, default: Graphics };
     if (name === "./TimelineExportStudio") return { __esModule: true, default: Export };
     if (name === "./TimelineStoryContent") return { __esModule: true, default: StoryContent };
     if (name === "./useJournalDraftGuard") return { __esModule: true, default: state => { guards.push(state); return { ownerId, recoveryDraft, dismissRecovery() { recoveryDraft = null; }, clearDraft() { cleared++; } }; } };
@@ -115,7 +119,8 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
     assert.ok(container, `Missing field ${label}`);
     return nodes(container).find(node => ["input", "textarea", "select"].includes(node.type));
   };
-  return { calls, entries, guards, rendered, events, eventDetails, navigations, createdUrls, revoked, render, flush, find, button, field, Export, StoryContent,
+  return { calls, entries, guards, rendered, events, eventDetails, navigations, createdUrls, revoked, render, flush, find, button, field, Export, Graphics, StoryContent, location,
+    setHash(hash, event = "hashchange") { location.hash = hash; listeners.get(event)?.forEach(callback => callback()); return flush(); },
     async click(label) { const control = button(label); assert.ok(control, `Missing button ${label}`); assert.equal(Boolean(control.props.disabled), false, `${label} should be enabled`); control.props.onClick(); return flush(); },
     closeComposer() { const dialog = find(node => node.type.name === "Dialog" && node.props.open && nodes(node).some(child => child.type === "form")); assert.ok(dialog); dialog.props.onClose(); return flush(); },
     change(label, value) { const control = field(label); control.props.onChange({ target: { value, checked: value } }); return render(); },
@@ -600,4 +605,71 @@ test("first-use preview starts empty only when requested and never hides real Jo
   const live = fixture({ previewEmpty: true, sharingEnabled: true }); await live.flush();
   assert.equal(nodes(live.render()).filter(node => node.type === "article").length, 1, "previewEmpty cannot suppress a real record");
   assert.ok(live.calls.some(call => call.method === "GET")); live.unmount();
+});
+
+test("main-profile Timeline separates Posts, private Timeline drafts, and one-click Graphics", async () => {
+  const ui = fixture({ sharingEnabled: true, initialMode: "timeline", initialEntries: [
+    entry({ id: id(1), title: "Published story", visibility: "public" }),
+    entry({ id: id(2), title: "Unfinished Timeline story", visibility: "private" }),
+    entry({ id: id(3), title: "Private Journal only", includeOnTimeline: false, visibility: "private" }),
+  ] });
+  await ui.flush();
+  assert.equal(ui.button("Posts").props["aria-pressed"], true);
+  assert.ok(ui.button("Drafts")); assert.ok(ui.button("Graphics"));
+  assert.ok(ui.button("Open entry: Published story"));
+  assert.doesNotMatch(text(ui.render()), /Unfinished Timeline story|Private Journal only/);
+  await ui.click("Drafts");
+  const draftsRequest = ui.calls.filter(call => call.url.pathname === "/api/my/journal").at(-1);
+  assert.equal(draftsRequest.url.searchParams.get("collection"), "private");
+  assert.equal(draftsRequest.url.searchParams.get("view"), "timeline");
+  assert.equal(draftsRequest.headers.get("x-ruined-session-owner"), id(900));
+  const resume = ui.find(node => node.type === "a" && node.props["aria-label"] === "Continue draft: Unfinished Timeline story");
+  assert.equal(resume.props.href, `/my/timeline?moment=${id(2)}`);
+  assert.match(text(ui.render()), /Private · These drafts are only visible to you/);
+  assert.doesNotMatch(text(ui.render()), /Published story|Private Journal only|View as visitor/);
+  assert.equal(ui.location.hash, "#timeline-drafts");
+  const requestsBeforeGraphics = ui.calls.length;
+  await ui.click("Graphics");
+  const graphic = ui.find(node => node.type === ui.Graphics);
+  assert.equal(graphic.props.expanded, true);
+  assert.equal(graphic.props.ownerId, id(900));
+  assert.equal(graphic.props.preview, false);
+  assert.equal(ui.location.hash, "#graphics");
+  assert.equal(ui.calls.length, requestsBeforeGraphics, "Graphics delegates loading to the owner-safe public export component");
+  assert.equal(ui.find(node => node.type === "form"), undefined, "viewing graphics never opens a new entry");
+  await ui.click("Posts");
+  assert.ok(ui.button("Open entry: Published story"));
+  assert.doesNotMatch(text(ui.render()), /Unfinished Timeline story|Private Journal only/);
+  assert.equal(ui.find(node => node.type === ui.Graphics), undefined);
+  assert.deepEqual(ui.mutate(), []); ui.unmount();
+});
+
+test("profile Graphics deep links and hash navigation keep Journal controls independent", async () => {
+  const ui = fixture({ sharingEnabled: true, initialMode: "timeline", initialHash: "#graphics" });
+  await ui.flush();
+  assert.equal(ui.button("Graphics").props["aria-pressed"], true);
+  assert.ok(ui.find(node => node.type === ui.Graphics));
+  await ui.setHash("#timeline-drafts", "popstate");
+  assert.equal(ui.button("Drafts").props["aria-pressed"], true);
+  await ui.setHash("#timeline");
+  assert.equal(ui.button("Posts").props["aria-pressed"], true);
+  ui.render({ initialMode: "all" }); await ui.flush();
+  assert.ok(ui.button("Entries")); assert.ok(ui.button("View drafts"));
+  assert.equal(ui.button("Graphics"), undefined); assert.equal(ui.find(node => node.type === ui.Graphics), undefined);
+  ui.unmount();
+});
+
+test("late private draft responses cannot replace public posts after returning to Posts", async () => {
+  const held = deferred();
+  const ui = fixture({ sharingEnabled: true, initialMode: "timeline", initialEntries: [entry({ title: "Public again", visibility: "public" })], intercept(call) {
+    if (call.url.pathname === "/api/my/journal" && call.url.searchParams.get("collection") === "private" && call.url.searchParams.get("view") === "timeline") return held.promise;
+  } });
+  await ui.flush(); await ui.click("Drafts");
+  const draftRequest = ui.calls.at(-1);
+  await ui.click("Posts");
+  assert.equal(draftRequest.signal.aborted, true);
+  held.resolve(response({ entries: [entry({ title: "Do not show private content", visibility: "private" })], total: 1, hasMore: false, mediaReady: true }));
+  await ui.flush();
+  assert.ok(ui.button("Open entry: Public again"));
+  assert.doesNotMatch(text(ui.render()), /Do not show private content/); ui.unmount();
 });

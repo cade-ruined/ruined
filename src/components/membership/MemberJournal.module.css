@@ -1,5 +1,12 @@
 
 .journal { min-width:0; }
+.timelineNav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 22px; }
+.timelineNav button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:10px 18px; border:1px solid var(--member-rule); background:var(--member-soft); color:var(--member-muted); font-size:13px; cursor:pointer; }
+.timelineNav button:hover { color:var(--member-ink); background:var(--member-subtle); }
+.timelineNav button[aria-pressed="true"] { color:var(--member-paper); background:var(--member-ink); border-color:var(--member-ink); }
+.timelineNav button:last-child { border-color:#26262350; color:#262623; background:var(--member-blue); margin-left:auto; }
+.timelineNav button:last-child[aria-pressed="true"] { box-shadow:3px 3px 0 var(--member-ink); border-color:var(--member-ink); }
+@media(max-width:480px) { .timelineNav { gap:7px; } .timelineNav button { padding:10px 13px; } }
 .sectionHeader { display:flex; justify-content:space-between; gap:14px; align-items:center; margin-bottom:16px; }
 .sectionHeader .sectionTitle { color:var(--member-ink); font-size:30px; white-space:nowrap; }
 .subtitle { color:var(--member-muted); font-size:12px; line-height:1.65; margin-top:7px; }
