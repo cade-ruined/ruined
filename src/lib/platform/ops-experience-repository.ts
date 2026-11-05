@@ -1574,7 +1574,9 @@ async function requireFoundationsRosterPlacement(tx: postgres.TransactionSql,inp
       else private.ruined_complimentary_foundations_schedule(registration.registered_at,null) end as schedule
     from member_registration_access registration where registration.member_id=${input.memberId}::uuid`;
   const index=Number(binding.kind.slice(-2))-1;
-  const [target]=await tx<Array<{schedule:{cutoffAt:string}}>>`select private.ruined_complimentary_foundations_schedule(clock_timestamp(),${binding.cohortMonth}) as schedule`;
+  const [target]=await tx<Array<{schedule:{cutoffAt:string};open:boolean}>>`select schedule,
+    private.ruined_complimentary_foundations_group_open(schedule,clock_timestamp()) as open from
+    (select private.ruined_complimentary_foundations_schedule(clock_timestamp(),${binding.cohortMonth}) as schedule) target`;
   const pastCall=Date.parse(new Date(input.experience.starts_at).toISOString())<=Date.now();
   const assigned=registration?.schedule;
   const needsOverride=pastCall || (assigned
@@ -1586,10 +1588,10 @@ async function requireFoundationsRosterPlacement(tx: postgres.TransactionSql,inp
   if (!input.access.isAdmin) throw new OpsOperatingRepositoryError("forbidden","Only an administrator can approve a Foundations exception.");
   if (!input.reason || input.reason.trim().length<10) throw new OpsOperatingRepositoryError("invalid_request","Explain the Foundations exception in at least 10 characters.");
   const changesComplimentaryGroup=registration?.completionBasis==="complimentary" && binding.kind==="foundations_01";
-  if (changesComplimentaryGroup && pastCall) throw new OpsOperatingRepositoryError("conflict","Choose an upcoming Foundations 1 call when changing a complimentary member's group.");
+  if (changesComplimentaryGroup && !target.open) throw new OpsOperatingRepositoryError("conflict","This Foundations group has finished. Choose an upcoming group or one with a published remaining call.");
   await writeOperatorAudit(tx,{actorAuthUserId:input.access.authUserId,action:"experience.foundations_cutoff_override",
     subjectType:"experience",subjectId:input.experience.id,memberId:input.memberId,reason:input.reason,
-    metadata:{assignedCohort:assigned?.cohortMonth ?? null,invitedCohort:binding.cohortMonth,callOnly:!changesComplimentaryGroup}});
+    metadata:{assignedCohort:assigned?.cohortMonth ?? null,invitedCohort:binding.cohortMonth,callOnly:!changesComplimentaryGroup,lateEntry:changesComplimentaryGroup && pastCall}});
   return changesComplimentaryGroup ? binding.cohortMonth : undefined;
 }
 
