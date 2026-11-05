@@ -16,19 +16,22 @@ export function badgeUIFixture(initial={},options={}){
   const document={activeElement:null,hidden:options.hidden??false,body:{style:{overflow:'scroll'}},listeners:new Map(),
     addEventListener(type,fn){const set=this.listeners.get(type)??new Set();set.add(fn);this.listeners.set(type,set);},
     removeEventListener(type,fn){this.listeners.get(type)?.delete(fn);},
-    querySelectorAll(selector){assert.equal(selector,'dialog[open]');return [dialog,otherDialog].filter(item=>item.open);},
+    querySelectorAll(selector){assert.equal(selector,'dialog[open]');return [dialog,otherDialog,competingDialog].filter(item=>item.open);},
     querySelector(selector){return this.querySelectorAll(selector)[0]??null;}};
   class Element{
     constructor(name){this.name=name;this.isConnected=true;this.listeners=new Map();this.scrollLeft=0;this.scrollWidth=300;this.clientWidth=300;this.offsetLeft=0;this.offsetWidth=56;this.parentElement=null;this.open=false;}
     focus(value){document.activeElement=this;this.focusOptions=value;}
     closest(){return hiddenAncestor?document.body:null;}
+    contains(element){for(let next=element;next;next=next.parentElement)if(next===this)return true;return false;}
+    hasAttribute(name){return name==='data-member-profile-dialog'&&this.profileDialog===true;}
     getBoundingClientRect(){const left=this.offsetLeft-(this.parentElement?.scrollLeft??0);return {left,right:left+this.offsetWidth,top:0,width:this.offsetWidth,height:76};}
     addEventListener(type,fn){const set=this.listeners.get(type)??new Set();set.add(fn);this.listeners.set(type,set);}
     removeEventListener(type,fn){this.listeners.get(type)?.delete(fn);}
     dispatch(type,event){this.listeners.get(type)?.forEach(fn=>fn(event));}
   }
   const original=new Element('original-focus');document.activeElement=original;
-  const dialog=new Element('dialog'),otherDialog=new Element('other-dialog');otherDialog.open=options.otherDialog??false;
+  const dialog=new Element('dialog'),otherDialog=new Element('other-dialog'),competingDialog=new Element('competing-dialog');otherDialog.open=options.otherDialog??options.ancestorDialog??false;
+  if(options.ancestorDialog){otherDialog.profileDialog=true;dialog.parentElement=otherDialog;}
   dialog.opens=0;dialog.closes=0;
   dialog.showModal=()=>{dialog.opens++;dialog.open=true;};dialog.close=()=>{if(dialog.open){dialog.closes++;dialog.open=false;}};
   const hooks={...React,
@@ -75,9 +78,9 @@ export function badgeUIFixture(initial={},options={}){
       dirty=false;seen=new Set();tree=renderFunction(Component,props,'root');
       for(const[key,instance]of instances){if(!seen.has(key)){instance.slots.forEach(slot=>slot?.cleanup?.());instances.delete(key);}}
       for(const node of nodes(tree)){
-        if(node.type==='button'){const label=node.props['aria-label']??text(node);if(!buttons.has(label))buttons.set(label,new Element(label));setRef(node.props.ref,buttons.get(label));}
+        if(node.type==='button'){const label=node.props['aria-label']??text(node);if(!buttons.has(label)){const button=new Element(label);button.parentElement=node.props['aria-haspopup']==='dialog'?(options.ancestorDialog?otherDialog:null):dialog;buttons.set(label,button);}setRef(node.props.ref,buttons.get(label));}
         else if(node.type==='dialog')setRef(node.props.ref,dialog);
-        else if(node.props.ref){const key=node.props.className??node.props['aria-label']??node.type;if(!elements.has(key))elements.set(key,new Element(key));setRef(node.props.ref,elements.get(key));}
+        else if(node.props.ref){const key=node.props.className??node.props['aria-label']??node.type;if(!elements.has(key)){const element=new Element(key);element.parentElement=options.ancestorDialog?otherDialog:null;elements.set(key,element);}setRef(node.props.ref,elements.get(key));}
       }
       effects.splice(0).forEach(effect=>effect());
     }while(dirty&&--budget);
@@ -86,7 +89,7 @@ export function badgeUIFixture(initial={},options={}){
   function button(label){const node=nodes(draw()).find(node=>node.type==='button'&&(node.props['aria-label']??text(node))===label);assert.ok(node,`Missing button: ${label}`);return node;}
   const click=label=>{button(label).props.onClick({currentTarget:buttons.get(label)});return draw();};
   const notify=()=>{[...observers].forEach(observer=>observer.callback([]));return draw();};
-  return {draw,button,click,buttons,elements,dialog,document,original,requests,observers,navigation,
+  return {draw,button,click,buttons,elements,dialog,otherDialog,document,original,requests,observers,navigation,
     dispatchWindow(type){window.listeners.get(type)?.forEach(fn=>fn());return draw();},
     windowListeners:window.listeners,
     focusWindow(){window.listeners.get('focus')?.forEach(fn=>fn());return draw();},
@@ -95,6 +98,7 @@ export function badgeUIFixture(initial={},options={}){
     setHidden(value){document.hidden=value;document.listeners.get('visibilitychange')?.forEach(fn=>fn());return draw();},
     setAncestorHidden(value){hiddenAncestor=value;return notify();},
     setOtherDialog(value){otherDialog.open=value;return notify();},
+    setCompetingDialog(value){competingDialog.open=value;return notify();},
     notifyMutations:notify,
     layout({width=156,itemWidth=52,padding=6}={}){const tree=draw(),row=elements.get('row');assert.ok(row,'Expected dock');row.offsetWidth=width;row.clientWidth=width;row.scrollWidth=props.badges.length*itemWidth+padding*2;nodes(tree).filter(node=>node.type==='button'&&node.props['aria-haspopup']==='dialog').forEach((node,index)=>{const el=buttons.get(node.props['aria-label']);el.parentElement=row;el.offsetLeft=padding+index*itemWidth;el.offsetWidth=itemWidth;});return row;},
     flushFrames(){frames.splice(0).forEach(fn=>fn?.());},

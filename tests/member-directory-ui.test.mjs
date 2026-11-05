@@ -24,6 +24,10 @@ function load(path, dependencies = {}, globals = {}) {
 const model = load("src/lib/membership/member-search-model.ts");
 const preview = load("src/lib/membership/member-search-preview.ts", { "./member-search-model": model });
 const tiers = load("src/lib/membership/member-number.ts");
+const ProfileLink = load("src/components/membership/MemberProfileLink.tsx", { "next/link": { __esModule: true, default: "a" } }).default;
+const expandProfileLinks = node => Array.isArray(node) ? node.map(expandProfileLinks) : !node || typeof node !== "object" ? node
+  : node.type === ProfileLink ? expandProfileLinks(ProfileLink(node.props))
+  : { ...node, props: { ...node.props, children: expandProfileLinks(node.props?.children) } };
 const alex = { name: "Alex Rivera", memberTag: "alex_rivera", bio: "Making room for what matters.", memberNumber: 6, href: "/profile/alex_rivera", avatarUrl: "/api/profile/alex_rivera/portrait?v=1" };
 const cherry = { name: "Cherry Hill", memberTag: "cherry_hill", bio: null, memberNumber: null, href: "/profile/cherry_hill", avatarUrl: null };
 const libby = { name: "Libby Zaritsky", memberTag: "libby", bio: "A creative practice.", memberNumber: 52, href: "/profile/libby", avatarUrl: "/api/profile/libby/portrait?v=1" };
@@ -63,26 +67,33 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href, rou
       }
     },
   };
+  const fakeFetch = (url, options) => new Promise((resolve, reject) => calls.push({ url, options, resolve, reject }));
+  const reader = load("src/lib/membership/member-read-client.ts", {}, {
+    fetch: fakeFetch, setTimeout: browser.setTimeout, clearTimeout: browser.clearTimeout,
+  });
   const Component = load("src/components/membership/MemberDirectory.tsx", {
     react: hooks,
     "next/link": { __esModule: true, default: "a" },
     "next/image": { __esModule: true, default: "img" },
-    "next/navigation": { useSearchParams: () => new URL(routeOverride ?? browser.location.href).searchParams },
+    "next/navigation": { useSearchParams: () => new URL(routeOverride ?? browser.location.href).searchParams,
+      usePathname: () => new URL(routeOverride ?? browser.location.href).pathname },
     "./MemberIcon": { __esModule: true, default: "svg" },
+    "./MemberProfileLink": { __esModule: true, default: ProfileLink },
     "@/lib/membership/member-number": tiers,
     "@/lib/membership/member-search-model": model,
     "@/lib/membership/member-search-preview": preview,
+    "@/lib/membership/member-read-client": reader,
     "./MemberDirectory.module.css": { __esModule: true, default: new Proxy({}, { get: (_target, name) => String(name) }) },
   }, {
     window: browser,
-    fetch: (url, options) => new Promise((resolve, reject) => calls.push({ url, options, resolve, reject })),
+    fetch: fakeFetch,
   }).default;
   const render = () => {
     let passes = 0;
     do {
       assert.ok(++passes < 10, "directory effects settle");
       dirty = false; cursor = 0;
-      tree = Component({ initialSearch, preview: previewMode });
+      tree = expandProfileLinks(Component({ initialSearch, preview: previewMode }));
       for (const i of effectSlots) {
         const effect = slots[i];
         if (!effect.pending) continue;
@@ -134,7 +145,7 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href, rou
       calls[index].resolve({ ok: status >= 200 && status < 300, status, json: async () => payload });
       await flush(); render();
     },
-    async reject(index) { calls[index].reject(new Error("network disconnected")); await flush(); render(); },
+    async reject(index) { calls[index].reject(new TypeError("network disconnected")); await flush(); render(); },
     cleanup,
   };
 }
@@ -383,6 +394,37 @@ test("a directory response finishing after profile navigation cannot rewrite the
   assert.deepEqual(f.history, []);
 });
 
+test("an intercepted public profile preserves the filter, loaded pages and results when closed", async t => {
+  const initial = snapshot([alex], { query: "Alex", hasMore: true });
+  const f = fixture(t, { initialSearch: initial });
+  f.click("Load more members"); f.startTimer();
+  await f.reply(0, snapshot([cherry], { query: "Alex", page: 2, hasMore: true }));
+  const before = f.profiles().map(node => node.props.href), count = f.calls.length;
+  f.navigate("/profile/libby"); f.route("/profile/libby");
+  assert.equal(f.input().props.value, "Alex");
+  assert.deepEqual(f.profiles().map(node => node.props.href), before);
+  assert.equal(f.timers.size, 0); assert.equal(f.calls.length, count);
+  f.navigate("/my/members?q=Alex"); f.route("/my/members?q=Alex");
+  assert.equal(f.input().props.value, "Alex");
+  assert.deepEqual(f.profiles().map(node => node.props.href), before);
+  assert.equal(f.results().props["aria-busy"], false);
+  assert.equal(f.timers.size, 0); assert.equal(f.calls.length, count);
+  f.click("Load more members"); f.startTimer();
+  assert.equal(request(f.calls[count]).searchParams.get("page"), "3");
+});
+
+test("directory searches recover from one temporary service failure without showing an error", async t => {
+  const f = fixture(t);
+  f.change("Libby"); f.startTimer();
+  await f.reply(0, {}, 503);
+  assert.equal(f.results().props["aria-busy"], true);
+  assert.equal(nodes(f.render()).some(node => node.props?.role === "alert"), false);
+  assert.equal(f.startTimer().delay, 300); await flush();
+  await f.reply(1, snapshot([libby], { query: "Libby" }));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [libby.href]);
+  assert.equal(f.results().props["aria-busy"], false);
+});
+
 test("load more appends unique profiles and a failed page retries without losing prior results", async t => {
   const f = fixture(t, { initialSearch: snapshot([alex, cherry], { hasMore: true }) });
   f.click("Load more members");
@@ -395,12 +437,14 @@ test("load more appends unique profiles and a failed page retries without losing
   f.click("Load more members"); f.startTimer();
   assert.equal(request(f.calls[1]).searchParams.get("page"), "3");
   await f.reply(1, {}, 503);
+  assert.equal(f.startTimer().delay, 300); await flush();
+  await f.reply(2, {}, 503);
   assert.deepEqual(f.profiles().map(node => node.props.href), [alex.href, cherry.href, libby.href]);
   assert.match(text(f.find(node => node.props?.role === "alert")), /Members couldn’t load/);
   assert.equal(f.button("Load more members"), undefined);
   f.click("Try again"); f.startTimer();
-  assert.equal(request(f.calls[2]).searchParams.get("page"), "3");
-  await f.reply(2, snapshot([riley], { page: 3 }));
+  assert.equal(request(f.calls[3]).searchParams.get("page"), "3");
+  await f.reply(3, snapshot([riley], { page: 3 }));
   assert.deepEqual(f.profiles().map(node => node.props.href), [alex.href, cherry.href, libby.href, riley.href]);
   assert.equal(nodes(f.render()).some(node => node.props?.role === "alert"), false);
   assert.equal(f.button("Load more members"), undefined);
@@ -472,10 +516,12 @@ test("network failures and mismatched responses are retryable without displaying
   const f = fixture(t);
   f.change("Libby"); f.startTimer();
   await f.reject(0);
+  assert.equal(f.startTimer().delay, 300); await flush();
+  await f.reject(1);
   assert.match(text(f.find(node => node.props?.role === "alert")), /Please try again/);
   assert.equal(f.profiles().length, 0);
   f.click("Try again"); f.startTimer();
-  await f.reply(1, snapshot([alex], { query: "Alex" }));
+  await f.reply(2, snapshot([alex], { query: "Alex" }));
   assert.equal(f.profiles().length, 0);
   assert.match(text(f.find(node => node.props?.role === "alert")), /Please try again/);
   const form = f.find(node => node.type === "form");
@@ -483,7 +529,7 @@ test("network failures and mismatched responses are retryable without displaying
   form.props.onSubmit({ preventDefault() { prevented = true; } }); f.render();
   assert.equal(prevented, true);
   f.startTimer();
-  await f.reply(2, snapshot([libby], { query: "Libby" }));
+  await f.reply(3, snapshot([libby], { query: "Libby" }));
   assert.deepEqual(f.profiles().map(node => node.props.href), [libby.href]);
 });
 

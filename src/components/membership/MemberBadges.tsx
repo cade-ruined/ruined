@@ -7,7 +7,9 @@ import { badgeArtwork, badgeStamp, type BadgeDisplay } from "./MemberBadgeCard";
 export type { BadgeDisplay } from "./MemberBadgeCard";
 import styles from "./MemberBadges.module.css";
 
-export default function MemberBadges({ badges, preview = false }: { badges: readonly BadgeDisplay[]; preview?: boolean }) {
+export default function MemberBadges({ badges, preview = false, presentation = "dock" }: {
+  badges: readonly BadgeDisplay[]; preview?: boolean; presentation?: "dock" | "profile";
+}) {
   const [selected, setSelected] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export default function MemberBadges({ badges, preview = false }: { badges: read
 
   if (!badges.length) return null;
 
-  return <div className={styles.badges}>
+  return <div className={`${styles.badges}${presentation === "profile" ? ` ${styles.profileBadges}` : ""}`}>
     <p id={`${id}-instructions`} className={styles.srOnly}>Use the arrow keys to explore badges. Press Enter to see how and when a badge was earned.</p>
     <ul ref={rowRef} className={styles.row} aria-label={preview ? "Sample badges" : "Earned badges"} onPointerDown={() => { selectOnScrollRef.current = true; }} onPointerLeave={() => setHoveredKey(null)} onPointerCancel={() => setHoveredKey(null)} onScroll={selectFromScroll}>
       {badges.map((item, index) => <li key={item.key}>
@@ -91,7 +93,8 @@ export default function MemberBadges({ badges, preview = false }: { badges: read
           onPointerLeave={() => setHoveredKey(null)}
           onFocus={() => setFocusedKey(item.key)} onKeyDown={event => moveFocus(event, index)}
           onClick={event => { triggerRef.current = event.currentTarget; setFocusedKey(item.key); setHoveredKey(null); setSelected(item.key); }}>
-          <span className={styles.stamp} data-artwork={Boolean(badgeArtwork(item)) || undefined} aria-hidden="true">{badgeArtwork(item) ? <Image src={badgeArtwork(item).src} alt="" width={72} height={72} sizes="56px" draggable={false}/> : badgeStamp(item)}</span>
+          <span className={styles.stamp} data-artwork={Boolean(badgeArtwork(item)) || undefined} aria-hidden="true">{badgeArtwork(item) ? <Image src={badgeArtwork(item).src} alt="" width={72} height={72} sizes="56px" loading={presentation === "profile" ? "eager" : undefined} draggable={false}/> : badgeStamp(item)}</span>
+          {presentation === "profile" && <span className={styles.badgeLabel} aria-hidden="true">{item.label}</span>}
         </button>
       </li>)}
     </ul>

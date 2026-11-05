@@ -55,6 +55,15 @@
 .badge[data-active] .stamp[data-artwork] { background:transparent; }
 .stamp[data-artwork] img,.detailStamp[data-artwork] img { display:block; width:100%; height:100%; object-fit:contain; user-select:none; }
 .detailStamp[data-artwork] { width:min(216px,100%); margin-inline:auto; box-shadow:none; }
+.profileBadges .row { align-items:stretch; padding:6px 4px; gap:10px; }
+.profileBadges .row li { flex-basis:92px; width:92px; }
+.profileBadges .badge { flex-direction:column; justify-content:flex-start; width:92px; height:auto; min-height:96px; gap:8px; padding:4px; }
+.profileBadges .stamp { width:52px; }
+.profileBadges .stamp[data-artwork] { width:56px; }
+.profileBadges .badge .stamp { transform:none; }
+.profileBadges .badge[data-active] .stamp { transform:translateY(-2px) rotate(-2deg); }
+.profileBadges .badge[data-active]::after { display:none; }
+.badgeLabel { max-width:100%; color:var(--member-ink); font-size:11px; font-weight:400; line-height:1.35; text-align:center; }
 @media(max-height:700px) { .detail { padding-top:46px; } .patchMount { padding-block:20px; } .detailStamp[data-artwork] { width:min(174px,100%); } .detailStamp { width:154px; } .cardCopy { padding-top:16px; } .earned { margin-top:18px; } }
 @media(forced-colors:active) { .detail { filter:none; background:Canvas; border:1px solid CanvasText; } .cardEdge,.cardStock,.hangerRim { display:none; } .cardBrand { filter:none; forced-color-adjust:none; } .cardBrand,.cardSeries,.eyebrow,.detail h2,.description,.earned time { color:CanvasText; text-shadow:none; } .dialog .saveBadge { color:LinkText; background:Canvas; border-color:LinkText; } .dialog .saveBadge:focus-visible { outline-color:Highlight; } }
 

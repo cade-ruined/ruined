@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { memberTier } from "@/lib/membership/member-number";
+import { fetchMemberRead } from "@/lib/membership/member-read-client";
 import MemberBadges from "./MemberBadges";
 import TimelineStoryContent from "./TimelineStoryContent";
 import type { MemberBadge } from "@/lib/membership/badge-model";
@@ -13,8 +14,8 @@ import type { PublicMemberProfile } from "@/lib/membership/public-card-model";
 import type { PublicJournalEntry, PublicJournalPage } from "@/lib/membership/public-journal-repository";
 import styles from "./PublicJournal.module.css";
 
-export default function PublicJournal({ token, identity, badges = [], previewEntries }: {
-  token: string; identity: PublicMemberProfile; badges?: readonly MemberBadge[]; previewEntries?: PublicJournalEntry[];
+export default function PublicJournal({ token, identity, badges = [], previewEntries, embedded = false }: {
+  token: string; identity: PublicMemberProfile; badges?: readonly MemberBadge[]; previewEntries?: PublicJournalEntry[]; embedded?: boolean;
 }) {
   const tier = memberTier(identity.memberNumber);
   const [firstName, ...surnameParts] = identity.name.trim().split(/\s+/);
@@ -28,23 +29,23 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
     if (previewEntries !== undefined) return;
     const controller = new AbortController(), request = ++generation.current;
     setLoading(true); setError(false);
-    fetch(`/api/cards/${token}/journal${cursor ? `?before=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store", signal: controller.signal })
-      .then(async response => {
+    fetchMemberRead(`/api/cards/${token}/journal${cursor ? `?before=${encodeURIComponent(cursor)}` : ""}`, { signal: controller.signal })
+      .then(response => {
         if (controller.signal.aborted || generation.current !== request) return;
-        if (response.status === 404) { setEntries([]); setUnavailable(true); setNext(null); return; }
+        if ([401, 403, 404].includes(response.status)) { setEntries([]); setUnavailable(true); setNext(null); return; }
         if (!response.ok) throw new Error("Timeline unavailable");
-        const result = await response.json() as PublicJournalPage;
-        if (controller.signal.aborted || generation.current !== request) return;
+        const result = response.data as PublicJournalPage;
         setUnavailable(false);
         setEntries(current => cursor ? [...current, ...result.entries.filter(entry => !current.some(previous => previous.id === entry.id))] : result.entries);
         setNext(result.hasMore ? result.nextCursor : null);
-      }).catch(() => { if (!controller.signal.aborted) setError(true); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      }).catch(() => { if (!controller.signal.aborted && generation.current === request) setError(true); })
+      .finally(() => { if (!controller.signal.aborted && generation.current === request) setLoading(false); });
     return () => controller.abort();
   }, [token, cursor, attempt, previewEntries]);
-  return <main className={`${journeyStyles.journey} ${journeyStyles.focused}`} data-member-journey data-member-theme="paper" data-public-profile>
+  const Root = embedded ? "div" : "main";
+  return <Root className={`${journeyStyles.journey} ${journeyStyles.focused}${embedded ? ` ${styles.embedded}` : ""}`} data-member-journey data-member-theme="paper" data-public-profile>
     <div className={`${journeyStyles.content} ${styles.content}`}>
-      <Link href="/" className={styles.back}>The Ruined Project</Link>
+      {!embedded && <Link href="/" className={styles.back}>The Ruined Project</Link>}
       {previewEntries !== undefined && <p className={styles.preview}>Preview · Example profile and posts</p>}
       <div className={profileStyles.profile}>
         {!unavailable && <header className={profileStyles.identity}>
@@ -62,7 +63,10 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
             </div>
           </div>
           {identity.bio && <p className={profileStyles.bio}>{identity.bio}</p>}
-          {!!badges.length && <div className={profileStyles.earnedBadges}><MemberBadges badges={badges} preview={previewEntries !== undefined} /></div>}
+          {!!badges.length && <div className={`${profileStyles.earnedBadges} ${styles.earnedBadges}`}>
+            <h2 className={styles.badgesTitle}>Earned badges</h2>
+            <MemberBadges badges={badges} preview={previewEntries !== undefined} presentation="profile" />
+          </div>}
         </header>}
         <section aria-labelledby="public-journal-title">
           <div className={profileStyles.profileControls}><h2 id="public-journal-title" className={styles.timelineTitle}>Timeline</h2></div>
@@ -84,8 +88,8 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
             </>}
           </div>
         </section>
-        <footer className={styles.footer}><Link href="/">The Ruined Project</Link></footer>
+        {!embedded && <footer className={styles.footer}><Link href="/">The Ruined Project</Link></footer>}
       </div>
     </div>
-  </main>;
+  </Root>;
 }

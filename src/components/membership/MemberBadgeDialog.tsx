@@ -17,14 +17,16 @@ export default function MemberBadgeDialog({ badge, id, onDismiss, preview = fals
     const dialog = dialogRef.current;
     if (!activeKey || !dialog) return;
     let previousFocus: Element | null = null;
+    const containingProfile = (other: Element) => other.hasAttribute("data-member-profile-dialog") && other.contains(dialog);
     function closeForNow() {
       if (dialog!.open) dialog!.close();
-      if (!document.hidden && !document.querySelector("dialog[open]") && previousFocus instanceof HTMLElement
+      const focusBlocked = Array.from(document.querySelectorAll("dialog[open]")).some(other => !containingProfile(other) || !other.contains(previousFocus));
+      if (!document.hidden && !focusBlocked && previousFocus instanceof HTMLElement
         && previousFocus.isConnected && !previousFocus.closest("[hidden],[inert]")) previousFocus.focus({ preventScroll: true });
       previousFocus = null;
     }
     function reconcile() {
-      const anotherDialog = Array.from(document.querySelectorAll("dialog[open]")).some(other => other !== dialog);
+      const anotherDialog = Array.from(document.querySelectorAll("dialog[open]")).some(other => other !== dialog && !containingProfile(other));
       if (!enabled || document.hidden || dialog!.closest("[hidden],[inert]") || anotherDialog) {
         closeForNow(); // Session changes and competing dialogs never acknowledge a badge.
         return;

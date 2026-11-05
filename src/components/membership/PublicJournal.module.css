@@ -1,4 +1,8 @@
 .content { width:100%; max-width:1280px; }
+.embedded.embedded { min-height:0; padding:0; }
+.embedded .content { padding:20px clamp(20px,4vw,40px) 32px; }
+.earnedBadges.earnedBadges { display:block; margin-top:0; }
+.badgesTitle { margin:0 0 8px; color:var(--member-muted); font-family:var(--font-body); font-size:11px; font-weight:500; line-height:1.5; letter-spacing:.06em; text-transform:uppercase; }
 .back { display:inline-flex; align-items:center; min-height:44px; margin-bottom:28px; color:var(--member-muted); font-size:11px; letter-spacing:.07em; text-transform:uppercase; text-decoration:none; }
 .back:hover { color:var(--member-ink); }
 .preview { margin:0 0 24px; color:var(--member-muted); font-size:12px; }
