@@ -207,20 +207,25 @@ test("directory navigation authorization propagates unavailable reads and never 
 
 test("member search API authenticates, validates pages, disables caching and safely reports failures",async()=>{
   let session={status:"authenticated",viewer:{authUserId:timelineIds.auth}},failure=null;
-  const calls=[];
+  const calls=[], scopes=[];let insideScope=false;
   const api=await load("app/api/my/members/route.ts",{
     "next/server":require("next/server"),"@/lib/auth/session":{resolveCurrentPlatformSession:async()=>session},
     "@/lib/membership/member-search-model":model,
-    "@/lib/membership/member-search-repository":{getMemberSearch:async(...args)=>{calls.push(args);if(failure)throw failure;return{query:args[1],page:args[2],results:[],hasMore:false};}},
+    "@/lib/database/server":{withFreshApplicationDatabaseRead:async(stage,read)=>{scopes.push(stage);insideScope=true;try{return await read();}finally{insideScope=false;}}},
+    "@/lib/membership/member-search-repository":{getMemberSearch:async(...args)=>{assert.equal(insideScope,true);calls.push(args);if(failure)throw failure;return{query:args[1],page:args[2],results:[],hasMore:false};}},
   });
   const get=(suffix="")=>api.GET(new Request(`https://members.example.test/api/my/members${suffix}`));
   let response=await get("?q=%40Test&page=2");assert.equal(response.status,200);assert.deepEqual(calls.at(-1),[timelineIds.auth,"Test",2]);
   assert.match(response.headers.get("cache-control"),/private.*no-store/);
   response=await get("?q=%40%40Test");assert.equal(response.status,200);assert.equal((await response.json()).query,"Test");
   assert.equal(calls.at(-1)[1],model.normalizeMemberSearchQuery("@@Test"));
+  const beforeInvalid=scopes.length;
   for(const suffix of ["?page=0","?page=1001",`?q=${"a".repeat(81)}`]) assert.equal((await get(suffix)).status,400);
+  assert.equal(scopes.length,beforeInvalid,"invalid queries never allocate a database read");
   failure=new model.MemberSearchError(403,"Active member access is required.");assert.equal((await get()).status,403);
   failure=new Error("PRIVATE database details");response=await get();assert.equal(response.status,503);assert.doesNotMatch(await response.text(),/PRIVATE/);
   failure=null;session={status:"signed_out"};const before=calls.length;assert.equal((await get()).status,401);assert.equal(calls.length,before);
   session={status:"unavailable"};assert.equal((await get()).status,503);
+  assert.equal(scopes.length,calls.length,"signed-out or unavailable sessions never allocate a database read");
+  assert.ok(scopes.every(stage=>stage==="member-search"));
 });

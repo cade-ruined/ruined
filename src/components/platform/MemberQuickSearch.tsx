@@ -63,10 +63,11 @@ export default function MemberQuickSearch({ query, open, preview = false, onNavi
         let next: MemberSearchSnapshot;
         if (preview) next = getMemberSearchPreview(normalizedQuery);
         else {
+          // Allow both bounded database attempts and connection cleanup to finish.
           timeout = window.setTimeout(() => {
             fail("unavailable");
             controller.abort();
-          }, 10_000);
+          }, 20_000);
           const params = new URLSearchParams({ q: normalizedQuery, page: "1" });
           const response = await fetch(`/api/my/members?${params}`, { signal: controller.signal, cache: "no-store" });
           if (!response.ok) {
