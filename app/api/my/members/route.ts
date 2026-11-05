@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolveCurrentPlatformSession } from "@/lib/auth/session";
+import { withFreshApplicationDatabaseRead } from "@/lib/database/server";
 import { getMemberSearch } from "@/lib/membership/member-search-repository";
 import { MemberSearchError, normalizeMemberSearchQuery, parseMemberSearchPage } from "@/lib/membership/member-search-model";
 
@@ -17,7 +18,8 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const query = normalizeMemberSearchQuery(params.get("q") ?? "");
     const page = parseMemberSearchPage(params.get("page"));
-    return response(await getMemberSearch(session.viewer.authUserId, query, page));
+    return response(await withFreshApplicationDatabaseRead("member-search", () =>
+      getMemberSearch(session.viewer.authUserId, query, page)));
   } catch (error) {
     if (error instanceof MemberSearchError) return response({ error: error.message }, error.status);
     console.error("Member search unavailable", { errorType: error instanceof Error ? error.name : "UnknownError" });

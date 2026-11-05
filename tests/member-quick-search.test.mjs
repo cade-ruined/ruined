@@ -241,9 +241,19 @@ test("malformed or cross-query responses never display profile links and remain 
   }
 });
 
+test("search allows the server's bounded connection recovery to return members", async t => {
+  const f = fixture(t, { query: "cade" }); await f.advance(250);
+  await f.advance(18_000);
+  assert.equal(f.calls[0].options.signal.aborted, false);
+  assert.match(text(f.render()), /Searching members/);
+  await f.reply(0, snapshot("cade"));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [cade.href]);
+  assert.equal(f.button("Try again"), undefined);
+});
+
 test("a timed-out search aborts, offers retry and ignores its later successful response", async t => {
   const f = fixture(t, { query: "cade" }); await f.advance(250);
-  await f.advance(9999); assert.equal(f.calls[0].options.signal.aborted, false);
+  await f.advance(19_999); assert.equal(f.calls[0].options.signal.aborted, false);
   await f.advance(1); assert.equal(f.calls[0].options.signal.aborted, true); assert.ok(f.button("Try again"));
   assert.equal(f.profiles().length, 0); assert.doesNotMatch(text(f.render()), /Searching members/);
   f.button("Try again").props.onClick(); f.render(); await f.advance(250);
