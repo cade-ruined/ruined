@@ -17,6 +17,7 @@ import styles from "./MemberJournal.module.css";
 
 type ReadingMode = "all" | "timeline";
 type Page = JournalSnapshot & { nextCursor?: string | null; total?: number; years?: number[] };
+type SavedJournalDraft = JournalEntry & { updatedAt?: string };
 class JournalRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
@@ -48,13 +49,17 @@ function dateValue(entry: JournalEntry) {
   return entry.eventYear ? `${entry.eventYear}${entry.eventMonth ? `-${String(entry.eventMonth).padStart(2, "0")}${entry.eventDay ? `-${String(entry.eventDay).padStart(2, "0")}` : ""}` : ""}` : entry.createdAt;
 }
 function entryTitle(entry: JournalEntry) { return entry.title || entry.body?.slice(0, 90) || "A moment, kept."; }
-function validateDraft(draft: JournalDraft) {
+function validateDraft(draft: JournalDraft, saveForLater = false) {
   if (draft.eventYear && (!/^\d{4}$/.test(draft.eventYear) || +draft.eventYear < 1900 || +draft.eventYear > 2200)) return "Use a year between 1900 and 2200.";
   if (draft.eventMonth && !draft.eventYear) return "Add a year with this month.";
   if (draft.eventDay && (!draft.eventMonth || !draft.eventYear)) return "Add a month and year with this day.";
   if (draft.eventDay) {
     const day = +draft.eventDay, date = new Date(Date.UTC(+draft.eventYear, +draft.eventMonth - 1, day));
     if (!/^\d{1,2}$/.test(draft.eventDay) || day < 1 || date.getUTCMonth() !== +draft.eventMonth - 1) return "Choose a valid day for this month.";
+  }
+  if (saveForLater) {
+    if (!draft.title.trim() && !draft.body.trim() && !draft.files.length && !draft.keptMedia.length && !draft.eventYear) return "Add a few words, a date, or an attachment to save a draft.";
+    return null;
   }
   if (draft.includeOnTimeline && draft.visibility !== "public" && (!draft.title.trim() || !draft.eventYear)) return "Give your timeline moment a title and a year. Month and day are optional.";
   if (draft.kind === "text" && !draft.title.trim() && !draft.body.trim()) return "Add a title or a few words.";
@@ -87,11 +92,16 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   const sharing = sharingEnabled;
   const router = useRouter();
   const journalApi = "/api/my/journal";
+  const draftsApi = `${journalApi}/drafts`;
   const timelineApi = "/api/my/timeline";
   const [mode, setMode] = useState<ReadingMode>(initialMode);
   const timelineView = view === "journal" && (onModeChange ? initialMode : mode) === "timeline";
+  const [showDrafts, setShowDrafts] = useState(false);
+  const draftsView = view === "journal" && !timelineView && showDrafts;
   const [entries, setEntries] = useState<JournalEntry[]>(preview && !previewEmpty ? previewEntries : []);
+  const [listedDrafts, setListedDrafts] = useState(false);
   const [previewData, setPreviewData] = useState<JournalEntry[]>(preview && previewEmpty ? [] : previewEntries);
+  const [previewDrafts, setPreviewDrafts] = useState<SavedJournalDraft[]>([]);
   const [loading, setLoading] = useState(!preview), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
   const [mediaReady, setMediaReady] = useState(preview), [hasMore, setHasMore] = useState(false), [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -129,15 +139,15 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     if (query) params.set("search", query);
     if (year) params.set("year", year);
     if (cursor) params.set("before", cursor);
-    return `${journalApi}?${params}`;
-  }, [view, timelineView, order, query, year, journalApi, sharing]);
+    return `${draftsView ? draftsApi : journalApi}?${params}`;
+  }, [view, timelineView, order, query, year, journalApi, draftsApi, draftsView, sharing]);
   useEffect(() => {
     listVersion.current += 1;
     if (preview) {
-      const collection = previewData.filter(entry => (view !== "saved" || entry.saved) && (sharing ? (timelineView ? isPublicTimeline(entry) : !isPublicTimeline(entry)) : !timelineView || entry.includeOnTimeline));
+      const collection = (draftsView ? previewDrafts : previewData).filter(entry => (view !== "saved" || entry.saved) && (sharing ? (timelineView ? isPublicTimeline(entry) : !isPublicTimeline(entry)) : !timelineView || entry.includeOnTimeline));
       const filtered = collection.filter(entry => (!year || String(timelineYear(entry)) === year) && (!query || `${entry.title}\n${entry.body}\n${eventDate(entry)}`.toLowerCase().includes(query.toLowerCase())));
       filtered.sort((a, b) => {
-        if (!timelineView || sharing) return (timelineView && order === "oldest" ? -1 : 1) * b.createdAt.localeCompare(a.createdAt);
+        if (!timelineView || sharing) return (timelineView && order === "oldest" ? -1 : 1) * ((b as SavedJournalDraft).updatedAt ?? b.createdAt).localeCompare((a as SavedJournalDraft).updatedAt ?? a.createdAt);
         const dateParts = (entry: JournalEntry) => entry.eventYear
           ? [entry.eventMonth, entry.eventDay] : [new Date(entry.createdAt).getUTCMonth() + 1, new Date(entry.createdAt).getUTCDate()];
         const [am, ad] = dateParts(a), [bm, bd] = dateParts(b), direction = order === "oldest" ? 1 : -1;
@@ -145,15 +155,15 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
           || Number(am === null) - Number(bm === null) || direction * ((am ?? 0) - (bm ?? 0))
           || Number(ad === null) - Number(bd === null) || direction * ((ad ?? 0) - (bd ?? 0));
       });
-      setEntries(filtered); setTotal(filtered.length); setYears([...new Set(collection.flatMap(entry => timelineYear(entry) ? [timelineYear(entry)!] : []))].sort((a, b) => b - a)); setLoading(false); return;
+      setEntries(filtered); setListedDrafts(draftsView); setTotal(filtered.length); setYears([...new Set(collection.flatMap(entry => timelineYear(entry) ? [timelineYear(entry)!] : []))].sort((a, b) => b - a)); setLoading(false); return;
     }
     const abort = new AbortController(); setLoading(true); setEntries([]); setHasMore(false); setTotal(0); setError("");
     requestJson<Page>(listUrl(), { signal: abort.signal }).then(data => {
       if (abort.signal.aborted) return;
-      setEntries(data.entries); setHasMore(data.hasMore); setNextCursor(data.nextCursor ?? data.entries.at(-1)?.id ?? null); setMediaReady(data.mediaReady); setPublicUrl(data.publicUrl ?? null); setTotal(data.total ?? data.entries.length); setYears(data.years ?? []);
+      setEntries(data.entries); setListedDrafts(draftsView); setHasMore(data.hasMore); setNextCursor(data.nextCursor ?? data.entries.at(-1)?.id ?? null); setMediaReady(data.mediaReady); setPublicUrl(data.publicUrl ?? null); setTotal(data.total ?? data.entries.length); setYears(data.years ?? []);
     }).catch(cause => { if (!abort.signal.aborted) setError(cause.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [preview, previewData, listUrl, reload, view, timelineView, order, query, year, requestJson, sharing]);
+  }, [preview, previewData, previewDrafts, draftsView, listUrl, reload, view, timelineView, order, query, year, requestJson, sharing]);
   useEffect(() => {
     if (!timelineView || sharing || preview) return;
     const abort = new AbortController(); setCanComplete(false);
@@ -170,7 +180,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       return;
     }
     if (dirty || draft.attempted) {
-      setNotice("Your unfinished entry is still here. Finish or discard it before starting a new private Journal entry.");
+      setNotice("Your unfinished entry is still here. Save it as a draft to start another private Journal entry.");
     } else {
       const next = { ...blankDraft(), draftId: crypto.randomUUID() };
       setDraft(next); setBaseline(signature(next)); setDateOpen(false); setDraftError(""); setNeedsReview(false); setLatestSaved(null);
@@ -179,6 +189,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   }, [privateComposeRequest, writable, pending, recoveryDraft, dirty, draft.attempted]);
   const patchDraft = (patch: Partial<JournalDraft>) => { setDraft(current => ({ ...current, ...patch })); setDraftError(""); };
   function changeMode(value: ReadingMode) { setMode(value); setSearch(""); setQuery(""); setYear(""); onModeChange?.(value); }
+  function changeCollection(next: boolean) { setShowDrafts(next); setSearch(""); setQuery(""); setYear(""); }
   function installDraft(value: JournalDraft) { setDraft(value); setBaseline(signature(value)); setDateOpen(Boolean(value.eventYear) || (!sharing && value.includeOnTimeline)); setDraftError(""); setNeedsReview(false); setLatestSaved(null); }
   function addEntry() {
     if (!writable || pending || recoveryDraft) return;
@@ -194,10 +205,29 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   }
   function editEntry(entry: JournalEntry) {
     if (!writable || pending || recoveryDraft) return;
-    if ((dirty || draft.attempted) && draft.editingId !== entry.id) { setNotice("Finish or discard your current draft before editing another entry."); setSelected(null); setComposer(true); return; }
+    if ((dirty || draft.attempted) && draft.editingId !== entry.id) { setNotice("Save or discard your current draft before editing another entry."); setSelected(null); setComposer(true); return; }
     if (entry.timelineReflection || entry.legacyTimelineReflection) { setSelected(null); router.push(`/my/timeline?moment=${encodeURIComponent(entry.id)}`); return; }
     if (!dirty && !draft.attempted) installDraft(draftFor(entry));
     setSelected(null); setComposer(true);
+  }
+  function openSavedDraft(entry: JournalEntry) {
+    if (!writable || pending || recoveryDraft) return;
+    if ((dirty || draft.attempted) && draft.draftId !== entry.id) {
+      setNotice("Save or discard your open entry before switching drafts."); setComposer(true); return;
+    }
+    if (!dirty && !draft.attempted) installDraft({ ...draftFor(entry), persistedDraft: true });
+    setComposer(true);
+  }
+  async function deleteSavedDraft(entry: JournalEntry) {
+    if (!writable || pending || !window.confirm("Delete this private draft?")) return;
+    setPending(true); setError("");
+    try {
+      if (preview) setPreviewDrafts(current => current.filter(item => item.id !== entry.id));
+      else await requestJson(`${draftsApi}/${entry.id}`, jsonRequest("DELETE", { expectedVersion: entry.version }));
+      if (draft.persistedDraft && draft.draftId === entry.id) { clearDraft(); installDraft(blankDraft()); setComposer(false); }
+      setReload(value => value + 1); setNotice("Draft deleted.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "This draft could not be deleted."); }
+    finally { setPending(false); }
   }
   function restoreDraft() {
     if (!recoveryDraft) return;
@@ -235,16 +265,22 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       : new Event("ruined:member-progress"));
   }
   async function publish(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (busy.current || !writable || needsReview) return;
-    const problem = validateDraft(draft); if (problem) { setDraftError(problem); return; }
+    event.preventDefault();
     const addAnother = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("data-add-another") === "true" && !draft.editingId;
+    await saveEntry(false, addAnother);
+  }
+  async function saveEntry(saveForLater: boolean, addAnother = false) {
+    if (busy.current || !writable || needsReview || (saveForLater && draft.editingId && !draft.persistedDraft)) return;
+    const saveIntent = saveForLater ? "draft" : "entry";
+    if (draft.attempted && draft.saveIntent && draft.saveIntent !== saveIntent) return;
+    const problem = validateDraft(draft, saveForLater); if (problem) { setDraftError(problem); return; }
     busy.current = true; setPending(true); setDraftError("");
-    const working = { ...draft, draftId: draft.draftId || crypto.randomUUID(), uploadIds: [...draft.uploadIds] };
+    const working: JournalDraft = { ...draft, saveIntent, draftId: draft.draftId || crypto.randomUUID(), uploadIds: [...draft.uploadIds] };
     setDraft(working);
     try {
       let entry: JournalEntry;
       if (preview) {
-        entry = { id: working.editingId || working.draftId, kind: working.kind, title: working.title.trim() || null, body: working.body.trim() || null, createdAt: previewData.find(item => item.id === working.editingId)?.createdAt ?? new Date().toISOString(), saved: previewData.find(item => item.id === working.editingId)?.saved ?? false, eventYear: working.eventYear ? +working.eventYear : null, eventMonth: working.eventMonth ? +working.eventMonth : null, eventDay: working.eventDay ? +working.eventDay : null, includeOnTimeline: working.includeOnTimeline, visibility: working.visibility ?? "private", version: String(Number(working.editingVersion ?? "0") + 1), media: [...working.keptMedia, ...working.files.map(file => { const url = URL.createObjectURL(file); savedUrls.current.push(url); return { id: crypto.randomUUID(), mimeType: file.type, size: file.size, url }; })] };
+        entry = { id: working.editingId || working.draftId, kind: working.kind, title: working.title.trim() || null, body: working.body.trim() || null, createdAt: (working.persistedDraft ? previewDrafts : previewData).find(item => item.id === working.editingId)?.createdAt ?? new Date().toISOString(), saved: previewData.find(item => item.id === working.editingId)?.saved ?? false, eventYear: working.eventYear ? +working.eventYear : null, eventMonth: working.eventMonth ? +working.eventMonth : null, eventDay: working.eventDay ? +working.eventDay : null, includeOnTimeline: working.includeOnTimeline, visibility: working.visibility ?? "private", version: String(Number(working.editingVersion ?? "0") + 1), media: [...working.keptMedia, ...working.files.map(file => { const url = URL.createObjectURL(file); savedUrls.current.push(url); return { id: crypto.randomUUID(), mimeType: file.type, size: file.size, url }; })] };
       } else {
         for (const file of working.files) {
           const existingUpload = working.uploadIds.find(([uploaded]) => uploaded === file);
@@ -259,13 +295,25 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
         working.attempted = true; if (active.current) setDraft(current => ({ ...current, attempted: true }));
         const fields = { kind: working.kind, title: working.title, body: working.body, mediaIds: [...working.keptMedia.map(item => item.id), ...working.files.map(file => working.uploadIds.find(([uploaded]) => uploaded === file)![1])], eventYear: working.eventYear ? +working.eventYear : null, eventMonth: working.eventMonth ? +working.eventMonth : null, eventDay: working.eventDay ? +working.eventDay : null, includeOnTimeline: working.includeOnTimeline,
           ...(sharing ? { visibility: working.visibility ?? "private" } : {}) };
+        const savedFields = saveForLater ? { ...fields, visibility: "private", includeOnTimeline: false } : fields;
+        const endpoint = working.persistedDraft || saveForLater ? draftsApi : journalApi;
         const result = working.editingId
-          ? await requestJson<{ entry: JournalEntry }>(`${journalApi}/${working.editingId}`, jsonRequest("PATCH", { action: "edit", expectedVersion: working.editingVersion, ...fields }))
-          : await requestJson<{ entry: JournalEntry }>(journalApi, jsonRequest("POST", { id: working.draftId, ...fields }));
+          ? await requestJson<{ entry: JournalEntry }>(`${endpoint}/${working.editingId}`, jsonRequest("PATCH", { action: working.persistedDraft && !saveForLater ? "complete" : "edit", expectedVersion: working.editingVersion, ...savedFields }))
+          : await requestJson<{ entry: JournalEntry }>(endpoint, jsonRequest("POST", { id: working.draftId, ...savedFields }));
         entry = result.entry;
       }
       clearDraft(); if (!active.current) return;
+      if (saveForLater) {
+        if (preview) setPreviewDrafts(current => [{ ...entry, visibility: "private", includeOnTimeline: false, updatedAt: new Date().toISOString() }, ...current.filter(item => item.id !== entry.id)]);
+        setReload(value => value + 1);
+        setNotice("Draft saved privately. Start another entry whenever you like.");
+        changeMode("all"); changeCollection(true);
+        installDraft(blankDraft()); setComposer(false);
+        return;
+      }
+      if (preview && working.persistedDraft) setPreviewDrafts(current => current.filter(item => item.id !== entry.id));
       rememberEntry(entry);
+      changeCollection(false);
       reportProgress([entry, ...previewData.filter(item => item.id !== entry.id)]);
       if (sharing) {
         const isPublic = isPublicTimeline(entry);
@@ -284,8 +332,17 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   async function loadLatest() {
     if (pending) return; setPending(true); setDraftError("");
     try {
-      const { entry } = await requestJson<{ entry: JournalEntry }>(`${journalApi}/${draft.editingId || draft.draftId}`);
-      setLatestSaved(entry); setDraft(current => ({ ...current, editingId: entry.id, editingVersion: entry.version, draftId: entry.id, attempted: false, visibility: sharing && !isPublicTimeline(current) ? "private" : current.visibility }));
+      const checkingDraft = Boolean(draft.persistedDraft || draft.saveIntent === "draft");
+      const entryId = draft.editingId || draft.draftId;
+      let stillDraft = checkingDraft;
+      let entry: JournalEntry;
+      try { ({ entry } = await requestJson<{ entry: JournalEntry }>(`${checkingDraft ? draftsApi : journalApi}/${entryId}`)); }
+      catch (cause) {
+        if (!checkingDraft || !(cause instanceof JournalRequestError) || cause.status !== 404) throw cause;
+        // A completed draft has moved to the Journal. Recover that same entry.
+        ({ entry } = await requestJson<{ entry: JournalEntry }>(`${journalApi}/${entryId}`)); stillDraft = false;
+      }
+      setLatestSaved(entry); setDraft(current => ({ ...current, editingId: entry.id, editingVersion: entry.version, draftId: entry.id, persistedDraft: stillDraft, attempted: false, saveIntent: undefined, visibility: sharing && !isPublicTimeline(current) ? "private" : current.visibility }));
       setNeedsReview(false); setReload(value => value + 1);
     } catch (cause) {
       if (cause instanceof JournalRequestError && cause.status === 404 && !draft.editingId) { patchDraft({ attempted: false, ...(sharing && !isPublicTimeline(draft) ? { visibility: "private" as const } : {}) }); setNeedsReview(false); setDraftError("This entry has not been saved yet. Your draft is ready to retry."); }
@@ -338,7 +395,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     finally { setCompleting(false); }
   }
   // Keep each audience separate even on the render before its new list loads.
-  const visibleEntries = useMemo(() => sharing ? entries.filter(entry => timelineView ? isPublicTimeline(entry) : !isPublicTimeline(entry)) : entries, [entries, sharing, timelineView]);
+  const visibleEntries = useMemo(() => listedDrafts !== draftsView ? [] : sharing ? entries.filter(entry => timelineView ? isPublicTimeline(entry) : !isPublicTimeline(entry)) : entries, [entries, sharing, timelineView, listedDrafts, draftsView]);
 
   const groups = useMemo(() => {
     // A view switch can render the previous list before its loading effect runs.
@@ -355,6 +412,13 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       .map(([year, entries]) => ({ year, entries }));
   }, [visibleEntries, order, sharing]);
   function card(entry: JournalEntry) {
+    if (draftsView) return <article className={`${styles.storyCard} ${styles.draftCard}`} key={entry.id}>
+      <button className={styles.storyOpen} type="button" disabled={!writable || pending || Boolean(recoveryDraft)} onClick={() => openSavedDraft(entry)} aria-label={`Open draft: ${entryTitle(entry)}`}>
+        {entry.kind === "images" && entry.media[0] ? <span className={styles.storyImage}><Image src={entry.media[0].url} alt="" fill sizes="(max-width: 600px) 100vw, 360px" unoptimized/></span> : null}
+        <span className={styles.storyWords}><span className={styles.draftLabel}>Draft · Private</span><span className={styles.storyTitle}>{entryTitle(entry)}</span>{entry.title && entry.body ? <span className={styles.storyExcerpt}>{entry.body}</span> : null}<span className={styles.storyMeta}>Saved {postedDate((entry as SavedJournalDraft).updatedAt ?? entry.createdAt)}<span>Continue writing ↗</span></span></span>
+      </button>
+      <button className={styles.draftDelete} type="button" disabled={!writable || pending} onClick={() => void deleteSavedDraft(entry)} aria-label={`Delete draft: ${entryTitle(entry)}`}>Delete draft</button>
+    </article>;
     if (sharing && timelineView) return <article className={styles.feedPost} key={entry.id}>
       <button className={styles.feedOpen} type="button" onClick={() => { setSelected(entry); setImageIndex(0); setMediaError(""); }} aria-label={`Open entry: ${entryTitle(entry)}`}>
         <span className={styles.feedMeta}><time dateTime={entry.createdAt}>{postedDate(entry.createdAt)}</time>{eventDate(entry) ? <span>Remembering {eventDate(entry)}</span> : null}</span>
@@ -383,14 +447,16 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     </> : null}
     {preview ? <p className={styles.previewNote}>Example entries · Changes stay in this preview.</p> : null}
     {sharing ? <div className={styles.visibilityBar}><p>{timelineView ? "Public · These posts appear on your profile." : "Private · Only you can see your Journal."}</p>{!preview && publicUrl && timelineView ? <Link href={publicUrl}>View as visitor ↗</Link> : null}</div> : null}
+    {view === "journal" && !timelineView ? <div className={styles.draftNav} role="group" aria-label="Journal entries and drafts"><button type="button" aria-pressed={!draftsView} onClick={() => { setNotice(""); changeCollection(false); }}>Entries</button><button type="button" aria-pressed={draftsView} onClick={() => { setNotice(""); changeCollection(true); }}>View drafts</button></div> : null}
+    {draftsView ? <p className={styles.draftsHint}>Pick up where you left off. Drafts stay private. Finish an entry whenever you’re ready.</p> : null}
     {recoveryDraft ? <div className={styles.storyNotice}><p>You have an unfinished entry from earlier in this visit.</p><button type="button" className="member-button" onClick={restoreDraft}>Restore draft</button><button type="button" className={styles.quiet} onClick={dismissRecovery}>Discard draft</button></div> : null}
     {notice ? <p role="status" className={styles.feedback}>{notice}</p> : null}
-    {total >= 8 || search || year ? <div className={styles.storyFilters}><label>Find an entry<input type="search" placeholder="Search your story" value={search} onChange={event => setSearch(event.target.value)}/></label><label>Year<select value={year} onChange={event => setYear(event.target.value)}><option value="">All years</option>{years.map(value => <option value={value} key={value}>{value}</option>)}</select></label>{timelineView ? <label>Order<select value={order} onChange={event => setOrder(event.target.value as "oldest" | "newest")}><option value="oldest">Oldest first</option><option value="newest">Newest first</option></select></label> : null}</div> : null}
+    {!draftsView && (total >= 8 || search || year) ? <div className={styles.storyFilters}><label>Find an entry<input type="search" placeholder="Search your story" value={search} onChange={event => setSearch(event.target.value)}/></label><label>Year<select value={year} onChange={event => setYear(event.target.value)}><option value="">All years</option>{years.map(value => <option value={value} key={value}>{value}</option>)}</select></label>{timelineView ? <label>Order<select value={order} onChange={event => setOrder(event.target.value as "oldest" | "newest")}><option value="oldest">Oldest first</option><option value="newest">Newest first</option></select></label> : null}</div> : null}
     {error ? <div role="alert" className={styles.feedback}>{error} <button type="button" className={styles.retry} onClick={() => setReload(value => value + 1)}>Try again</button></div> : null}
-    {loading && !visibleEntries.length ? <p role="status">{timelineView && sharing ? "Opening your Timeline…" : "Opening your Journal…"}</p> : null}
+    {loading && !visibleEntries.length ? <p role="status">{timelineView && sharing ? "Opening your Timeline…" : draftsView ? "Opening your drafts…" : "Opening your Journal…"}</p> : null}
     {(query || year) && !loading ? <p className={styles.storyCount} role="status">{total} {total === 1 ? "entry" : "entries"} found <button type="button" className={styles.quiet} onClick={() => { setSearch(""); setQuery(""); setYear(""); }}>Clear filters</button></p> : null}
     <div aria-busy={loading} className={sharing && timelineView ? styles.feed : timelineView ? styles.storyTimeline : styles.storyGrid}>{timelineView && !sharing ? groups.map(group => <section className={styles.storyYear} key={group.year} aria-labelledby={`${id}-year-${group.year}`}><h3 id={`${id}-year-${group.year}`}>{group.year}</h3><div>{group.entries.map(card)}</div></section>) : visibleEntries.map(card)}</div>
-    {!loading && !visibleEntries.length && !error ? <div className={styles.empty}><h3>{query || year ? "No matching entries." : view === "saved" ? "Keep something worth returning to." : timelineView ? "Your story starts anywhere." : sharing ? "Your Journal starts with you." : "Start with a moment."}</h3><p>{query || year ? "Try another word or year." : view === "saved" ? "Save an entry to find it here." : sharing ? (timelineView ? "Choose New +, then Timeline to share a thought, photograph, or moment." : "Choose New +, then Journal to keep a thought, photograph, or moment for yourself.") : timelineView ? "Mark a journal entry for your timeline, or add a milestone from your past." : "A few words, a photograph, a video. It can be that simple."}</p></div> : null}
+    {!loading && !visibleEntries.length && !error ? <div className={styles.empty}><h3>{query || year ? "No matching entries." : draftsView ? "Room for unfinished thoughts." : view === "saved" ? "Keep something worth returning to." : timelineView ? "Your story starts anywhere." : sharing ? "Your Journal starts with you." : "Start with a moment."}</h3><p>{query || year ? "Try another word or year." : draftsView ? "Choose Save draft while writing. Come back here whenever you’re ready." : view === "saved" ? "Save an entry to find it here." : sharing ? (timelineView ? "Choose New +, then Timeline to share a thought, photograph, or moment." : "Choose New +, then Journal to keep a thought, photograph, or moment for yourself.") : timelineView ? "Mark a journal entry for your timeline, or add a milestone from your past." : "A few words, a photograph, a video. It can be that simple."}</p></div> : null}
     {hasMore ? <button type="button" className={`member-button ${styles.more}`} disabled={loading} onClick={() => void loadMore()}>{loading ? "Loading…" : "Show more entries"}</button> : null}
     {timelineView && !sharing ? <footer className={styles.storyFooter}><div>{!sharing && completedAt ? <p>Foundations step complete. Your story keeps going.</p> : !sharing && canComplete && total > 0 ? <button type="button" className={styles.quiet} disabled={completing || pending || dirty} onClick={() => void completeTimeline()}>{completing ? "Recording…" : "Complete Foundations step"}</button> : null}</div><button type="button" className={styles.quiet} aria-expanded={exportOpen} onClick={() => void openExport()}>{exportOpen ? "Close export" : "Export timeline ↗"}</button></footer> : null}
     {timelineView && !sharing && exportOpen ? <section aria-label="Export your timeline" className={styles.storyExport}>{exportLoading ? <p role="status">Preparing your full timeline…</p> : exportError ? <p role="alert">{exportError}</p> : exportEntries.length ? <TimelineExportStudio entries={exportEntries} examples={preview}/> : <p>Add a milestone to prepare your timeline artwork.</p>}</section> : null}
@@ -402,7 +468,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
         <button type="button" onClick={() => startEntry("public")} aria-label="Timeline (Public)"><span>Timeline <small>Public</small></span><p>Share a thought, photo, or moment. Go deeper if you want to.</p><span aria-hidden="true">↗</span></button>
       </div>
     </Dialog>
-    <Dialog open={composer} onClose={() => setComposer(false)} title={sharing ? (draft.editingId ? "Edit your " : "New ") + (isPublicTimeline(draft) ? "Timeline post." : "Journal entry.") : draft.editingId ? "Edit your entry." : "Leave something here."}>
+    <Dialog open={composer} onClose={() => setComposer(false)} title={draft.persistedDraft ? "Continue your draft." : sharing ? (draft.editingId ? "Edit your " : "New ") + (isPublicTimeline(draft) ? "Timeline post." : "Journal entry.") : draft.editingId ? "Edit your entry." : "Leave something here."}>
       <form onSubmit={publish} aria-busy={pending}>
         <p className={styles.subtitle}>{sharing ? (isPublicTimeline(draft) ? "Public Timeline" : "Private Journal") : "Your journal is private. Only you can see this entry."}</p>
         <fieldset className={styles.kindPicker} disabled={frozen}><legend className={styles.srOnly}>Entry type</legend>{(["text", "images", "video"] as const).map(kind => <label key={kind}><input type="radio" name={`${id}-kind`} checked={draft.kind === kind} onChange={() => changeKind(kind)} disabled={kind !== "text" && !mediaReady && kind !== draft.kind}/><span>{kind === "text" ? "Words" : kind === "images" ? "Photos" : "Video"}</span></label>)}</fieldset>
@@ -410,9 +476,9 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
         <label className={styles.field}>{draft.kind === "text" ? "Your words" : "Caption"} <span>(optional)</span><textarea rows={6} value={draft.body} maxLength={JOURNAL_BODY_LENGTH} disabled={frozen} aria-describedby={sharing ? `${id}-entry-privacy` : undefined} onChange={event => patchDraft({ body: event.target.value })} placeholder="What do you want to remember?"/></label>
         {sharing ? <div className={styles.privacyChoice}>
           <p id={`${id}-entry-privacy`} className={styles.privacyHint} aria-live="polite">{isPublicTimeline(draft)
-            ? "This entry will appear on your public profile when you save it. Uncheck Add to Timeline to keep it private."
-            : draft.editingId ? "This entry will be private when you save. Check Add to Timeline to share it publicly."
-            : "Only you can see this. Check Add to Timeline to share it publicly when you save."}</p>
+            ? "Post to Timeline shares this on your public profile. Save draft always keeps it private."
+            : draft.editingId ? "This entry stays private unless you choose Add to Timeline and post it."
+            : "Only you can see this. Save draft to finish later, or Save to Journal when you’re ready."}</p>
           <label className={styles.timelineConsent}><input type="checkbox" checked={isPublicTimeline(draft)} disabled={frozen} aria-describedby={`${id}-entry-privacy`} onChange={event => patchDraft({ visibility: event.target.checked ? "public" : "private", includeOnTimeline: event.target.checked })}/><span>Add to Timeline <small>Public profile</small></span></label>
           {!preview && publicUrl ? <Link className={styles.visitorPreview} href={publicUrl} target="_blank" rel="noreferrer">View your public profile ↗<span className={styles.srOnly}> (opens in a new tab; unsaved changes are not shown)</span></Link> : null}
         </div> : null}
@@ -421,8 +487,8 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
         {!dateOpen && (sharing || !draft.includeOnTimeline) ? <button type="button" className={styles.quiet} disabled={frozen} onClick={() => setDateOpen(true)}>Add when it happened <span>(optional)</span></button> : <fieldset className={styles.storyDateFields} disabled={frozen}><legend>When did it happen? {(!draft.includeOnTimeline || sharing) ? <span>(optional)</span> : null}</legend><p>Only add what you remember. A year is enough.</p><div><label>Year<input type="text" inputMode="numeric" maxLength={4} placeholder="2014" value={draft.eventYear} required={!sharing && draft.includeOnTimeline} onChange={event => patchDraft({ eventYear: event.target.value })}/></label><label>Month <small>Optional</small><select value={draft.eventMonth} onChange={event => patchDraft({ eventMonth: event.target.value, eventDay: event.target.value ? draft.eventDay : "" })}><option value="">Year only</option>{TIMELINE_MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label><label>Day <small>Optional</small><input type="text" inputMode="numeric" maxLength={2} placeholder="—" value={draft.eventDay} onChange={event => patchDraft({ eventDay: event.target.value })}/></label></div><button type="button" className={styles.quiet} onClick={() => { const now = new Date(); patchDraft({ eventYear: String(now.getFullYear()), eventMonth: String(now.getMonth() + 1), eventDay: "" }); }}>Use this month ↗</button></fieldset>}
         {draftError ? <p role="alert" className={styles.draftError}>{draftError}</p> : null}
         {needsReview || draft.attempted ? <div className={styles.storyNotice}><p>Keep this draft while checking what was saved.</p><button type="button" className="member-button" disabled={pending} onClick={() => void loadLatest()}>Check saved entry</button></div> : null}
-        {latestSaved ? <details className={styles.latestVersion}><summary>Latest saved version — review before replacing</summary><p>{entryTitle(latestSaved)}</p><p>{eventDate(latestSaved)}{isPublicTimeline(latestSaved) ? " · On your public Timeline" : sharing ? " · Private" : latestSaved.includeOnTimeline ? " · On your timeline" : ""}</p><p>{latestSaved.body}</p><p>{latestSaved.media.length} attachments</p><button type="button" className={styles.quiet} disabled={pending} onClick={() => { if (window.confirm("Replace your draft with this saved version?")) { clearDraft(); installDraft(draftFor(latestSaved)); } }}>Use saved version</button></details> : null}
-        <footer className={styles.composerActions}><button type="button" className={styles.quiet} onClick={() => setComposer(false)}>Keep draft &amp; close</button><button className="member-button member-button-primary" type="submit" disabled={pending || needsReview}>{pending ? "Saving…" : draft.attempted ? "Retry save" : sharing ? (isPublicTimeline(draft) ? "Post to Timeline" : "Save to Journal") : draft.editingId ? "Save changes" : "Add entry"}</button>{!draft.editingId && !sharing ? <button className="member-button" data-add-another="true" type="submit" disabled={pending || needsReview}>Save &amp; add another</button> : null}<button type="button" className={styles.quiet} disabled={pending} onClick={discardDraft}>Discard draft</button></footer>
+        {latestSaved ? <details className={styles.latestVersion}><summary>Latest saved version — review before replacing</summary><p>{entryTitle(latestSaved)}</p><p>{eventDate(latestSaved)}{isPublicTimeline(latestSaved) ? " · On your public Timeline" : sharing ? " · Private" : latestSaved.includeOnTimeline ? " · On your timeline" : ""}</p><p>{latestSaved.body}</p><p>{latestSaved.media.length} attachments</p><button type="button" className={styles.quiet} disabled={pending} onClick={() => { if (window.confirm("Replace your draft with this saved version?")) { clearDraft(); installDraft({ ...draftFor(latestSaved), persistedDraft: draft.persistedDraft }); } }}>Use saved version</button></details> : null}
+        <footer className={styles.composerActions}>{!draft.editingId || draft.persistedDraft ? <button type="button" className="member-button" disabled={pending || needsReview || (draft.attempted && draft.saveIntent === "entry")} onClick={() => void saveEntry(true)}>{pending && draft.saveIntent === "draft" ? "Saving draft…" : draft.attempted && draft.saveIntent === "draft" ? "Retry draft save" : "Save draft"}</button> : null}<button className="member-button member-button-primary" type="submit" disabled={pending || needsReview || (draft.attempted && draft.saveIntent === "draft")}>{pending ? "Saving…" : draft.attempted ? "Retry save" : sharing ? (isPublicTimeline(draft) ? "Post to Timeline" : "Save to Journal") : draft.editingId ? "Save changes" : "Add entry"}</button>{!draft.editingId && !sharing ? <button className="member-button" data-add-another="true" type="submit" disabled={pending || needsReview}>Save &amp; add another</button> : null}<button type="button" className={styles.quiet} disabled={pending} onClick={discardDraft}>{draft.persistedDraft || draft.editingId ? "Discard changes" : "Discard draft"}</button></footer>
       </form>
     </Dialog>
     <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} title={selected ? entryTitle(selected) : "A moment, kept."}>{selected ? <>

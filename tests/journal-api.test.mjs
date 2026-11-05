@@ -13,7 +13,7 @@ const id=randomUUID();
 const input={kind:"text",title:"A moment",body:"The whole story",mediaIds:[],eventYear:2024,eventMonth:2,eventDay:29,includeOnTimeline:true};
 async function fixture(path) {
  const calls=[]; let failure=null;
- const methods=["getJournal","getJournalEntry","createJournalEntry","editJournalEntry","saveJournalEntry","deleteJournalEntry","exportJournalTimeline"];
+ const methods=["getJournal","getJournalEntry","createJournalEntry","editJournalEntry","saveJournalEntry","deleteJournalEntry","exportJournalTimeline","createJournalDraft","editJournalDraft","completeJournalDraft","getJournalDraft","getJournalDrafts","deleteJournalDraft"];
  const repository=Object.fromEntries(methods.map(name=>[name,async(...args)=>{calls.push({name,args});if(failure)throw failure;return name==="exportJournalTimeline"?[]:{id,version:"3"};}]));
  const route=await load(path,{"next/server":{NextResponse:Response},"@/lib/membership/journal-model":model,"@/lib/membership/journal-repository":repository,"@/lib/membership/journal-request":{
  journalViewer:async(request,write)=>{calls.push({name:"viewer",write});return "verified-owner";},journalFailure:error=>Response.json({error:error.message},{status:error.status??503,headers:model.JOURNAL_HEADERS})}});
@@ -116,4 +116,26 @@ test("Journal sharing API validates explicit visibility and collection while kee
  response=await exporter.GET(req("GET",undefined,"/api/my/journal/export?collection=private"));assert.equal(response.status,200);
  assert.deepEqual(exporter.calls.find(call=>call.name==="exportJournalTimeline").args,["verified-owner","private"]);
  response=await exporter.GET(req("GET",undefined,"/api/my/journal/export?collection=everyone"));assert.equal(response.status,400);
+});
+
+test('draft APIs permit incomplete private saves, authenticate each operation, and require complete content/version to finish',async()=>{
+ const f=await fixture('app/api/my/journal/drafts/route.ts');
+ const blank={...input,id,title:'',body:'',eventYear:null,eventMonth:null,eventDay:null,visibility:'public',includeOnTimeline:true};
+ assert.equal((await f.POST(req('POST',blank))).status,201);
+ const saved=f.calls.find(call=>call.name==='createJournalDraft').args;assert.equal(saved[0],'verified-owner');assert.equal(saved[1].visibility,'private');assert.equal(saved[1].includeOnTimeline,false);
+ assert.equal((await f.GET(req('GET',undefined,`/api/my/journal/drafts?before=${id}`))).status,200);
+ assert.deepEqual(f.calls.find(call=>call.name==='getJournalDrafts').args,['verified-owner',id]);
+ const editor=await fixture('app/api/my/journal/drafts/[id]/route.ts'),{id:ignored,...fields}=blank;void ignored;
+ assert.equal((await editor.GET(req('GET'),context)).status,200);
+ assert.equal((await editor.PATCH(req('PATCH',{action:'edit',expectedVersion:'1',...fields}),context)).status,200);
+ assert.equal((await editor.PATCH(req('PATCH',{action:'complete',expectedVersion:'1',...fields}),context)).status,400);
+ assert.equal((await editor.PATCH(req('PATCH',{action:'complete',expectedVersion:'1',...fields,body:'Finished writing.'}),context)).status,200);
+ const completed=editor.calls.find(call=>call.name==='completeJournalDraft');assert.equal(completed.args[0],'verified-owner');assert.equal(completed.args[1],id);assert.equal(completed.args[2].visibility,'public');assert.equal(completed.args[2].includeOnTimeline,true);
+ assert.equal((await editor.PATCH(req('PATCH',{action:'edit',...fields}),context)).status,409);
+ assert.equal((await editor.PATCH(req('PATCH',{action:'edit',expectedVersion:'1',...fields,memberId:randomUUID()}),context)).status,400);
+ assert.equal((await editor.DELETE(req('DELETE',{expectedVersion:'1'}),context)).status,200);
+ assert.equal((await editor.DELETE(req('DELETE',{}),context)).status,400);
+ assert.equal(editor.calls.filter(call=>call.name==='editJournalDraft').length,1);
+ assert.equal(editor.calls.filter(call=>call.name==='completeJournalDraft').length,1);
+ assert.ok(editor.calls.filter(call=>call.name==='viewer').slice(1).every(call=>call.write===true));
 });

@@ -21,6 +21,7 @@ function sameDraft(left: DraftState | null, right: DraftState) {
     && a.eventYear === b.eventYear && a.eventMonth === b.eventMonth && a.eventDay === b.eventDay
     && a.includeOnTimeline === b.includeOnTimeline && (a.visibility ?? "private") === (b.visibility ?? "private") && a.editingId === b.editingId
     && a.editingVersion === b.editingVersion && a.attempted === b.attempted && a.draftId === b.draftId
+    && a.persistedDraft === b.persistedDraft && a.saveIntent === b.saveIntent
     && a.files.length === b.files.length && a.files.every((file, index) => file === b.files[index])
     && a.keptMedia.length === b.keptMedia.length && a.keptMedia.every((media, index) => {
       const other = b.keptMedia[index];

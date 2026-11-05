@@ -117,6 +117,7 @@ function fixture({ initialEntries = [entry()], writable = true, preview = false,
   };
   return { calls, entries, guards, rendered, events, eventDetails, navigations, createdUrls, revoked, render, flush, find, button, field, Export, StoryContent,
     async click(label) { const control = button(label); assert.ok(control, `Missing button ${label}`); assert.equal(Boolean(control.props.disabled), false, `${label} should be enabled`); control.props.onClick(); return flush(); },
+    closeComposer() { const dialog = find(node => node.type.name === "Dialog" && node.props.open && nodes(node).some(child => child.type === "form")); assert.ok(dialog); dialog.props.onClose(); return flush(); },
     change(label, value) { const control = field(label); control.props.onChange({ target: { value, checked: value } }); return render(); },
     submit(another = false) { return find(node => node.type === "form").props.onSubmit({ preventDefault() {}, nativeEvent: { submitter: { getAttribute: name => name === "data-add-another" && another ? "true" : null } } }); },
     attach(files) { const input = find(node => node.type === "input" && node.props.type === "file"); input.props.onChange({ target: { files, value: "picked" } }); return render(); },
@@ -242,7 +243,7 @@ test("a pending save blocks duplicate submits synchronously and keeps the draft 
   await ui.flush(); await ui.click("+ Add entry"); ui.change("Title", "Save only once");
   const first = ui.submit(), duplicate = ui.submit(); await ui.flush(); await duplicate;
   assert.equal(ui.mutate().length, 1); assert.equal(ui.field("Title").props.disabled, true); assert.equal(ui.cleared(), 0);
-  await ui.click("Keep draft & close"); assert.equal(ui.guards.at(-1).draft.title, "Save only once"); assert.equal(ui.guards.at(-1).pending, true);
+  await ui.closeComposer(); assert.equal(ui.guards.at(-1).draft.title, "Save only once"); assert.equal(ui.guards.at(-1).pending, true);
   save.resolve(response({ entry: entry({ ...ui.mutate()[0].body, media: [] }) })); await first; await ui.flush();
   assert.equal(ui.cleared(), 1); assert.equal(ui.guards.at(-1).pending, false); ui.unmount();
 });
@@ -321,7 +322,7 @@ test("private Journal requests bind to the verified owner while signed media PUT
 test("closing keeps a draft and files; discarding requires confirmation before clearing and releasing previews", async () => {
   const ui = fixture({ initialEntries: [] }); await ui.flush(); await ui.click("+ Add entry");
   ui.change("Photos", true); const file = new File(["private draft"], "draft.jpg", { type: "image/jpeg" }); ui.attach([file]); ui.change("Title", "Unfinished");
-  const url = ui.createdUrls[0].url; await ui.click("Keep draft & close");
+  const url = ui.createdUrls[0].url; await ui.closeComposer();
   assert.equal(ui.cleared(), 0); assert.equal(ui.guards.at(-1).draft.files[0], file); assert.equal(ui.revoked.includes(url), false);
   await ui.click("Continue entry"); ui.confirm(false); await ui.click("Discard draft");
   assert.equal(ui.field("Title").props.value, "Unfinished"); assert.equal(ui.cleared(), 0);
@@ -501,7 +502,7 @@ test("New + resumes an unfinished entry without replacing its destination or con
   assert.equal(ui.find(node => node.props.role === "group" && node.props["aria-label"] === "Journal view"), undefined);
   assert.equal(ui.find(node => node.type === "h2" && text(node) === "Your journal"), undefined);
   await ui.click("New +"); await ui.click("Journal (Private)"); ui.change("Your words", "Keep my unfinished words"); ui.change("Add to Timeline", true);
-  await ui.click("Keep draft & close"); await ui.click("Continue entry");
+  await ui.closeComposer(); await ui.click("Continue entry");
   assert.equal(ui.field("Your words").props.value, "Keep my unfinished words"); assert.equal(ui.field("Add to Timeline").props.checked, true);
   assert.equal(ui.button("Journal (Private)"), undefined); ui.unmount();
 });
@@ -521,23 +522,23 @@ test("the first-entry shortcut opens a private composer once and preserves an un
   ui.render({ privateComposeRequest: 1 }); await ui.flush();
   assert.equal(ui.button("Journal (Private)"), undefined, "the checklist skips the destination chooser");
   assert.equal(ui.field("Add to Timeline").props.checked, false);
-  assert.match(text(ui.render()), /Only you can see this\. Check Add to Timeline/);
+  assert.match(text(ui.render()), /Only you can see this\. Save draft to finish later/);
   assert.equal(ui.field("Your words").props["aria-describedby"], "journal-test-entry-privacy");
   ui.change("Your words", "Keep these words"); ui.change("Add to Timeline", true);
-  await ui.click("Keep draft & close"); await ui.flush();
+  await ui.closeComposer(); await ui.flush();
   assert.equal(ui.find(node => node.type === "form"), undefined, "the same request must not reopen a closed composer");
   ui.render({ privateComposeRequest: 2 }); await ui.flush();
   assert.equal(ui.field("Your words").props.value, "Keep these words");
   assert.equal(ui.field("Add to Timeline").props.checked, true, "a new request cannot replace an unfinished draft's destination");
   assert.match(text(ui.render()), /Your unfinished entry is still here/);
-  assert.match(text(ui.render()), /This entry will appear on your public profile when you save/);
+  assert.match(text(ui.render()), /Post to Timeline shares this on your public profile/);
   const visitor = ui.find(node => node.type === "a" && text(node).startsWith("View your public profile"));
   assert.equal(visitor.props.target, "_blank", "visitor preview must not navigate away from an unsaved draft");
   assert.match(text(visitor), /unsaved changes are not shown/);
   await ui.submit(); await ui.flush();
   assert.deepEqual(ui.events, ["ruined:member-progress"]);
   await ui.click("Open entry: Keep these words"); await ui.click("Edit entry"); ui.change("Add to Timeline", false);
-  assert.match(text(ui.render()), /This entry will be private when you save/);
+  assert.match(text(ui.render()), /This entry stays private unless/);
   await ui.submit(); await ui.flush();
   assert.equal(ui.mutate()[1].body.visibility, "private");
   assert.equal(ui.mutate()[1].body.includeOnTimeline, false);

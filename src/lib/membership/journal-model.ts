@@ -13,6 +13,8 @@ export type JournalEntry = {
   /** Owner-only recovery of an older private Foundations exercise. Never a publication field. */
   legacyTimelineReflection?: TimelineReflection;
 };
+export type JournalDraftEntry = JournalEntry & { updatedAt: string };
+export type JournalDraftSnapshot = Omit<JournalSnapshot, "entries"> & { entries: JournalDraftEntry[] };
 export type JournalSnapshot = { entries: JournalEntry[]; writable: boolean; mediaReady: boolean; hasMore: boolean; nextCursor?: string | null; total?: number; years?: number[]; publicUrl?: string | null };
 export type JournalCreateInput = { id: string; kind: JournalKind; title: string; body: string; mediaIds: string[]; eventYear?: number | null; eventMonth?: number | null; eventDay?: number | null; includeOnTimeline?: boolean; visibility?: JournalVisibility; timelineReflection?: TimelineReflection | null };
 export type JournalEditInput = Omit<JournalCreateInput, "id"> & { expectedVersion: string };
@@ -52,7 +54,7 @@ export function journalFilePolicy(mime: string, size: number) {
   }
   return image ? "images" as const : "video" as const;
 }
-export function validateJournalInput(value: unknown): JournalCreateInput {
+function normalizeJournalInput(value: unknown, draft = false): JournalCreateInput {
   if (!value || typeof value !== "object") throw new JournalError(400, "An entry is required.");
   const entry = value as Record<string, unknown>;
   if (Object.keys(entry).some(key => !["id", "kind", "title", "body", "mediaIds", "eventYear", "eventMonth", "eventDay", "includeOnTimeline", "visibility", "timelineReflection"].includes(key)) ||
@@ -65,9 +67,9 @@ export function validateJournalInput(value: unknown): JournalCreateInput {
   if (entry.visibility !== undefined && entry.visibility !== "private" && entry.visibility !== "public") throw new JournalError(400, "Choose private or public for this entry.");
   const timelineReflection = entry.timelineReflection === undefined ? undefined : validateTimelineReflection(entry.timelineReflection);
   const kind = entry.kind as JournalKind;
-  if ((kind === "text" && ((!entry.body.trim() && !entry.title.trim()) || entry.mediaIds.length !== 0)) ||
-      (kind === "images" && (entry.mediaIds.length < 1 || entry.mediaIds.length > JOURNAL_MAX_IMAGES)) ||
-      (kind === "video" && entry.mediaIds.length !== 1)) throw new JournalError(400, "Add text, up to eight images, or one video.");
+  if ((kind === "text" && ((!draft && !entry.body.trim() && !entry.title.trim()) || entry.mediaIds.length !== 0)) ||
+      (kind === "images" && ((!draft && entry.mediaIds.length < 1) || entry.mediaIds.length > JOURNAL_MAX_IMAGES)) ||
+      (kind === "video" && (entry.mediaIds.length > 1 || (!draft && entry.mediaIds.length !== 1)))) throw new JournalError(400, "Add text, up to eight images, or one video.");
   const eventYear = entry.eventYear ?? null;
   const eventMonth = entry.eventMonth ?? null;
   const eventDay = entry.eventDay ?? null;
@@ -81,14 +83,25 @@ export function validateJournalInput(value: unknown): JournalCreateInput {
   // Visibility is never inferred from the legacy, owner-only Timeline flag.
   // New public posts require the explicit pair; private Foundation milestones
   // retain their title/date requirements without acquiring publication consent.
-  if (entry.visibility === "public" && entry.includeOnTimeline !== true) throw new JournalError(400, "Choose Add to public Timeline to publish this entry.");
-  if (entry.includeOnTimeline && entry.visibility !== "public" && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to include this entry on your timeline.");
-  if (timelineReflection && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to this Timeline story.");
+  if (!draft && entry.visibility === "public" && entry.includeOnTimeline !== true) throw new JournalError(400, "Choose Add to public Timeline to publish this entry.");
+  if (!draft && entry.includeOnTimeline && entry.visibility !== "public" && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to include this entry on your timeline.");
+  if (!draft && timelineReflection && (eventYear === null || !entry.title.trim())) throw new JournalError(400, "Add a year and title to this Timeline story.");
   return { id: entry.id, kind, title: entry.title.trim(), body: entry.body.trim(), mediaIds: entry.mediaIds as string[],
     eventYear: eventYear as number | null, eventMonth: eventMonth as number | null, eventDay: eventDay as number | null,
-    includeOnTimeline: entry.includeOnTimeline === true,
-    ...(entry.visibility === undefined ? {} : { visibility: entry.visibility as JournalVisibility }),
+    includeOnTimeline: !draft && entry.includeOnTimeline === true,
+    ...(draft ? { visibility: "private" as const } : entry.visibility === undefined ? {} : { visibility: entry.visibility as JournalVisibility }),
     ...(timelineReflection === undefined ? {} : { timelineReflection }) };
+}
+export function validateJournalInput(value: unknown): JournalCreateInput { return normalizeJournalInput(value); }
+/** A draft has no publication state, even if the unfinished editor had sharing selected. */
+export function validateJournalDraftInput(value: unknown): JournalCreateInput { return normalizeJournalInput(value, true); }
+export function validateJournalDraftEdit(value: unknown, id: string): JournalEditInput {
+  if (!value || typeof value !== "object") throw new JournalError(400, "A draft is required.");
+  const { action, expectedVersion, ...fields } = value as Record<string, unknown>;
+  if (action !== "edit" || Object.hasOwn(fields, "id") || !["kind", "title", "body", "mediaIds", "eventYear", "eventMonth", "eventDay", "includeOnTimeline"].every(key => Object.hasOwn(fields, key))) throw new JournalError(400, "A complete draft update is required.");
+  const { id: validatedId, ...input } = validateJournalDraftInput({ ...fields, id });
+  void validatedId;
+  return { ...input, expectedVersion: validateJournalVersion(expectedVersion) };
 }
 export function validateJournalVersion(value: unknown): string {
   if (typeof value !== "string" || !/^[1-9]\d{0,9}$/.test(value)) throw new JournalError(409, "Load the latest entry before saving. Your draft has not been changed.");

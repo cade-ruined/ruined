@@ -5,13 +5,14 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { getMemberIdentity, requireLockedMemberWriteAccess, MembershipAccessDeniedError } from "@/lib/membership/repository";
 import type { MemberIdentity } from "./model";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
-import { JournalError, journalFilePolicy, validateJournalInput, validateJournalVersion, type JournalCreateInput, type JournalEditInput, type JournalEntry, type JournalSnapshot, type JournalListOptions, type TimelineReflection, JOURNAL_UUID } from "./journal-model";
+import { JournalError, journalFilePolicy, validateJournalInput, validateJournalDraftInput, validateJournalVersion, type JournalDraftEntry, type JournalDraftSnapshot, type JournalCreateInput, type JournalEditInput, type JournalEntry, type JournalSnapshot, type JournalListOptions, type TimelineReflection, JOURNAL_UUID } from "./journal-model";
 import { getOwnMemberProfilePublicScope } from "./public-card-repository";
 import { journalStore, journalStorageConfigured, validateJournalMedia } from "./journal-storage";
 
 type Sql = ReturnType<typeof getApplicationDatabase> | postgres.TransactionSql;
 type EntryRow = { visibility:"private"|"public"; id:string; kind:JournalEntry["kind"]; title:string|null; body:string|null; created_at:Date|string; saved:boolean; event_year:number|null; event_month:number|null; event_day:number|null; include_on_timeline:boolean; current_version:number; deleted_at:Date|null; timeline_position:number|null; timeline_reflection?:TimelineReflection|null; foundations_meaning?:string|null; foundations_belief?:string|null; foundations_present_impact?:string|null; foundations_perspective?:string|null };
-type MediaRow = { id:string; entry_id:string|null; storage_path:string; mime_type:string; byte_size:number|string; verified_at:Date|null; state:string; created_at:Date|string; removed_at:Date|null };
+type DraftRow = Omit<EntryRow,"visibility"|"saved"|"include_on_timeline"|"timeline_position"> & { updated_at:Date|string; completed_at:Date|string|null };
+type MediaRow = { id:string; draft_id?:string|null; entry_id:string|null; storage_path:string; mime_type:string; byte_size:number|string; verified_at:Date|null; state:string; created_at:Date|string; removed_at:Date|null };
 export async function journalOwner(authUserId:string, write=false) {
   const identity=await getMemberIdentity(authUserId);
   if (!identity) throw new JournalError(403,"Member access is required.");
@@ -146,11 +147,11 @@ async function verifyUpload(memberId:string,id:string,kind:string) {
   await store.remove([changed.length ? media.storage_path : path]).catch(()=>undefined);
 }
 
-async function prepareEntryMedia(memberId:string, input:JournalCreateInput) {
+async function prepareEntryMedia(memberId:string, input:JournalCreateInput, fromDraft=false) {
   const sql=getApplicationDatabase();
   for(const id of input.mediaIds) {
     const [file]=await sql<MediaRow[]>`select * from member_journal_media where id=${id}::uuid and member_id=${memberId}::uuid`;
-    if(file?.state==="ready" && file.entry_id===input.id && journalFilePolicy(file.mime_type,Number(file.byte_size))===input.kind) continue;
+    if(file?.state==="ready" && (fromDraft ? file.draft_id===input.id : file.entry_id===input.id) && journalFilePolicy(file.mime_type,Number(file.byte_size))===input.kind) continue;
     await verifyUpload(memberId,id,input.kind);
   }
 }
@@ -175,22 +176,28 @@ function inputMatches(entry:JournalEntry,input:JournalCreateInput) {
     && (input.timelineReflection===undefined || sameTimelineReflection(entry.timelineReflection,input.timelineReflection))
     && entry.media.map(file=>file.id).join(",")===input.mediaIds.join(",");
 }
-async function applyMedia(tx:postgres.TransactionSql, memberId:string,input:JournalCreateInput) {
+async function applyMedia(tx:postgres.TransactionSql, memberId:string,input:JournalCreateInput, fromDraft=false) {
   const files=await tx<MediaRow[]>`select * from member_journal_media where member_id=${memberId}::uuid and entry_id=${input.id}::uuid and state='ready' for update`;
   for(const file of files) if(!input.mediaIds.includes(file.id) && file.removed_at===null) {
     await tx`update member_journal_media set removed_at=statement_timestamp() where id=${file.id}::uuid and member_id=${memberId}::uuid`;
   }
   for(const [position,id] of input.mediaIds.entries()) {
     const [file]=await tx<MediaRow[]>`select * from member_journal_media where id=${id}::uuid and member_id=${memberId}::uuid for update`;
-    if(!file || !file.verified_at || (file.state!=="pending" && !(file.state==="ready" && file.entry_id===input.id))
+    if(!file || !file.verified_at || (file.state!=="pending" && !(file.state==="ready" && (fromDraft ? file.draft_id===input.id : file.entry_id===input.id)))
       || journalFilePolicy(file.mime_type,Number(file.byte_size))!==input.kind) throw new JournalError(400,"An upload is no longer available.");
-    await tx`update member_journal_media set entry_id=${input.id}::uuid,state='ready',position=${position},removed_at=null
+    await tx`update member_journal_media set entry_id=${input.id}::uuid,draft_id=null,state='ready',position=${position},removed_at=null
       where id=${id}::uuid and member_id=${memberId}::uuid`;
   }
 }
 async function savedEntry(tx:Sql,memberId:string,id:string) {
   const rows=await tx<EntryRow[]>`select * from member_journal_entries where id=${id}::uuid and member_id=${memberId}::uuid`;
   return (await entriesWithMedia(memberId,rows,tx))[0]!;
+}
+async function insertJournalEntry(tx:postgres.TransactionSql,memberId:string,actor:string,input:JournalCreateInput) {
+    await tx`insert into member_journal_entries(id,member_id,kind,title,body,event_year,event_month,event_day,include_on_timeline,timeline_position,updated_by_auth_user_id,visibility,timeline_reflection)
+      select ${input.id}::uuid,${memberId}::uuid,${input.kind},${input.title||null},${input.body||null},${input.eventYear??null},${input.eventMonth??null},${input.eventDay??null},${input.includeOnTimeline===true},
+        case when ${input.includeOnTimeline===true} then coalesce(max(timeline_position),0)+1 else null end,${actor}::uuid,${input.visibility??"private"},${input.timelineReflection ? tx.json(input.timelineReflection) : null}::jsonb
+      from member_journal_entries where member_id=${memberId}::uuid`;
 }
 export async function createJournalEntry(authUserId:string,value:JournalCreateInput):Promise<JournalEntry> {
   const normalized=validateJournalInput(value), input={...normalized,visibility:normalized.visibility??"private" as const}, owner=await journalOwner(authUserId,true), sql=getApplicationDatabase();
@@ -205,11 +212,10 @@ export async function createJournalEntry(authUserId:string,value:JournalCreateIn
       if(!current.deleted_at && inputMatches(entry,input)) return entry;
       throw new JournalError(409,"This entry has already changed. Load the latest version before saving.");
     }
+    const drafts=await tx`select id from member_journal_drafts where id=${input.id}::uuid`;
+    if(drafts.length) throw new JournalError(409,"Open this draft to finish it, or start a new entry.");
     await requireJournalPublication(owner.id,input,tx);
-    await tx`insert into member_journal_entries(id,member_id,kind,title,body,event_year,event_month,event_day,include_on_timeline,timeline_position,updated_by_auth_user_id,visibility,timeline_reflection)
-      select ${input.id}::uuid,${owner.id}::uuid,${input.kind},${input.title||null},${input.body||null},${input.eventYear??null},${input.eventMonth??null},${input.eventDay??null},${input.includeOnTimeline===true},
-        case when ${input.includeOnTimeline===true} then coalesce(max(timeline_position),0)+1 else null end,${authUserId}::uuid,${input.visibility},${input.timelineReflection ? tx.json(input.timelineReflection) : null}::jsonb
-      from member_journal_entries where member_id=${owner.id}::uuid`;
+    await insertJournalEntry(tx,owner.id,authUserId,input);
     await applyMedia(tx,owner.id,input);
     return savedEntry(tx,owner.id,input.id);
   });
@@ -271,9 +277,141 @@ export async function deleteJournalEntry(authUserId:string,id:string,expectedVer
 export async function journalMediaUrl(authUserId:string,id:string) {
   if(!JOURNAL_UUID.test(id)) throw new JournalError(404,"Media not found.");
   const owner=await journalOwner(authUserId);const sql=getApplicationDatabase();
-  const [row]=await sql<{storage_path:string}[]>`select m.storage_path from member_journal_media m join member_journal_entries e on e.id=m.entry_id and e.member_id=m.member_id where m.id=${id}::uuid and m.member_id=${owner.id}::uuid and m.state='ready' and m.removed_at is null and e.deleted_at is null`;
+  const [row]=await sql<{storage_path:string}[]>`select m.storage_path from member_journal_media m
+    left join member_journal_entries e on e.id=m.entry_id and e.member_id=m.member_id
+    left join member_journal_drafts d on d.id=m.draft_id and d.member_id=m.member_id
+    where m.id=${id}::uuid and m.member_id=${owner.id}::uuid and m.state='ready' and m.removed_at is null
+      and ((e.id is not null and e.deleted_at is null) or (d.id is not null and d.deleted_at is null and d.completed_at is null))`;
   if(!row) throw new JournalError(404,"Media not found.");
   const {data,error}=await journalStore().createSignedUrl(row.storage_path,3600);
   if(error || !data) throw new JournalError(503,"This media is temporarily unavailable.");
   return data.signedUrl;
+}
+
+async function draftsWithMedia(memberId:string,rows:DraftRow[],sql:Sql=getApplicationDatabase()):Promise<JournalDraftEntry[]> {
+  if(!rows.length) return [];
+  const media=await sql<MediaRow[]>`select id,draft_id,mime_type,byte_size from member_journal_media where member_id=${memberId}::uuid
+    and draft_id in ${sql(rows.map(row=>row.id))} and state='ready' and removed_at is null order by position,id`;
+  return rows.map(row=>({id:row.id,kind:row.kind,title:row.title,body:row.body,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString(),
+    saved:false,eventYear:row.event_year,eventMonth:row.event_month,eventDay:row.event_day,includeOnTimeline:false,visibility:'private',version:String(row.current_version),
+    ...(row.timeline_reflection ? {timelineReflection:row.timeline_reflection} : {}),
+    media:media.filter(file=>file.draft_id===row.id).map(file=>({id:file.id,mimeType:file.mime_type,size:Number(file.byte_size),url:`/api/my/journal/media/${file.id}`}))}));
+}
+async function savedDraft(tx:Sql,memberId:string,id:string) {
+  const rows=await tx<DraftRow[]>`select * from member_journal_drafts where id=${id}::uuid and member_id=${memberId}::uuid`;
+  return (await draftsWithMedia(memberId,rows,tx))[0]!;
+}
+export async function getJournalDraft(authUserId:string,id:string):Promise<JournalDraftEntry> {
+  if(!JOURNAL_UUID.test(id)) throw new JournalError(404,"Draft not found.");
+  const owner=await journalOwner(authUserId),sql=getApplicationDatabase();
+  const rows=await sql<DraftRow[]>`select * from member_journal_drafts where member_id=${owner.id}::uuid and id=${id}::uuid and deleted_at is null and completed_at is null`;
+  if(!rows.length) throw new JournalError(404,"Draft not found.");
+  return (await draftsWithMedia(owner.id,rows,sql))[0]!;
+}
+export async function getJournalDrafts(authUserId:string,cursor:string|null=null):Promise<JournalDraftSnapshot> {
+  if(cursor && !JOURNAL_UUID.test(cursor)) throw new JournalError(400,"Invalid drafts page.");
+  const owner=await journalOwner(authUserId),sql=getApplicationDatabase();
+  const rows=await sql<DraftRow[]>`with ordered as (
+    select *,row_number() over(order by updated_at desc,id) as ordinal from member_journal_drafts
+    where member_id=${owner.id}::uuid and deleted_at is null and completed_at is null
+  ) select * from ordered where (${cursor===null} or ordinal>(select ordinal from ordered where id=${cursor}::uuid)) order by ordinal limit 31`;
+  const [summary]=await sql<{total:number}[]>`select count(*)::integer as total from member_journal_drafts where member_id=${owner.id}::uuid and deleted_at is null and completed_at is null`;
+  const page=rows.slice(0,30);
+  return {entries:await draftsWithMedia(owner.id,page,sql),total:summary?.total??0,hasMore:rows.length>30,nextCursor:rows.length>30?page.at(-1)!.id:null,writable:owner.writable,mediaReady:journalStorageConfigured()};
+}
+async function applyDraftMedia(tx:postgres.TransactionSql,memberId:string,input:JournalCreateInput) {
+  await tx`update member_journal_media set removed_at=statement_timestamp() where member_id=${memberId}::uuid and draft_id=${input.id}::uuid and state='ready' and removed_at is null`;
+  for(const [position,id] of input.mediaIds.entries()) {
+    const [file]=await tx<MediaRow[]>`select * from member_journal_media where id=${id}::uuid and member_id=${memberId}::uuid for update`;
+    if(!file || !file.verified_at || (file.state!=="pending" && !(file.state==="ready" && file.draft_id===input.id))
+      || journalFilePolicy(file.mime_type,Number(file.byte_size))!==input.kind) throw new JournalError(400,"An upload is no longer available.");
+    await tx`update member_journal_media set draft_id=${input.id}::uuid,entry_id=null,state='ready',position=${position},removed_at=null where id=${id}::uuid and member_id=${memberId}::uuid`;
+  }
+}
+export async function createJournalDraft(authUserId:string,value:JournalCreateInput):Promise<JournalDraftEntry> {
+  const input=validateJournalDraftInput(value),owner=await journalOwner(authUserId,true),sql=getApplicationDatabase();
+  await prepareEntryMedia(owner.id,input,true);
+  return sql.begin(async tx=>{
+    await lockJournal(tx,owner.identity);
+    const [current]=await tx<DraftRow[]>`select * from member_journal_drafts where id=${input.id}::uuid and member_id=${owner.id}::uuid for update`;
+    if(current) {
+      const draft=await savedDraft(tx,owner.id,input.id);
+      if(!current.deleted_at && !current.completed_at && inputMatches(draft,input)) return draft;
+      throw new JournalError(409,"This draft has already changed. Open the latest draft before saving.");
+    }
+    const existing=await tx`select id from member_journal_entries where id=${input.id}::uuid`;
+    if(existing.length) throw new JournalError(409,"This entry has already been saved. Start a new draft.");
+    const [count]=await tx<{total:number}[]>`select count(*)::integer as total from member_journal_drafts where member_id=${owner.id}::uuid and deleted_at is null and completed_at is null`;
+    if(count.total>=500) throw new JournalError(429,"You have 500 drafts. Finish or delete a draft before starting another.");
+    await tx`insert into member_journal_drafts(id,member_id,kind,title,body,event_year,event_month,event_day,timeline_reflection)
+      values(${input.id}::uuid,${owner.id}::uuid,${input.kind},${input.title||null},${input.body||null},${input.eventYear??null},${input.eventMonth??null},${input.eventDay??null},${input.timelineReflection?tx.json(input.timelineReflection):null}::jsonb)`;
+    await applyDraftMedia(tx,owner.id,input);
+    return savedDraft(tx,owner.id,input.id);
+  });
+}
+export async function editJournalDraft(authUserId:string,id:string,value:JournalEditInput):Promise<JournalDraftEntry> {
+  const expectedVersion=validateJournalVersion(value.expectedVersion),{expectedVersion:version,...fields}=value;void version;
+  const input=validateJournalDraftInput({...fields,id}),owner=await journalOwner(authUserId,true),sql=getApplicationDatabase();
+  await getJournalDraft(authUserId,id);
+  await prepareEntryMedia(owner.id,input,true);
+  return sql.begin(async tx=>{
+    await lockJournal(tx,owner.identity);
+    const [row]=await tx<DraftRow[]>`select * from member_journal_drafts where id=${id}::uuid and member_id=${owner.id}::uuid and deleted_at is null and completed_at is null for update`;
+    if(!row) throw new JournalError(404,"Draft not found.");
+    const current=await savedDraft(tx,owner.id,id);
+    if(inputMatches(current,input)) return current;
+    if(String(row.current_version)!==expectedVersion) throw new JournalError(409,"This draft changed in another window. Your words are still here. Open the latest draft before saving.");
+    const reflection=input.timelineReflection===undefined?row.timeline_reflection??null:input.timelineReflection;
+    await tx`update member_journal_drafts set kind=${input.kind},title=${input.title||null},body=${input.body||null},event_year=${input.eventYear??null},event_month=${input.eventMonth??null},event_day=${input.eventDay??null},
+      timeline_reflection=${reflection?tx.json(reflection):null}::jsonb where id=${id}::uuid and member_id=${owner.id}::uuid`;
+    await applyDraftMedia(tx,owner.id,input);
+    return savedDraft(tx,owner.id,id);
+  });
+}
+export async function completeJournalDraft(authUserId:string,id:string,value:JournalEditInput):Promise<JournalEntry> {
+  const expectedVersion=validateJournalVersion(value.expectedVersion),{expectedVersion:version,...fields}=value;void version;
+  const normalized=validateJournalInput({...fields,id}),input={...normalized,visibility:normalized.visibility??"private" as const},owner=await journalOwner(authUserId,true),sql=getApplicationDatabase();
+  const [prior]=await sql<DraftRow[]>`select * from member_journal_drafts where id=${id}::uuid and member_id=${owner.id}::uuid and deleted_at is null`;
+  if(!prior) throw new JournalError(404,"Draft not found.");
+  if(!prior.completed_at) {
+    try { await prepareEntryMedia(owner.id,input,true); }
+    catch(error) {
+      // Another identical completion can move attachments while this request
+      // is verifying them. Let the locked idempotency check decide the result.
+      const [latest]=await sql<DraftRow[]>`select * from member_journal_drafts where id=${id}::uuid and member_id=${owner.id}::uuid and deleted_at is null`;
+      if(!latest?.completed_at) throw error;
+    }
+  }
+  return sql.begin(async tx=>{
+    await lockJournal(tx,owner.identity);
+    const [row]=await tx<DraftRow[]>`select * from member_journal_drafts where id=${id}::uuid and member_id=${owner.id}::uuid and deleted_at is null for update`;
+    if(!row) throw new JournalError(404,"Draft not found.");
+    if(row.completed_at) {
+      const [finished]=await tx<EntryRow[]>`select * from member_journal_entries where id=${id}::uuid and member_id=${owner.id}::uuid and deleted_at is null`;
+      if(finished) {const entry=await savedEntry(tx,owner.id,id);if(inputMatches(entry,input)) return entry;}
+      throw new JournalError(409,"This draft has already been finished. Open the saved entry.");
+    }
+    if(String(row.current_version)!==expectedVersion) throw new JournalError(409,"This draft changed in another window. Open the latest draft before finishing.");
+    // Never implicitly discard reviewed reflection answers from an older client.
+    if(row.timeline_reflection && input.timelineReflection===undefined) throw new JournalError(409,"Review this draft's reflection answers before finishing.");
+    await requireJournalPublication(owner.id,input,tx);
+    await insertJournalEntry(tx,owner.id,authUserId,input);
+    await applyMedia(tx,owner.id,input,true);
+    await tx`update member_journal_media set removed_at=statement_timestamp() where member_id=${owner.id}::uuid and draft_id=${id}::uuid and removed_at is null`;
+    await tx`update member_journal_drafts set completed_at=statement_timestamp() where id=${id}::uuid and member_id=${owner.id}::uuid`;
+    return savedEntry(tx,owner.id,id);
+  });
+}
+export async function deleteJournalDraft(authUserId:string,id:string,expectedVersion:string) {
+  validateJournalVersion(expectedVersion);
+  if(!JOURNAL_UUID.test(id)) throw new JournalError(404,"Draft not found.");
+  const owner=await journalOwner(authUserId,true);
+  await getApplicationDatabase().begin(async tx=>{
+    await lockJournal(tx,owner.identity);
+    const [row]=await tx<DraftRow[]>`select * from member_journal_drafts where id=${id}::uuid and member_id=${owner.id}::uuid for update`;
+    if(!row || row.completed_at) throw new JournalError(404,"Draft not found.");
+    if(row.deleted_at) return;
+    if(String(row.current_version)!==expectedVersion) throw new JournalError(409,"This draft changed. Open the latest draft before deleting it.");
+    await tx`update member_journal_drafts set deleted_at=statement_timestamp() where id=${id}::uuid and member_id=${owner.id}::uuid`;
+  });
 }

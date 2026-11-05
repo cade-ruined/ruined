@@ -32,7 +32,7 @@ async function loadTypescript(path, dependencies = {}) {
   return cjsModule.exports;
 }
 
-export async function timelineFixture(t, { monthMigration = true, visibilityMigration = true, meaningMigration = true, reflectionMigration = true, publicReflectionMigration = true } = {}) {
+export async function timelineFixture(t, { monthMigration = true, visibilityMigration = true, meaningMigration = true, reflectionMigration = true, publicReflectionMigration = true, draftMigration = true } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   // Only the driver's actual Parameter/JSON serializers are used. No driver
@@ -50,9 +50,10 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
   await db.exec(`
     create role anon nologin;
     create role authenticated nologin;
+    create role service_role nologin;
     create schema private;
     create table people (id uuid primary key, status text default 'active');
-    create table ruined_members (id uuid primary key, person_id uuid, email text default 'member@example.test');
+    create table ruined_members (id uuid primary key, person_id uuid, email text default 'member@example.test', deleted_at timestamptz);
     create table platform_users (auth_user_id uuid primary key, member_id uuid, person_id uuid, status text default 'active');
     create table platform_role_grants (id bigint generated always as identity primary key, auth_user_id uuid, role_slug text, revoked_at timestamptz);
     create table member_lifecycle (member_id uuid primary key, account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', program_state text default 'active', foundations_state text default 'in_progress', standing_state text default 'active', cancellation_effective_at timestamptz);
@@ -89,6 +90,7 @@ export async function timelineFixture(t, { monthMigration = true, visibilityMigr
       }
     }
   }
+  if (monthMigration && draftMigration) await db.exec(await source("db/migrations/20261105090000_member_journal_drafts.sql"));
   await db.query("insert into people (id) values ($1),($2)", [timelineIds.person, timelineIds.otherMember]);
   await db.query("insert into ruined_members (id,person_id) values ($1,$2),($3,$3)", [timelineIds.member, timelineIds.person, timelineIds.otherMember]);
   await db.query("insert into platform_users (auth_user_id,member_id,person_id) values ($1,$2,$3),($4,$5,$5)", [timelineIds.auth, timelineIds.member, timelineIds.person, timelineIds.otherAuth, timelineIds.otherMember]);
