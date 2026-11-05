@@ -255,10 +255,39 @@ test("public card links to the profile and visitor route passes only fixed publi
     "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => ({ profile }) },
     "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
+    "@/lib/membership/member-search-preview": { getPreviewMemberProfile: () => { throw new Error("Connected profiles must not read preview people"); } },
     "@/components/membership/PublicJournal": Timeline,
   });
   const rendered = await route.default({ params: Promise.resolve({ token }) });
   assert.deepEqual(rendered.props.identity, profile);
   assert.equal(route.metadata.title, "Profile / Ruined");
   assert.deepEqual(route.metadata.robots, { index: false, follow: false });
+});
+
+test("directory preview links open their matching fictional profiles only in local preview mode", async t => {
+  const previousEnvironment = process.env.NODE_ENV;
+  t.after(() => { if (previousEnvironment === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousEnvironment; });
+  let mode = "preview", previewReads = 0;
+  const route = load("app/journal/[token]/page.tsx", {
+    "next/navigation": { notFound: () => { throw new Error("not found"); } },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
+    "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[a-z_]+$/ },
+    "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => null },
+    "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
+    "@/lib/membership/member-search-preview": { getPreviewMemberProfile: tag => {
+      previewReads++; return tag === "avery_chen" ? { name: "Avery Chen", memberTag: tag, bio: "Example bio", memberNumber: 4 } : null;
+    } },
+    "@/components/membership/PublicJournal": () => null,
+  });
+  const render = () => route.default({ params: Promise.resolve({ token: "avery_chen" }) });
+  process.env.NODE_ENV = "development";
+  const page = await render();
+  assert.equal(page.props.identity.name, "Avery Chen");
+  assert.equal(page.props.identity.memberTag, "avery_chen");
+  assert.ok(page.props.previewEntries.length);
+  process.env.NODE_ENV = "production";
+  await assert.rejects(render, /not found/);
+  process.env.NODE_ENV = "development"; mode = "connected";
+  await assert.rejects(render, /not found/);
+  assert.equal(previewReads, 1, "production and connected requests never read fictional directory people");
 });

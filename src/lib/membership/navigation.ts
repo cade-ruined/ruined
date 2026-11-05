@@ -6,6 +6,7 @@ export const MEMBER_DESTINATIONS = [
   { href: "/my/artifacts", label: "Artifacts", group: "Your record", keywords: "awards earned coin collection fulfillment tracking" },
   { href: "/my/timeline", label: "Timeline", group: "Your record", keywords: "public moments story reflections draft" },
   { href: "/my/circle", label: "Circle", group: "Your membership", keywords: "people shaper chat google meet group" },
+  { href: "/my/members", label: "Members", group: "Your membership", keywords: "find browse people search directory name names tag tags handle public profiles" },
   { href: "/my/experiences", label: "Calendar", group: "Your membership", keywords: "events experiences calendar meetings calls rsvp attend" },
   { href: "/my/practice", label: "The Work", group: "Your membership", keywords: "practice foundations monthly time assignment progress course reflection MY 168" },
   { href: "/my/learn", label: "Academy", group: "Your membership", keywords: "learn training videos library lessons courses" },

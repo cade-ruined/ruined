@@ -6,6 +6,7 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import type { MemberAccessIdentity } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
+import type { MemberSearchSnapshot } from "./member-search-model";
 import {
   defaultMemberCardSettings, MEMBER_CARD_TOKEN, MEMBER_PROFILE_IDENTIFIER, projectMemberCard, PublicCardError,
   validateMemberCardInput, type MemberCardInput, type MemberCardSettings,
@@ -227,9 +228,16 @@ type ProfileRow = Pick<PublicRow, "account_state" | "billing_state" | "program_s
 async function publicProfileRows(identifiers: string[], sql: CardSql): Promise<ProfileRow[]> {
   const validIdentifiers = [...new Set(identifiers.filter(identifier => MEMBER_PROFILE_IDENTIFIER.test(identifier)))];
   if (!validIdentifiers.length) return [];
+  return readPublicProfileRows(sql, validIdentifiers, "", validIdentifiers.length, 0);
+}
+/** Lookup and discovery share this eligibility predicate before any result limit. */
+async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null, query: string, limit: number, offset: number): Promise<ProfileRow[]> {
+  const validIdentifiers = identifiers ?? [""];
   const rows = await sql<ProfileRow[]>`
+    with candidates as (
     select member.id as member_id, card.public_token, profile.display_name, profile.preferred_name,
       profile.member_tag, profile.bio, member.member_number,
+      coalesce(nullif(btrim(profile.display_name),''),nullif(btrim(profile.preferred_name),''),'Member') as public_name,
       lifecycle.account_state, lifecycle.billing_state, lifecycle.program_state, lifecycle.standing_state,
       lifecycle.administrative_onboarding_state, lifecycle.cancellation_effective_at,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
@@ -240,12 +248,25 @@ async function publicProfileRows(identifiers: string[], sql: CardSql): Promise<P
     left join person_profiles profile on profile.person_id = member.person_id
     left join member_public_cards card on card.member_id = member.id
     where member.deleted_at is null
-      and (member.id::text in ${sql(validIdentifiers)}
+      and (${identifiers === null} or member.id::text in ${sql(validIdentifiers)}
         or profile.member_tag in ${sql(validIdentifiers.map(identifier => identifier.toLowerCase()))}
         or card.public_token in ${sql(validIdentifiers)})
       and exists (select 1 from platform_users viewer join platform_role_grants member_grant
         on member_grant.auth_user_id = viewer.auth_user_id and member_grant.role_slug = 'member' and member_grant.revoked_at is null
         where viewer.person_id = member.person_id and viewer.status = 'active')
+    )
+    select * from candidates
+    where account_state='active' and program_state in ('onboarding','active')
+      and standing_state in ('active','cancellation_requested')
+      and administrative_onboarding_state='completed' and not registration_held
+      and (operator_funded or complimentary_funded
+        or coalesce(shared_billing_state,billing_state) not in ('pending','attention_required','ended'))
+      and (standing_state<>'cancellation_requested' or cancellation_effective_at>statement_timestamp())
+      and not exists (select 1 from regexp_split_to_table(${query},' ') word
+        where position(lower(word) in lower(public_name || ' ' || coalesce(member_tag,'')))=0)
+    order by case when ${query}<>'' and lower(member_tag)=lower(${query}) then 0 else 1 end,
+      lower(public_name) collate "C",member_id
+    limit ${limit} offset ${offset}
   `;
   return rows.filter(profileRowIsPublic);
 }
@@ -286,6 +307,23 @@ export async function getOwnMemberProfilePublicScope(memberId: string, sql: Card
 export async function getPublicMemberProfile(identifier: string): Promise<PublicMemberProfile | null> {
   const row = await publicProfileRow(identifier);
   return row ? profileProjection(row) : null;
+}
+
+/** Server-only search projection. Caller must authorize the member, query and page. */
+export async function getPublicMemberProfileSearch(query: string, page: number, pageSize: number): Promise<MemberSearchSnapshot> {
+  const sql = getApplicationDatabase();
+  const rows = await readPublicProfileRows(sql, null, query, pageSize + 1, (page - 1) * pageSize);
+  // Eligibility and published text can change while the list is being assembled.
+  const current = new Map((await publicProfileRows(rows.map(row => row.member_id), sql)).map(row => [row.member_id, row]));
+  const words = query.toLowerCase().split(" ").filter(Boolean);
+  const visible = rows.flatMap(row => {
+    const latest = current.get(row.member_id);
+    if (!latest) return [];
+    const profile = profileProjection(latest);
+    if (!words.every(word => `${profile.name} ${profile.memberTag ?? ""}`.toLowerCase().includes(word))) return [];
+    return [{ ...profile, href: `/profile/${encodeURIComponent(profileScope(latest).token)}` }];
+  });
+  return { query, page, results: visible.slice(0, pageSize), hasMore: visible.length > pageSize };
 }
 
 /** Retired card portrait route: legacy selections never authorize image bytes. */
