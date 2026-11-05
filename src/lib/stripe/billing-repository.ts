@@ -1057,7 +1057,61 @@ async function reconcileAdministrativeOnboardingAfterPaidMembership(
     limit 1
   `;
 
-  if (paidMembershipEvents.length === 0) return false;
+  if (paidMembershipEvents.length === 0) {
+    // Cohort activation is a provider-readback reconciliation, not an
+    // invoice.paid webhook. Its synthetic source must never be inserted into
+    // the signed-event inbox; use the current, identity-bound payment instead.
+    const prepaidMemberships = await tx<Array<{ reservation_id: string }>>`
+      select reservation.id as reservation_id
+      from ruined_members member
+      join member_lifecycle lifecycle on lifecycle.member_id=member.id
+      join membership_commercial_reservations reservation
+        on reservation.id=private.ruined_member_paid_reservation(member.id) and reservation.status='activated'
+      join stripe_membership_prepaid_proofs proof on proof.reservation_id=reservation.id
+        and proof.activated_at is not null and proof.activated_at<=statement_timestamp()
+      join stripe_subscriptions subscription on subscription.id=proof.stripe_subscription_id
+      join ruined_members payer on payer.id=reservation.payer_member_id and payer.deleted_at is null
+      join member_lifecycle payer_lifecycle on payer_lifecycle.member_id=payer.id
+      join stripe_invoices current_invoice on current_invoice.id=subscription.latest_invoice_id
+        and current_invoice.member_id=payer.id and current_invoice.stripe_subscription_id=subscription.id
+        and current_invoice.stripe_customer_id=subscription.stripe_customer_id
+        and current_invoice.purpose='membership' and current_invoice.stripe_status='paid'
+        and current_invoice.paid_at is not null and current_invoice.amount_paid=current_invoice.amount_due
+      where member.id=${input.memberId}::uuid and member.deleted_at is null
+        and lifecycle.account_state='active' and lifecycle.billing_state='active'
+        and lifecycle.program_state in ('prospect','onboarding','active')
+        and lifecycle.standing_state in ('pre_active','active','cancellation_requested')
+        and (lifecycle.standing_state<>'cancellation_requested' or lifecycle.cancellation_effective_at>statement_timestamp())
+        and payer_lifecycle.account_state='active' and payer_lifecycle.billing_state in ('pending','active')
+        and payer_lifecycle.standing_state in ('pre_active','active','cancellation_requested')
+        and (payer_lifecycle.standing_state<>'cancellation_requested' or payer_lifecycle.cancellation_effective_at>statement_timestamp())
+        and (subscription.cancel_at is null or subscription.cancel_at>statement_timestamp())
+        and subscription.price_id=reservation.stripe_price_id
+        and (private.ruined_effective_prepaid_schedule(reservation.id)->>'serviceStartsAt')::timestamptz<=statement_timestamp()
+        and ((statement_timestamp()<(private.ruined_effective_prepaid_schedule(reservation.id)->>'prepaidThrough')::timestamptz
+          and subscription.stripe_status in ('active','trialing')
+          and ((current_invoice.id=proof.stripe_invoice_id and current_invoice.amount_paid>0)
+            or (current_invoice.amount_paid=0 and exists(select 1 from private.membership_cohort_rollovers rollover
+              where rollover.reservation_id=reservation.id and rollover.status='completed'
+                and rollover.provider_evidence->>'adjustmentInvoiceId'=current_invoice.id))))
+          or (statement_timestamp()>=(private.ruined_effective_prepaid_schedule(reservation.id)->>'prepaidThrough')::timestamptz
+            and subscription.stripe_status='active' and current_invoice.id<>proof.stripe_invoice_id and current_invoice.amount_paid>0))
+        and not exists(select 1 from membership_enrollment_episodes episode
+          where episode.reservation_id=reservation.id and episode.member_id in (member.id,payer.id) and episode.ended_at is not null)
+        and not exists(select 1 from ruined_members subject
+          where subject.id in (member.id,payer.id) and not exists(
+            select 1 from people person
+            join platform_users account on account.person_id=person.id and account.status='active'
+              and (account.member_id is null or account.member_id=subject.id) and account.email_normalized=subject.email_normalized
+            join platform_role_grants grant_row on grant_row.auth_user_id=account.auth_user_id
+              and grant_row.role_slug='member' and grant_row.revoked_at is null
+            join person_email_addresses email on email.person_id=person.id and email.email_normalized=subject.email_normalized
+              and email.verification_state='verified' and email.retired_at is null
+            where person.id=subject.person_id and person.status='active'))
+      limit 1
+    `;
+    if (prepaidMemberships.length === 0) return false;
+  }
 
   await tx`
     insert into member_onboardings (
@@ -1471,21 +1525,52 @@ export async function recordMembershipPrepayment(tx: BillingTransaction, input: 
   return (await getMembershipPrepayment(tx, { reservationId: input.reservationId }))!;
 }
 
-/** Due rows include missed first periods; the activation guard independently
- * requires a paid current recurring invoice once the prepaid period has ended. */
+/** Due rows include missed first periods and activated payments whose completed
+ * intake still needs administrative reconciliation. The worker revalidates the
+ * provider before applying either; activation still requires current coverage. */
 export async function listMembershipPrepaymentsDue(input: { limit?: number; now?: Date; livemode?: boolean } = {}): Promise<MembershipPrepayment[]> {
   const sql = getBillingDatabase(), limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 50)));
   const rows = await sql<PrepaymentRow[]>`select proof.*,private.ruined_effective_prepaid_schedule(reservation.id) as billing_schedule, reservation.billing_schedule as accepted_billing_schedule
     from stripe_membership_prepaid_proofs proof
-    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id and reservation.status='reserved'
+    join membership_commercial_reservations reservation on reservation.id=proof.reservation_id
     where (${input.livemode ?? null}::boolean is null or proof.livemode=${input.livemode ?? null}::boolean)
-      and proof.activated_at is null and ((proof.refund_state='none' and (private.ruined_effective_prepaid_schedule(reservation.id)->>'serviceStartsAt')::timestamptz<=${input.now ?? new Date()})
+      and ((reservation.status='reserved' and proof.activated_at is null and ((proof.refund_state='none' and (private.ruined_effective_prepaid_schedule(reservation.id)->>'serviceStartsAt')::timestamptz<=${input.now ?? new Date()})
       or (proof.refund_state='review_required' and proof.review_reason='cohort_cutoff_missed') or proof.refund_state='refunded'
       or (proof.refund_state='none' and exists(select 1 from private.membership_cohort_rollovers rollover
         join stripe_subscriptions subscription on subscription.id=proof.stripe_subscription_id
         where rollover.reservation_id=proof.reservation_id and rollover.status='completed'
           and (subscription.latest_invoice_id is distinct from rollover.provider_evidence->>'latestInvoiceId'
-            or not exists(select 1 from member_registration_access registration where registration.member_id=proof.member_id and registration.registered_at is not null)))))
+            or not exists(select 1 from member_registration_access registration where registration.member_id=proof.member_id and registration.registered_at is not null))))))
+      or (reservation.status='activated' and proof.activated_at is not null
+        and proof.refund_state='none' and proof.amount_refunded=0 and proof.review_reason is null and proof.provider_canceled_at is null
+        and (private.ruined_effective_prepaid_schedule(reservation.id)->>'serviceStartsAt')::timestamptz<=${input.now ?? new Date()}
+        and exists(select 1 from membership_commercial_participants participant
+          join ruined_members member on member.id=participant.member_id and member.person_id=participant.person_id and member.deleted_at is null
+          join member_onboardings onboarding on onboarding.member_id=member.id and onboarding.state<>'completed'
+            and onboarding.profile_completed_at is not null and onboarding.agreement_completed_at is not null
+          join member_lifecycle lifecycle on lifecycle.member_id=member.id and lifecycle.account_state='active' and lifecycle.billing_state='active'
+            and lifecycle.administrative_onboarding_state<>'completed' and lifecycle.program_state in ('prospect','onboarding','active')
+            and lifecycle.standing_state in ('pre_active','active','cancellation_requested')
+            and (lifecycle.standing_state<>'cancellation_requested' or lifecycle.cancellation_effective_at>${input.now ?? new Date()})
+          join stripe_subscriptions subscription on subscription.id=proof.stripe_subscription_id
+            and (subscription.cancel_at is null or subscription.cancel_at>${input.now ?? new Date()})
+          join ruined_members payer on payer.id=reservation.payer_member_id and payer.deleted_at is null
+          join member_lifecycle payer_lifecycle on payer_lifecycle.member_id=payer.id and payer_lifecycle.account_state='active'
+            and payer_lifecycle.billing_state in ('pending','active') and payer_lifecycle.standing_state in ('pre_active','active','cancellation_requested')
+            and (payer_lifecycle.standing_state<>'cancellation_requested' or payer_lifecycle.cancellation_effective_at>${input.now ?? new Date()})
+          where participant.reservation_id=reservation.id and private.ruined_member_paid_reservation(member.id)=reservation.id
+            and not exists(select 1 from membership_enrollment_episodes episode
+              where episode.reservation_id=reservation.id and episode.member_id in (member.id,payer.id) and episode.ended_at is not null)
+            and not exists(select 1 from ruined_members subject
+              where subject.id in (member.id,payer.id) and not exists(
+                select 1 from people person
+                join platform_users account on account.person_id=person.id and account.status='active'
+                  and (account.member_id is null or account.member_id=subject.id) and account.email_normalized=subject.email_normalized
+                join platform_role_grants grant_row on grant_row.auth_user_id=account.auth_user_id
+                  and grant_row.role_slug='member' and grant_row.revoked_at is null
+                join person_email_addresses email on email.person_id=person.id and email.email_normalized=subject.email_normalized
+                  and email.verification_state='verified' and email.retired_at is null
+                where person.id=subject.person_id and person.status='active')))))
     order by proof.service_starts_at,proof.reservation_id limit ${limit}`;
   return rows.map(prepayment);
 }

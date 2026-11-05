@@ -26,7 +26,8 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   });
   const experienceAccess=await load('src/lib/platform/experience-member-access.ts',{'@/lib/membership/access-policy':{}});
   const invalidation=await load('src/lib/platform/calendar-audience-invalidation.ts',{'@/lib/platform/ops-calendar-repository':calendar,'@/lib/platform/experience-member-access':experienceAccess});
-  const billing=await load('src/lib/stripe/billing-repository.ts',{'@/lib/membership/commercial-repository':commercial,'@/lib/membership/pricing':pricing,'@/lib/stripe/database':{getBillingDatabase:()=>sql},'@/lib/stripe/membership-state':{normalizeEmail:v=>v.trim().toLowerCase()},'@/lib/platform/calendar-audience-invalidation':invalidation});
+  const billingFor=database=>load('src/lib/stripe/billing-repository.ts',{'@/lib/membership/commercial-repository':commercial,'@/lib/membership/pricing':pricing,'@/lib/stripe/database':{getBillingDatabase:()=>database},'@/lib/stripe/membership-state':{normalizeEmail:v=>v.trim().toLowerCase()},'@/lib/platform/calendar-audience-invalidation':invalidation});
+  const billing=await billingFor(sql);
   const schedule=schedules.createFoundationsBillingSchedule(new Date(),'monthly');
   const clock=instant=>{Date.now=()=>Date.parse(instant);};
   async function seed(n,{paidAt=new Date(),persist=true,quoteMinutes=60,acceptedSchedule=schedule,chargePrefix="ch",agreementVersion=4}={}){
@@ -57,7 +58,7 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
     await db.query('insert into stripe_membership_commitments(id,member_id,checkout_attempt_id,agreement_acceptance_id,stripe_subscription_id,stripe_customer_id,livemode,terms_snapshot,terms_sha256) values($1,$2,$1,$3,$4,$5,false,$6,$7)',[reservationId,member,acceptance,sub,customer,JSON.stringify(contract),'b'.repeat(64)]);
     const input={reservationId,contractId:reservationId,memberId:member,subscriptionId:sub,invoiceId:invoice,paymentIntentId:`pi_prepaid_${n}`,chargeId:`${chargePrefix}_prepaid_${n}`,serviceStartsAt:schedule.serviceStartsAt,prepaidThrough:schedule.prepaidThrough,duesAmount:34900,amountPaid:35900,currency:'usd',livemode:false,verifiedAt:new Date(Date.now())};
     if(persist)await tx(sql=>billing.recordMembershipPrepayment(sql,input));
-    return {quote,input,member,sub,invoice,reservationId,customer,acceptance};
+    return {quote,input,member,sub,invoice,reservationId,customer,acceptance,auth,person};
   }
   for(const [month,finalCall] of [['2026-11','2026-11-30T22:00:00.000Z'],['2026-12','2026-12-30T22:00:00.000Z']]){
     const holiday=schedules.foundationsBillingScheduleForMonth(month,'monthly');
@@ -228,4 +229,78 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
   assert.equal((await commercial.getCommercialMembershipReservation(missed.reservationId)).status,'activated');
   assert.equal((await billing.getMembershipPrepayment(sql,{subscriptionId:missed.sub})).serviceStartsAt.toISOString(),schedule.serviceStartsAt,'late activation never resets initial term');
   Date.now=realNow;
+
+  await t.test('provider reconciliation completes paid prepaid intake without inventing an invoice webhook',async t=>{
+    const policy=await load('src/lib/membership/access-policy.ts');
+    const who=await seed(10000);
+    await db.query("insert into member_registration_access(member_id,payment_setup_account_id,payment_setup_livemode) values($1,'acct_prepaid_fixture',false)",[who.member]);
+    await db.query("update stripe_checkout_attempts set payment_setup_account_id='acct_prepaid_fixture',payment_setup_livemode=false where id=$1",[who.reservationId]);
+    await db.query("insert into stripe_checkout_sessions(id,member_id,stripe_customer_id,stripe_subscription_id,payment_status,session_status,livemode,last_event_created) values($1,$2,$3,$4,'paid','complete',false,1)",[`cs_prepaid_10000`,who.member,who.customer,who.sub]);
+    await db.query("insert into member_onboardings(member_id,state,form_version,profile_completed_at,agreement_completed_at,started_at) values($1,'in_progress','administrative-v1',now(),now(),now()) on conflict(member_id) do update set state='in_progress',profile_completed_at=now(),agreement_completed_at=now()",[who.member]);
+    await db.query("update member_lifecycle set administrative_onboarding_state='in_progress' where member_id=$1",[who.member]);
+    const current=async engine=>(await engine.query(`select lifecycle.*,onboarding.state as onboarding_state,onboarding.billing_confirmed_at,
+      onboarding.completed_at,onboarding.completion_evidence from member_lifecycle lifecycle
+      join member_onboardings onboarding on onboarding.member_id=lifecycle.member_id where lifecycle.member_id=$1`,[who.member])).rows[0];
+    const due=async(engine=db)=> (await (await billingFor(sqlFor(engine))).listMembershipPrepaymentsDue({now:new Date(Date.now()),livemode:false})).some(row=>row.reservationId===who.reservationId);
+    const sourceEventId='prepaid_reconcile:00000000-0000-4000-8000-000000000001';
+    const reconcile=engine=>billing.updateMemberBillingState(sqlFor(engine),{memberId:who.member,sourceEventId,eventCreated:Math.floor(Date.now()/1000),state:'active'});
+    const rollback=Symbol('rollback');
+    const isolated=async fn=>{try{await db.transaction(async engine=>{await fn(engine);throw rollback;});}catch(error){if(error!==rollback)throw error;}};
+    assert.equal((await db.query('select private.ruined_member_paid_reservation($1) reservation',[who.member])).rows[0].reservation,who.reservationId);
+    await t.test('paid future cohort is not administrative activation',()=>isolated(async engine=>{
+      await reconcile(engine);assert.equal((await current(engine)).onboarding_state,'in_progress');assert.equal((await current(engine)).billing_confirmed_at,null);
+    }));
+    clock(new Date(Date.parse(schedule.serviceStartsAt)+1000).toISOString());
+    await tx(sql=>billing.recordMembershipPrepayment(sql,{...who.input,verifiedAt:new Date(Date.now())}));
+    await commercial.activateCommercialMembership({reservationId:who.reservationId,stripeSubscriptionId:who.sub});
+    // Reproduce the already-activated member left behind by the old worker.
+    await db.query("update ruined_members set membership_state='active' where id=$1",[who.member]);
+    await db.query("update member_lifecycle set billing_state='active' where member_id=$1",[who.member]);
+    clock(new Date(Date.parse(schedule.serviceStartsAt)+10*60_000).toISOString());
+    assert.equal(await due(),true,'activated, funded, complete intake needs a provider revalidation pass');
+    assert.equal((await billing.listMembershipPrepaymentsDue({now:new Date(Date.now()),livemode:true})).some(row=>row.reservationId===who.reservationId),false,'mode filter is preserved');
+    const blocked=[
+      ['partial refund',"update stripe_membership_prepaid_proofs set refund_state='partial',amount_refunded=100 where reservation_id=$1",who.reservationId],
+      ['payment under review',"update stripe_membership_prepaid_proofs set refund_state='review_required',review_reason='fixture_review' where reservation_id=$1",who.reservationId],
+      ['unpaid original invoice',"update stripe_invoices set stripe_status='open' where id=$1",who.invoice],
+      ['canceled subscription',"update stripe_subscriptions set stripe_status='canceled' where id=$1",who.sub],
+      ['effective subscription cancellation',"update stripe_subscriptions set cancel_at=now()-interval '1 second' where id=$1",who.sub],
+      ['suspended account',"update member_lifecycle set account_state='suspended' where member_id=$1",who.member],
+      ['paused membership',"update member_lifecycle set standing_state='paused' where member_id=$1",who.member],
+      ['effective membership cancellation',"update member_lifecycle set standing_state='cancellation_requested',cancellation_effective_at=now()-interval '1 second' where member_id=$1",who.member],
+      ['revoked member role',"update platform_role_grants set revoked_at=now() where auth_user_id=$1 and role_slug='member'",who.auth],
+      ['unverified member email',"update person_email_addresses set verification_state='unverified',verified_at=null where person_id=$1",who.person],
+    ];
+    for(const [name,query,value] of blocked)await t.test(name,()=>isolated(async engine=>{
+      await engine.query(query,[value]);await reconcile(engine);
+      const after=await current(engine);assert.equal(after.onboarding_state,'in_progress');assert.equal(after.billing_confirmed_at,null);
+      assert.equal(after.program_state,'prospect');assert.equal(after.administrative_onboarding_state,'in_progress');
+    }));
+    for(const field of ['profile_completed_at','agreement_completed_at'])await t.test(`missing ${field} remains incomplete`,()=>isolated(async engine=>{
+      await engine.query(`update member_onboardings set ${field}=null where member_id=$1`,[who.member]);
+      await reconcile(engine);assert.equal((await current(engine)).onboarding_state,'in_progress');
+      assert.equal(await due(engine),false,'unfinished intake must not become a permanent repair candidate');
+    }));
+    await t.test('expired prepaid coverage requires a current paid renewal',async()=>{
+      const activeClock=Date.now();clock(new Date(Date.parse(schedule.prepaidThrough)+1000).toISOString());
+      await isolated(async engine=>{await reconcile(engine);assert.equal((await current(engine)).onboarding_state,'in_progress');});
+      clock(new Date(activeClock).toISOString());
+    });
+    const before=await current(db);
+    await tx(sql=>billing.updateMemberBillingState(sql,{memberId:who.member,sourceEventId,eventCreated:Math.floor(Date.now()/1000),state:'active'}));
+    const completed=await current(db);
+    assert.equal(completed.onboarding_state,'completed');assert.ok(completed.billing_confirmed_at);assert.ok(completed.completed_at);
+    assert.equal(completed.administrative_onboarding_state,'completed');assert.equal(completed.program_state,'onboarding');assert.equal(completed.standing_state,'active');
+    assert.equal(completed.account_state,before.account_state);assert.equal(completed.foundations_state,before.foundations_state);
+    assert.equal(completed.completion_evidence.source_event_id,sourceEventId);
+    assert.equal(policy.memberCan(policy.deriveMemberAccessPolicy({accountState:completed.account_state,billingState:completed.billing_state,
+      administrativeOnboardingState:completed.administrative_onboarding_state,programState:completed.program_state,standingState:completed.standing_state}), 'foundations.write'),true);
+    assert.equal((await db.query('select count(*) from stripe_webhook_events where event_id=$1',[sourceEventId])).rows[0].count,0,'synthetic reconciliations never become signed webhook evidence');
+    assert.equal(await due(),false,'successful completion removes the repair from the bounded worker queue');
+    const history=(await db.query('select count(*) from member_state_history where member_id=$1',[who.member])).rows[0].count;
+    await tx(sql=>billing.updateMemberBillingState(sql,{memberId:who.member,sourceEventId,eventCreated:Math.floor(Date.now()/1000),state:'active'}));
+    assert.equal((await db.query('select count(*) from member_state_history where member_id=$1',[who.member])).rows[0].count,history,'replay does not duplicate lifecycle history');
+    assert.equal((await current(db)).completed_at.getTime(),completed.completed_at.getTime());
+    Date.now=realNow;
+  });
 });
