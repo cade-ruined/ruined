@@ -11,6 +11,52 @@ test("members without awards have no badge row or locked placeholders", () => {
   assert.equal(ui.document.activeElement, ui.original);
 });
 
+test("public profile badges expose readable names and load the existing artwork immediately", () => {
+  const ui = fixture({ presentation: "profile" });
+  const tree = ui.draw(), button = ui.button("I Was Here badge. View details");
+  assert.equal(text(button), "I Was Here");
+  const image = nodes(button).find(node => node.type === "img");
+  assert.equal(image.props.src, "/membership/badges/i-was-here-red-dashes-v2.png");
+  assert.equal(image.props.loading, "eager");
+  assert.equal(image.props.alt, "");
+  assert.equal(nodes(tree).find(node => node.type === "ul").props["aria-label"], "Earned badges");
+  assert.equal(ui.requests.length, 0, "Viewing an award does not fetch or reconcile member data");
+  ui.unmount();
+});
+
+test("badge details open inside their profile modal and Escape returns focus without closing the profile", () => {
+  const ui = badgeUIFixture({ badges: [award], presentation: "profile" }, { ancestorDialog: true });
+  const tree = ui.click("I Was Here badge. View details");
+  assert.equal(ui.dialog.open, true);
+  assert.equal(ui.otherDialog.open, true);
+  assert.equal(ui.document.activeElement.name, "Close badge details");
+  let prevented = false;
+  nodes(tree).find(node => node.type === "dialog").props.onCancel({ preventDefault() { prevented = true; } });
+  ui.draw();
+  assert.equal(prevented, true);
+  assert.equal(ui.dialog.open, false);
+  assert.equal(ui.otherDialog.open, true, "The containing profile retains its native modal and scroll lock");
+  assert.equal(ui.document.activeElement, ui.buttons.get("I Was Here badge. View details"));
+  assert.equal(ui.document.body.style.overflow, "scroll", "Nested details never replace another dialog's inline scroll ownership");
+  ui.unmount();
+});
+
+test("only the containing profile modal is allowed while an unrelated modal still suspends badge details", () => {
+  const ui = badgeUIFixture({ badges: [award] }, { ancestorDialog: true });
+  ui.click("I Was Here badge. View details");
+  ui.setCompetingDialog(true);
+  assert.equal(ui.dialog.open, false);
+  ui.setCompetingDialog(false);
+  assert.equal(ui.dialog.open, true);
+  ui.click("Close badge details");
+  ui.unmount();
+  const unrelated = badgeUIFixture({ badges: [award] }, { otherDialog: true });
+  unrelated.otherDialog.profileDialog = true;
+  unrelated.click("I Was Here badge. View details");
+  assert.equal(unrelated.dialog.open, false, "A profile dialog elsewhere cannot authorize an unrelated badge dialog");
+  unrelated.unmount();
+});
+
 const sampleBadges = Array.from({ length: 6 }, (_, index) => ({
   key: `sample-${index}`, label: `Sample ${index + 1}`, description: `Earned sample ${index + 1} through an example event.`,
   earnedAt: `2026-09-${String(index + 1).padStart(2, "0")}T12:00:00Z`, stamp: String(index + 1).padStart(2, "0"),

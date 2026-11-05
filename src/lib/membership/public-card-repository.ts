@@ -233,11 +233,11 @@ async function publicProfileRows(identifiers: string[], sql: CardSql): Promise<P
   if (!validIdentifiers.length) return [];
   return readPublicProfileRows(sql, validIdentifiers, "", validIdentifiers.length, 0);
 }
-/** Lookup and discovery share this eligibility predicate before any result limit. */
+/** Materialize matched candidates so expensive funding checks run once before eligibility and limits. */
 async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null, query: string, limit: number, offset: number): Promise<ProfileRow[]> {
   const validIdentifiers = identifiers ?? [""];
   const rows = await sql<ProfileRow[]>`
-    with candidates as (
+    with candidates as materialized (
     select member.id as member_id, card.public_token, profile.display_name, profile.preferred_name,
       profile.member_tag, profile.bio, member.member_number,
       coalesce(nullif(btrim(profile.display_name),''),nullif(btrim(profile.preferred_name),''),'Member') as public_name,
@@ -292,6 +292,10 @@ async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null,
       and exists (select 1 from platform_users viewer join platform_role_grants member_grant
         on member_grant.auth_user_id = viewer.auth_user_id and member_grant.role_slug = 'member' and member_grant.revoked_at is null
         where viewer.person_id = member.person_id and viewer.status = 'active')
+      and not exists (select 1 from regexp_split_to_table(${query},' ') word
+        where position(lower(word) in lower(
+          coalesce(nullif(btrim(profile.display_name),''),nullif(btrim(profile.preferred_name),''),'Member')
+          || ' ' || coalesce(profile.member_tag,'')))=0)
     )
     select * from candidates
     where account_state='active' and identity_verified and (
@@ -305,8 +309,6 @@ async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null,
         and (accepted_complimentary_funded or paid_registration_funded))
     )
       and (standing_state<>'cancellation_requested' or cancellation_effective_at>statement_timestamp())
-      and not exists (select 1 from regexp_split_to_table(${query},' ') word
-        where position(lower(word) in lower(public_name || ' ' || coalesce(member_tag,'')))=0)
     order by case when ${query}<>'' and lower(member_tag)=lower(${query}) then 0 else 1 end,
       lower(public_name) collate "C",member_id
     limit ${limit} offset ${offset}

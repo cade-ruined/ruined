@@ -53,7 +53,7 @@ function fixture(t, initial = {}) {
     const code = ts.transpileModule(readFileSync(absolute, "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
     }).outputText;
-    new Function("require", "module", "exports", "window", "fetch", code)(name => {
+    new Function("require", "module", "exports", "window", "fetch", "setTimeout", "clearTimeout", code)(name => {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { __esModule: true, default: "a" };
@@ -66,7 +66,7 @@ function fixture(t, initial = {}) {
         assert.ok(file, `Local dependency exists: ${name}`); return load(file);
       }
       throw Error(`Unexpected quick-search dependency ${name}`);
-    }, mod, mod.exports, browser, (url, options) => new Promise((resolve, reject) => calls.push({ url, options, resolve, reject })));
+    }, mod, mod.exports, browser, (url, options) => new Promise((resolve, reject) => calls.push({ url, options, resolve, reject })), browser.setTimeout, browser.clearTimeout);
     return mod.exports;
   }
   const Component = load("src/components/platform/MemberQuickSearch.tsx").default;
@@ -126,7 +126,7 @@ function fixture(t, initial = {}) {
       calls[index].resolve({ ok: status >= 200 && status < 300, status, json: async () => data });
       await flush(); render();
     },
-    async reject(index) { calls[index].reject(new Error("network unavailable")); await flush(); render(); },
+    async reject(index) { calls[index].reject(new TypeError("network unavailable")); await flush(); render(); },
     navigations: () => navigations,
     updatesAfterUnmount: () => updatesAfterUnmount,
   };
@@ -179,7 +179,7 @@ test("successful quick search shows five direct member links with accessible por
   portrait.props.onError(); f.render();
   assert.equal(nodes(f.profiles()[0]).some(node => node.type === "img"), false);
   assert.match(text(f.profiles()[0]), /CM/);
-  f.profiles()[0].props.onClick(); assert.equal(f.navigations(), 1);
+  f.profiles()[0].props.onClick({ button: 0, currentTarget: { focus() {} } }); assert.equal(f.navigations(), 1);
 });
 
 test("typing a new name immediately hides old profiles and cancels the previous debounce", async t => {
@@ -222,11 +222,13 @@ test("401 and 403 remove profiles and offer the correct recovery action without 
 test("server and network failures show a retry that requests the current query", async t => {
   for (const failure of [500, "network"]) {
     const f = fixture(t, { query: "cade" }); await f.advance(250);
-    if (failure === "network") await f.reject(0); else await f.reply(0, { error: "PRIVATE database failure" }, failure);
+    if (failure === "network") { await f.reject(0); await f.advance(300); await f.reject(1); }
+    else await f.reply(0, { error: "PRIVATE database failure" }, failure);
     assert.equal(f.profiles().length, 0); assert.doesNotMatch(text(f.render()), /PRIVATE/);
+    const nextRequest = f.calls.length;
     assert.ok(f.button("Try again")); f.button("Try again").props.onClick(); f.render(); await f.advance(250);
-    assert.equal(request(f.calls[1]).searchParams.get("q"), "cade");
-    await f.reply(1, snapshot("cade")); assert.deepEqual(f.profiles().map(node => node.props.href), [cade.href]);
+    assert.equal(request(f.calls[nextRequest]).searchParams.get("q"), "cade");
+    await f.reply(nextRequest, snapshot("cade")); assert.deepEqual(f.profiles().map(node => node.props.href), [cade.href]);
   }
 });
 
@@ -241,6 +243,23 @@ test("malformed or cross-query responses never display profile links and remain 
   }
 });
 
+test("a temporary service failure recovers once while a closed or changed search cancels the retry", async t => {
+  const f = fixture(t, { query: "cade" }); await f.advance(250);
+  await f.reply(0, {}, 503);
+  assert.equal(f.button("Try again"), undefined); assert.match(text(f.render()), /Searching members/);
+  await f.advance(300); await f.reply(1, snapshot("cade"));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [cade.href]);
+
+  f.update({ query: "libby" }); await f.advance(250); await f.reply(2, {}, 504);
+  f.update({ open: false }); await f.advance(1000);
+  assert.equal(f.calls.length, 3);
+  f.update({ open: true, query: "libby" }); await f.advance(250); await f.reply(3, {}, 503);
+  f.update({ query: "cade" }); await f.advance(300);
+  assert.equal(f.calls.length, 5); assert.equal(request(f.calls[4]).searchParams.get("q"), "cade");
+  await f.reply(4, snapshot("cade"));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [cade.href]);
+});
+
 test("search allows the server's bounded connection recovery to return members", async t => {
   const f = fixture(t, { query: "cade" }); await f.advance(250);
   await f.advance(18_000);
@@ -251,13 +270,15 @@ test("search allows the server's bounded connection recovery to return members",
   assert.equal(f.button("Try again"), undefined);
 });
 
-test("a timed-out search aborts, offers retry and ignores its later successful response", async t => {
+test("two timed-out attempts abort, offer retry and ignore later successful responses", async t => {
   const f = fixture(t, { query: "cade" }); await f.advance(250);
   await f.advance(19_999); assert.equal(f.calls[0].options.signal.aborted, false);
-  await f.advance(1); assert.equal(f.calls[0].options.signal.aborted, true); assert.ok(f.button("Try again"));
+  await f.advance(1); assert.equal(f.calls[0].options.signal.aborted, true); assert.equal(f.button("Try again"), undefined);
+  await f.advance(300); assert.equal(f.calls.length, 2);
+  await f.advance(20_000); assert.equal(f.calls[1].options.signal.aborted, true); assert.ok(f.button("Try again"));
   assert.equal(f.profiles().length, 0); assert.doesNotMatch(text(f.render()), /Searching members/);
   f.button("Try again").props.onClick(); f.render(); await f.advance(250);
-  await f.reply(1, snapshot("cade", [{ ...cade, name: "Current result" }]));
+  await f.reply(2, snapshot("cade", [{ ...cade, name: "Current result" }]));
   await f.reply(0, snapshot("cade", [{ ...cade, name: "Stale result" }]));
   assert.match(text(f.render()), /Current result/); assert.doesNotMatch(text(f.render()), /Stale result/);
 });

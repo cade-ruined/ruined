@@ -80,6 +80,18 @@ test("visitor profile adds only an opaque portrait route and the verified badge 
   assert.deepEqual((await f.presentation.getPublicMemberTimelineProfile("shared_tag")).badges, [], "Invalidated award evidence cannot appear on public profiles.");
 });
 
+test("public profile badge reads preserve awards and acknowledgments and never expose hidden awards", async t => {
+  const f = await presentationFixture(t);
+  const snapshot = async () => (await f.db.query("select * from member_badge_awards order by badge_key")).rows;
+  const before = await snapshot();
+  assert.deepEqual((await f.presentation.getPublicMemberTimelineProfile("shared_tag")).badges, [badge]);
+  assert.deepEqual(await snapshot(), before, "A public view cannot award, reconcile, acknowledge or rewrite a badge");
+  await f.db.query("update member_badge_awards set public_visible=false where member_id=$1", [timelineIds.member]);
+  const hidden = await snapshot();
+  assert.deepEqual((await f.presentation.getPublicMemberTimelineProfile("shared_tag")).badges, []);
+  assert.deepEqual(await snapshot(), hidden);
+});
+
 test("public portrait projection honors hidden, absent, malformed and foreign-owner photos", async t => {
   const f = await presentationFixture(t);
   await f.db.query("insert into member_directory_preferences values($1,false)", [timelineIds.member]);

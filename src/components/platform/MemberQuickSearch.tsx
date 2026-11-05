@@ -4,8 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import MemberIcon from "@/components/membership/MemberIcon";
+import MemberProfileLink from "@/components/membership/MemberProfileLink";
 import { MEMBER_SEARCH_LIMIT, normalizeMemberSearchQuery, type MemberSearchResult, type MemberSearchSnapshot } from "@/lib/membership/member-search-model";
 import { getMemberSearchPreview } from "@/lib/membership/member-search-preview";
+import { fetchMemberRead } from "@/lib/membership/member-read-client";
 import styles from "./MemberQuickSearch.module.css";
 
 type SearchState = {
@@ -53,7 +55,6 @@ export default function MemberQuickSearch({ query, open, preview = false, onNavi
       return () => controller.abort();
     }
     setState({ query: normalizedQuery, status: "loading", results: [] });
-    let timeout: number | undefined;
     const current = () => !controller.signal.aborted && version === requestVersion.current;
     const fail = (error: SearchState["error"]) => {
       if (current()) setState({ query: normalizedQuery, status: "error", results: [], error });
@@ -63,18 +64,13 @@ export default function MemberQuickSearch({ query, open, preview = false, onNavi
         let next: MemberSearchSnapshot;
         if (preview) next = getMemberSearchPreview(normalizedQuery);
         else {
-          // Allow both bounded database attempts and connection cleanup to finish.
-          timeout = window.setTimeout(() => {
-            fail("unavailable");
-            controller.abort();
-          }, 20_000);
           const params = new URLSearchParams({ q: normalizedQuery, page: "1" });
-          const response = await fetch(`/api/my/members?${params}`, { signal: controller.signal, cache: "no-store" });
+          const response = await fetchMemberRead(`/api/my/members?${params}`, { signal: controller.signal });
           if (!response.ok) {
             fail(response.status === 401 ? "sign-in" : response.status === 403 ? "denied" : "unavailable");
             return;
           }
-          const payload: unknown = await response.json();
+          const payload = response.data;
           if (!validSnapshot(payload, normalizedQuery)) throw new Error("Invalid member search response");
           next = payload;
         }
@@ -82,13 +78,10 @@ export default function MemberQuickSearch({ query, open, preview = false, onNavi
           more: next.hasMore || next.results.length > 5 });
       } catch {
         fail("unavailable");
-      } finally {
-        if (timeout !== undefined) window.clearTimeout(timeout);
       }
     }, 250);
     return () => {
       window.clearTimeout(debounce);
-      if (timeout !== undefined) window.clearTimeout(timeout);
       controller.abort();
     };
   }, [normalizedQuery, open, preview, attempt]);
@@ -104,11 +97,11 @@ export default function MemberQuickSearch({ query, open, preview = false, onNavi
       {busy ? "Searching members…" : results.length ? `${results.length}${current?.more ? "+" : ""} ${results.length === 1 ? "match" : "matches"}` : ""}
     </p></div>
     {results.length ? <ul className={styles.results}>{results.map(member => <li key={member.href}>
-      <Link className={styles.member} href={member.href} prefetch={false} onClick={onNavigate}>
+      <MemberProfileLink className={styles.member} href={member.href} onNavigate={onNavigate}>
         <QuickPortrait key={member.avatarUrl ?? "no-portrait"} name={member.name} avatarUrl={member.avatarUrl} />
         <span className={styles.identity}><strong>{member.name}</strong>{member.memberTag ? <small>@{member.memberTag.replace(/^@+/, "")}</small> : null}</span>
         <MemberIcon name="arrow" />
-      </Link>
+      </MemberProfileLink>
     </li>)}</ul> : current?.status === "ready" ? <p className={styles.message} role="status">No matching members. Try another name or @tag.</p> : null}
     {error ? <div className={styles.error} role="alert">
       <p>{error === "sign-in" ? "Sign in again to search members." : error === "denied" ? "Member access is required to browse profiles." : "Members couldn’t load. Please try again."}</p>

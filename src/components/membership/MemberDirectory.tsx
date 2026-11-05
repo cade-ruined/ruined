@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import MemberIcon from "./MemberIcon";
+import MemberProfileLink from "./MemberProfileLink";
 import { memberTier } from "@/lib/membership/member-number";
 import { MEMBER_SEARCH_LIMIT, normalizeMemberSearchQuery, type MemberSearchSnapshot } from "@/lib/membership/member-search-model";
 import { getMemberSearchPreview } from "@/lib/membership/member-search-preview";
+import { fetchMemberRead } from "@/lib/membership/member-read-client";
 import styles from "./MemberDirectory.module.css";
 
 type SearchError = { message: string; signIn: boolean; denied: boolean };
@@ -33,7 +35,8 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
   initialSearch: MemberSearchSnapshot; preview?: boolean;
 }) {
   const routeParams = useSearchParams();
-  const routeQuery = initialQuery(routeParams, initialSearch.query);
+  const pathname = usePathname();
+  const routeQuery = initialQuery(pathname === "/my/members" ? routeParams : null, initialSearch.query);
   const [input, setInput] = useState(routeQuery);
   const [page, setPage] = useState(initialSearch.page);
   const [search, setSearch] = useState(initialSearch);
@@ -51,6 +54,9 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
   const busy = pending || queryChanged && !error;
 
   useEffect(() => {
+    // Intercepted public profiles change the URL while keeping this directory
+    // mounted underneath. Their search params do not belong to the directory.
+    if (pathname !== "/my/members") return;
     const navigated = previousInitialSearch.current !== initialSearch;
     if (!navigated && previousRouteQuery.current === routeQuery) return;
     previousInitialSearch.current = initialSearch;
@@ -72,7 +78,7 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
     setPage(1);
     setAttempt(0);
     setError(null);
-  }, [routeQuery, query, initialSearch]);
+  }, [pathname, routeQuery, query, initialSearch]);
 
   useEffect(() => {
     if (firstRequest.current) {
@@ -89,7 +95,7 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
         if (preview) next = getMemberSearchPreview(query, page);
         else {
           const params = new URLSearchParams({ q: query, page: String(page) });
-          const response = await fetch(`/api/my/members?${params}`, { signal: controller.signal, cache: "no-store" });
+          const response = await fetchMemberRead(`/api/my/members?${params}`, { signal: controller.signal });
           if (!response.ok) {
             if (controller.signal.aborted || version !== requestVersion.current) return;
             setError({ signIn: response.status === 401, denied: response.status === 403,
@@ -98,7 +104,7 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
                 : "Members couldn’t load. Please try again." });
             return;
           }
-          next = await response.json();
+          next = response.data as MemberSearchSnapshot;
           if (!Array.isArray(next.results) || next.query !== query || next.page !== page || typeof next.hasMore !== "boolean") {
             throw new Error("Invalid member search response");
           }
@@ -158,7 +164,7 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
         {visibleResults.map(member => {
           const tier = memberTier(member.memberNumber);
           return <li key={member.href}>
-            <Link href={member.href} prefetch={false} className={styles.member}>
+            <MemberProfileLink href={member.href} className={styles.member}>
               <div className={styles.memberTop}><span className={styles.membership}>{tier ? `${tier.label} · No. ${tier.displayNumber}` : "Member"}</span><MemberIcon name="arrow" /></div>
               <div className={styles.identity}>
                 <DirectoryPortrait key={member.avatarUrl ?? "no-portrait"} name={member.name} avatarUrl={member.avatarUrl} />
@@ -169,7 +175,7 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
               </div>
               {member.bio ? <p className={styles.bio}>{member.bio}</p> : null}
               <span className={styles.profileLink}>View profile<span className={styles.srOnly}> for {member.name}</span></span>
-            </Link>
+            </MemberProfileLink>
           </li>;
         })}
       </ul> : busy ? <div className={styles.loading} aria-hidden="true"><span /><span /><span /><span /></div>

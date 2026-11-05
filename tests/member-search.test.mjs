@@ -27,6 +27,31 @@ test("member search normalizes names and @tags and bounds requests without wildc
   }
 });
 
+test("profile eligibility is evaluated once per matching candidate, including the final privacy recheck", async t => {
+  const f = await publicJournalFixture(t);
+  await f.db.exec(`
+    create table member_directory_preferences(member_id uuid primary key, avatar_visible boolean default true);
+    create sequence private.test_profile_release_calls;
+    alter function private.ruined_member_profile_released(uuid) rename to test_original_profile_released;
+    create function private.ruined_member_profile_released(target_member_id uuid) returns boolean language plpgsql stable as $$
+    begin
+      perform nextval('private.test_profile_release_calls');
+      return private.test_original_profile_released(target_member_id);
+    end $$;
+  `);
+  const counted = async (read, expected) => {
+    await f.db.exec("alter sequence private.test_profile_release_calls restart with 1");
+    const result = await read();
+    const { rows } = await f.db.query("select case when is_called then last_value else 0 end as calls from private.test_profile_release_calls");
+    assert.equal(Number(rows[0].calls), expected, "funding/release checks must not be expanded repeatedly by the planner");
+    return result;
+  };
+  assert.ok(await counted(() => f.cardRepository.getPublicMemberProfileScope("shared_tag"), 1));
+  assert.equal((await counted(() => f.cardRepository.getPublicMemberProfileSearch("shared_tag", 1, 24), 2)).results.length, 1);
+  assert.equal((await counted(() => f.cardRepository.getPublicMemberProfileSearch("", 1, 24), 4)).results.length, 2);
+  assert.equal((await counted(() => f.cardRepository.getPublicMemberProfileSearch("no matching member", 1, 24), 0)).results.length, 0);
+});
+
 test("member discovery uses public fields, complete eligible pages, and current member access", async t => {
   const f = await publicJournalFixture(t);
   await f.db.exec("create table member_directory_preferences(member_id uuid primary key, avatar_visible boolean default true)");

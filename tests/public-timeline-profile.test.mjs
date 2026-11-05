@@ -13,17 +13,17 @@ const require = createRequire(import.meta.url);
 const token = "x".repeat(43);
 const card = { name: "Shared name", memberTag: "member", avatarUrl: null, bio: null, labels: [], memberSince: null, location: null, buildingNow: null, websiteUrl: null, wearSeed: "fixture" };
 const profile = { name: "Shared name", memberTag: "member", bio: "A public bio.", memberNumber: 17 };
-function load(path, dependencies = {}, fetchOverride) {
+function load(path, dependencies = {}, fetchOverride, timers = {}) {
   const output = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText;
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", "fetch", output)(name => {
+  new Function("require", "module", "exports", "fetch", "setTimeout", "clearTimeout", output)(name => {
     if (name === "server-only") return {};
     if (name in dependencies) return dependencies[name];
     if (["react", "react/jsx-runtime"].includes(name)) return require(name);
     throw new Error(`Unexpected dependency ${name}`);
-  }, loaded, loaded.exports, fetchOverride);
+  }, loaded, loaded.exports, fetchOverride, timers.setTimeout ?? setTimeout, timers.clearTimeout ?? clearTimeout);
   return loaded.exports;
 }
 test("public profiles exist without card opt-in and expose exactly the fixed public fields", async t => {
@@ -183,6 +183,7 @@ const Link = ({ children, ...props }) => React.createElement("a", props, childre
 const css = new Proxy({}, { get: (_, key) => key });
 const TimelineStoryContent = load("src/components/membership/TimelineStoryContent.tsx", { "./TimelineStoryContent.module.css": css }).default;
 const dependencies = { "next/image": Image, "next/link": Link, "@/lib/membership/member-number": load("src/lib/membership/member-number.ts"),
+  "@/lib/membership/member-read-client": { fetchMemberRead: async () => { throw new Error("A static profile render must not fetch"); } },
   "./TimelineStoryContent": TimelineStoryContent,
   "./MemberBadges": ({ badges }) => React.createElement("div", { "data-public-badges": true }, badges.map(badge => React.createElement("span", { key: badge.key }, badge.label))),
   "../platform/MemberProfile.module.css": css, "./MemberJourneyShell.module.css": css, "./MemberJournal.module.css": css, "./PublicJournal.module.css": css };
@@ -197,7 +198,20 @@ test("visitor profile displays full name, tag, bio, join number and tier above T
   assert.match(html, /src="\/api\/profile\/member\/portrait"/);
   assert.match(html, /polaroid-frame\.png/);
   assert.match(html, /I Was Here/);
+  assert.match(html, />Earned badges<\/h2>/);
   assert.doesNotMatch(html, /mailto:|Message|>Journal<\/h2>|Member card|Edit profile|My Invitation|New \+/);
+});
+
+test("embedded profiles retain the complete public identity, badges and feed without a second main or redundant site links", () => {
+  const Component = load("src/components/membership/PublicJournal.tsx", dependencies).default;
+  const props = { token, identity: profile, embedded: true, badges: [{ key: "early-supporter", label: "I Was Here" }], previewEntries: [{
+    id: "public-post", kind: "text", title: "A public moment", body: "Shared with everyone.", createdAt: "2026-10-30T12:00:00Z", media: [],
+  }] };
+  const html = renderToStaticMarkup(React.createElement(Component, props));
+  for (const expected of ["Shared name", "@member", "A public bio", "Originals", "0017", "Earned badges", "I Was Here", "Timeline", "A public moment", "Shared with everyone."]) assert.ok(html.includes(expected), expected);
+  assert.doesNotMatch(html, /<main|<footer|href="\/"|>Journal<|Edit profile/);
+  const withoutBadges = renderToStaticMarkup(React.createElement(Component, { ...props, badges: [] }));
+  assert.doesNotMatch(withoutBadges, />Earned badges<|data-public-badges/);
 });
 
 test("visitor Timeline displays all six supplied story answers and never legacy private reflection", () => {
@@ -231,7 +245,9 @@ test("visitor identity disappears when the feed reports unavailable membership",
     useRef(initial) { const index = cursor++; return slots[index] ??= { current: initial }; },
     useEffect(effect, deps) { const index = cursor++; if (!slots[index] || deps.some((value, i) => value !== slots[index][i])) { slots[index] = deps; effects.push(effect); } },
   };
-  const Component = load("src/components/membership/PublicJournal.tsx", { ...dependencies, react }, async () => ({ status: 404 })).default;
+  const Component = load("src/components/membership/PublicJournal.tsx", { ...dependencies, react,
+    "@/lib/membership/member-read-client": { fetchMemberRead: async () => ({ status: 404, ok: false, data: null }) },
+  }).default;
   const props = { token, identity: profile };
   const render = () => { cursor = 0; return Component(props); };
   render(); const cleanup = effects.map(effect => effect()); effects = [];
@@ -240,6 +256,114 @@ test("visitor identity disappears when the feed reports unavailable membership",
   assert.match(html, /This profile is unavailable/);
   assert.doesNotMatch(html, /Shared name|A public bio|Originals/);
   cleanup.forEach(fn => fn?.());
+});
+
+function publicTimelineClientFixture(replies, initial = {}) {
+  const props = { token, identity: profile, ...initial }, slots = [], calls = [], scheduled = new Map();
+  let index = 0, timerId = 0, effects = [];
+  const react = { ...React,
+    useState(initial) { const key = index++; if (!(key in slots)) slots[key] = typeof initial === "function" ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === "function" ? next(slots[key]) : next; }]; },
+    useRef(initial) { const key = index++; return slots[key] ??= { current: initial }; },
+    useEffect(callback, deps) {
+      const key = index++, previous = slots[key];
+      if (!previous || deps.some((value, i) => value !== previous.deps[i])) {
+        const slot = { deps }; slots[key] = slot;
+        effects.push(() => { previous?.cleanup?.(); slot.cleanup = callback(); });
+      }
+    },
+  };
+  const client = load("src/lib/membership/member-read-client.ts", {}, async (url, options) => {
+    const reply = replies[calls.length]; calls.push({ url, ...options });
+    assert.ok(reply, "Unexpected public Timeline request");
+    return typeof reply === "function" ? reply(url, options) : reply;
+  }, { setTimeout: (callback, ms) => { const id = ++timerId; scheduled.set(id, { callback, ms }); return id; }, clearTimeout: id => scheduled.delete(id) });
+  const Component = load("src/components/membership/PublicJournal.tsx", { ...dependencies, react, "@/lib/membership/member-read-client": client }).default;
+  function draw(next) {
+    Object.assign(props, next); index = 0;
+    const tree = Component(props); const pending = effects; effects = []; pending.forEach(effect => effect());
+    return tree;
+  }
+  const settle = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); return draw(); };
+  return { draw, calls, scheduled, settle, html: () => renderToStaticMarkup(draw()),
+    async recover() { const timer = [...scheduled].find(([, item]) => item.ms === 300); assert.ok(timer, "Transient read should schedule one recovery"); scheduled.delete(timer[0]); timer[1].callback(); return settle(); },
+    unmount() { slots.forEach(slot => slot?.cleanup?.()); },
+  };
+}
+const publicPost = (id, body) => ({ id, kind: "text", title: null, body, createdAt: "2026-10-30T12:00:00Z", media: [] });
+const publicPage = (entries, nextCursor = null) => Response.json({ entries, hasMore: Boolean(nextCursor), nextCursor });
+const elements = node => !React.isValidElement(node) ? [] : [node, ...React.Children.toArray(node.props.children).flatMap(elements)];
+
+test("public Timeline automatically recovers a 503 into visible posts without a manual retry", async () => {
+  const ui = publicTimelineClientFixture([new Response("temporary", { status: 503 }), publicPage([publicPost("one", "Recovered public moment")])]);
+  assert.match(ui.html(), /Loading Timeline/);
+  await ui.settle();
+  assert.equal(ui.calls.length, 1);
+  assert.doesNotMatch(ui.html(), /Try again|couldn’t load/);
+  await ui.recover();
+  assert.match(ui.html(), /Recovered public moment/);
+  assert.match(ui.html(), /Shared name/);
+  assert.doesNotMatch(ui.html(), /Loading Timeline|Try again|couldn’t load/);
+  assert.equal(ui.calls.length, 2);
+  assert.ok(ui.calls.every(call => call.cache === "no-store"));
+  assert.equal(ui.scheduled.size, 0);
+  ui.unmount();
+});
+
+test("public Timeline pagination recovers in place, keeps its cursor, and deduplicates posts", async () => {
+  const first = publicPost("one", "First public moment"), second = publicPost("two", "Second public moment"), cursor = "2026-10-01T12:00:00Z:one";
+  const ui = publicTimelineClientFixture([publicPage([first], cursor), new Response("temporary", { status: 503 }), publicPage([first, second])]);
+  ui.draw(); await ui.settle();
+  elements(ui.draw()).find(node => node.type === "button" && node.props.children === "Load more").props.onClick();
+  ui.draw(); await ui.settle(); await ui.recover();
+  const html = ui.html();
+  assert.equal((html.match(/First public moment/g) ?? []).length, 1);
+  assert.equal((html.match(/Second public moment/g) ?? []).length, 1);
+  assert.equal(ui.calls[1].url, `/api/cards/${token}/journal?before=${encodeURIComponent(cursor)}`);
+  assert.equal(ui.calls[2].url, ui.calls[1].url);
+  assert.doesNotMatch(html, /Load more|couldn’t load/);
+  ui.unmount();
+});
+
+test("access withdrawal during automatic Timeline recovery removes the full profile and previous posts", async () => {
+  for (const status of [403, 404]) {
+    const ui = publicTimelineClientFixture([publicPage([publicPost("one", "Previously public")], "next"), new Response("temporary", { status: 503 }), new Response("withdrawn", { status })], { badges: [{ key: "early-supporter", label: "I Was Here" }] });
+    ui.draw(); await ui.settle();
+    elements(ui.draw()).find(node => node.type === "button" && node.props.children === "Load more").props.onClick();
+    ui.draw(); await ui.settle(); await ui.recover();
+    assert.match(ui.html(), /This profile is unavailable/);
+    assert.doesNotMatch(ui.html(), /Shared name|A public bio|Previously public|I Was Here|Try again/);
+    assert.equal(ui.calls.length, 3);
+    assert.equal(ui.scheduled.size, 0);
+    ui.unmount();
+  }
+});
+
+test("closing the public profile cancels pending recovery, while local previews never fetch", async () => {
+  const ui = publicTimelineClientFixture([new Response("temporary", { status: 503 })]);
+  ui.draw(); await ui.settle(); ui.unmount(); await ui.settle();
+  assert.equal(ui.scheduled.size, 0);
+  assert.equal(ui.calls.length, 1);
+  const preview = publicTimelineClientFixture([], { previewEntries: [publicPost("sample", "Local preview moment")] });
+  preview.draw(); await preview.settle();
+  assert.match(preview.html(), /Local preview moment/);
+  assert.equal(preview.calls.length, 0);
+  preview.unmount();
+});
+
+test("an aborted older Timeline response cannot replace the current profile's posts", async () => {
+  let resolveOld;
+  const old = new Promise(resolve => { resolveOld = resolve; });
+  const ui = publicTimelineClientFixture([() => old, publicPage([publicPost("current", "Current public moment")])]);
+  ui.draw();
+  ui.draw({ token: "another_member" });
+  assert.equal(ui.calls[0].signal.aborted, true);
+  await ui.settle();
+  resolveOld(publicPage([publicPost("old", "Stale public moment")]));
+  await ui.settle();
+  assert.match(ui.html(), /Current public moment/);
+  assert.doesNotMatch(ui.html(), /Stale public moment|Loading Timeline|Try again/);
+  assert.equal(ui.calls.length, 2);
+  ui.unmount();
 });
 
 test("public card links to the profile and visitor route passes only fixed public identity", async () => {
@@ -255,16 +379,24 @@ test("public card links to the profile and visitor route passes only fixed publi
   assert.equal(cardPage.props.footerActions.props.href, `/profile/${token}`);
   assert.equal(cardPage.props.footerActions.props.children, "View profile ↗");
   const Timeline = () => null;
-  const route = load("app/journal/[token]/page.tsx", {
+  const scopes = [];
+  const PublicProfile = load("src/components/membership/PublicMemberProfilePage.tsx", {
     "next/navigation": { notFound }, "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/database/server": { withFreshApplicationDatabaseRead: async (stage, read) => { scopes.push(stage); return read(); } },
     "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => ({ profile }) },
     "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
     "@/lib/membership/member-search-preview": { getPreviewMemberProfile: () => { throw new Error("Connected profiles must not read preview people"); } },
-    "@/components/membership/PublicJournal": Timeline,
-  });
+    "./PublicJournal": Timeline,
+  }).default;
+  const route = load("app/journal/[token]/page.tsx", { "@/components/membership/PublicMemberProfilePage": PublicProfile });
   const rendered = await route.default({ params: Promise.resolve({ token }) });
   assert.deepEqual(rendered.props.identity, profile);
+  assert.equal(rendered.props.embedded, false);
+  const modalContent = await PublicProfile({ identifier: token, embedded: true });
+  assert.deepEqual(modalContent.props.identity, rendered.props.identity);
+  assert.equal(modalContent.props.embedded, true);
+  assert.deepEqual(scopes, ["public-member-profile", "public-member-profile"]);
   assert.equal(route.metadata.title, "Profile / Ruined");
   assert.deepEqual(route.metadata.robots, { index: false, follow: false });
 });
@@ -273,17 +405,19 @@ test("directory preview links open their matching fictional profiles only in loc
   const previousEnvironment = process.env.NODE_ENV;
   t.after(() => { if (previousEnvironment === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousEnvironment; });
   let mode = "preview", previewReads = 0;
-  const route = load("app/journal/[token]/page.tsx", {
+  const PublicProfile = load("src/components/membership/PublicMemberProfilePage.tsx", {
     "next/navigation": { notFound: () => { throw new Error("not found"); } },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
+    "@/lib/database/server": { withFreshApplicationDatabaseRead: async (_stage, read) => read() },
     "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[a-z_]+$/ },
     "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => null },
     "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
     "@/lib/membership/member-search-preview": { getPreviewMemberProfile: tag => {
       previewReads++; return tag === "avery_chen" ? { name: "Avery Chen", memberTag: tag, bio: "Example bio", memberNumber: 4, avatarUrl: "/membership/circle/portrait-3.webp" } : null;
     } },
-    "@/components/membership/PublicJournal": () => null,
-  });
+    "./PublicJournal": () => null,
+  }).default;
+  const route = load("app/journal/[token]/page.tsx", { "@/components/membership/PublicMemberProfilePage": PublicProfile });
   const render = () => route.default({ params: Promise.resolve({ token: "avery_chen" }) });
   process.env.NODE_ENV = "development";
   const page = await render();
