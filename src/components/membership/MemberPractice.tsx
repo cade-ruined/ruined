@@ -30,7 +30,7 @@ const duration = (minutes: number) => `${Math.floor(minutes / 60) ? `${Math.floo
 
 function Badge({ course, earned = false }: { course: PracticeCourse; earned?: boolean }) {
   return <span className={`${styles.badge} ${course === "time" ? styles.badgeTime : styles.badgeArtwork} ${earned ? styles.earned : ""}`} role="img" aria-label={`${course.toUpperCase()} Badge${earned ? " earned" : " not yet earned"}`}>
-    {course === "time" ? "TIME" : <Image src={`/membership/badges/foundations-${course}-v1.png`} alt="" width={160} height={160} sizes="(max-width: 640px) 74px, 112px" draggable={false} />}
+    {course === "time" ? "TIME" : <Image src={`/membership/badges/foundations-${course}-v2.png`} alt="" width={160} height={160} sizes="(max-width: 640px) 74px, 112px" draggable={false} />}
   </span>;
 }
 function Lock() {
