@@ -1,4 +1,5 @@
 import { installCircleRevealFunction } from "./helpers/circle-reveal-fixture.mjs";
+import { installPublicProfileFundingFixture } from "./helpers/public-profile-funding-fixture.mjs";
 import { existingMemberIntakeDependencies, existingMemberRegistration, installRegistrationProfileReleaseFunction } from "./helpers/registration-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { installOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
@@ -44,11 +45,11 @@ async function fixture({ revealed = true } = {}) {
     create table people(id uuid primary key, status text default 'active');
     create table platform_users(auth_user_id uuid primary key, person_id uuid, status text, member_id uuid, email_normalized text);
     create table platform_role_grants(auth_user_id uuid, role_slug text, revoked_at timestamptz, id bigint generated always as identity primary key);
-    create table ruined_members(id uuid primary key, person_id uuid, deleted_at timestamptz, member_number integer default 7);
+    create table ruined_members(id uuid primary key, person_id uuid, email_normalized text, deleted_at timestamptz, member_number integer default 7);
     create table member_lifecycle(member_id uuid, current_progression_level_slug text default 'member', account_state text default 'active', administrative_onboarding_state text default 'completed', billing_state text default 'active', cancellation_effective_at timestamptz, foundations_state text default 'completed', program_state text default 'onboarding', standing_state text default 'active');
     create table person_profiles(person_id uuid primary key, display_name text, preferred_name text, avatar_storage_path text, timezone text, location_label text, bio text, building_now text, updated_at timestamptz);
     create table person_private_profiles(person_id uuid primary key, legal_name text, mobile_e164 text, birth_date date, default_fulfillment_address jsonb check(default_fulfillment_address is null or jsonb_typeof(default_fulfillment_address)='object'), apparel_sizing jsonb check(apparel_sizing is null or jsonb_typeof(apparel_sizing)='object'), accessibility_notes text, updated_at timestamptz);
-    create table person_email_addresses(person_id uuid, email text, is_primary boolean, verification_state text, retired_at timestamptz, created_at timestamptz default now());
+    create table person_email_addresses(person_id uuid, email text, email_normalized text, is_primary boolean, verification_state text, retired_at timestamptz, created_at timestamptz default now());
     create table member_directory_preferences(member_id uuid primary key, directory_status text default 'hidden', avatar_visible boolean default true, location_visible boolean default false, bio_visible boolean default false, building_visible boolean default false, email_scope text default 'none', phone_scope text default 'none', version integer default 1, updated_at timestamptz);
     create table circles(id uuid primary key, name text, status text, activated_at timestamptz, ends_at timestamptz, story text);
     create table circle_member_assignments(id bigint generated always as identity primary key, member_id uuid, circle_id uuid, assigned_at timestamptz default now(), ended_at timestamptz);
@@ -79,6 +80,12 @@ async function fixture({ revealed = true } = {}) {
   await pg.query("insert into person_profiles(person_id,display_name,preferred_name,avatar_storage_path,bio,location_label,building_now) values($1,'Member One','One',null,'Member bio','Utah','Building'),($2,'Circle Shaper','Shaper','/api/member-photos/' || $3 || '/portrait.webp','Private by choice','Utah','Shaping')", [ids.person, ids.shaperPerson, ids.shaperMember]);
   await pg.query("insert into person_private_profiles(person_id,mobile_e164) values($1,'+12025550123')", [ids.shaperPerson]);
   await pg.query("insert into person_email_addresses(person_id,email,is_primary,verification_state) values($1,'shaper@example.test',true,'verified')", [ids.shaperPerson]);
+  await pg.exec(`
+    update ruined_members member set email_normalized=identity.email_normalized from platform_users identity where identity.person_id=member.person_id;
+    update person_email_addresses set email_normalized=lower(email);
+  `);
+  await installPublicProfileFundingFixture(pg);
+  await pg.exec("update person_email_addresses set email=email_normalized,is_primary=true where email is null");
   await pg.query("insert into member_directory_preferences(member_id) values($1),($2)", [ids.member, ids.shaperMember]);
   await pg.query("insert into circles(id,name,status,activated_at,ends_at) values($1,'Circle One','active',now()-interval '1 day',null),($2,'Other Circle','active',now()-interval '1 day',null)", [ids.circle, ids.otherCircle]);
   await pg.query("insert into circle_member_assignments(member_id,circle_id) values($1,$2)", [ids.member, ids.circle]);

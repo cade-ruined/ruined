@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as crypto from "node:crypto";
 import ts from "typescript";
 import { timelineFixture, timelineIds } from "./canonical-journal-fixture.mjs";
+import { installPublicProfileFundingFixture } from "./public-profile-funding-fixture.mjs";
 
 export { timelineIds };
 export const source = path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -42,6 +43,7 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
     if (meaningMigration) await migrateReflections();
   };
   if (applyPrivacy) await migratePrivacy();
+  await installPublicProfileFundingFixture(db);
   const token = "a".repeat(43), otherToken = "b".repeat(43);
   for (const [member, person, shareToken] of [[timelineIds.member, timelineIds.person, token], [timelineIds.otherMember, timelineIds.otherMember, otherToken]]) {
     await db.query("insert into person_profiles(person_id,display_name,member_tag,bio,location_label,building_now,website_url) values($1,'Shared name',$2,'PUBLIC BIO','PRIVATE LOCATION','PRIVATE BUILDING','https://private.example.test')", [person, member === timelineIds.member ? "shared_tag" : "other_tag"]);

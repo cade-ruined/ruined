@@ -7,6 +7,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { publicJournalFixture, timelineIds } from "./helpers/public-journal-fixture.mjs";
+import { seedMemberSmsPaidReservation } from "./helpers/member-sms-funding-fixture.mjs";
 
 const require = createRequire(import.meta.url);
 const token = "x".repeat(43);
@@ -99,6 +100,10 @@ test("released completed members can publish their profile and Timeline without 
     await f.db.query("delete from member_complimentary_grants where member_id=$1", [timelineIds.member]);
     if (scenario.operator) await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [timelineIds.auth]);
     if (scenario.complimentary) await f.db.query("insert into member_complimentary_grants(member_id) values($1)", [timelineIds.member]);
+    if (!scenario.operator && !scenario.complimentary) {
+      await seedMemberSmsPaidReservation(f.db,{memberId:timelineIds.member,personId:timelineIds.person,reservation:randomUUID(),contract:randomUUID()});
+      await f.db.query("update member_lifecycle set billing_state='active',standing_state='active' where member_id=$1",[timelineIds.member]);
+    }
     assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), {
       name: "Shared name", memberTag: "shared_tag", bio: "PUBLIC BIO", memberNumber: null,
     }, scenario.name);
@@ -120,7 +125,7 @@ test("released completed members can publish their profile and Timeline without 
   assert.equal(await f.cardRepository.getPublicMemberCard(f.token), null, "A future activation date still cannot publish a collectible card.");
 });
 
-test("profile eligibility keeps incomplete, suspended, ended, unreleased and removed members private", async t => {
+test("legacy participation and unfunded registration gates preserve account and identity withdrawal", async t => {
   const f = await publicJournalFixture(t);
   await f.db.query("update ruined_members set membership_activated_at=null where id=$1", [timelineIds.member]);
   const denied = async message => {
@@ -144,8 +149,8 @@ test("profile eligibility keeps incomplete, suspended, ended, unreleased and rem
     await f.db.query("update member_lifecycle set account_state='active',administrative_onboarding_state='completed',billing_state='active',program_state='active',standing_state='active',cancellation_effective_at=null where member_id=$1", [timelineIds.member]);
   }
   await f.db.query("insert into member_registration_access(member_id,profile_activated_at) values($1,null)", [timelineIds.member]);
-  await denied("registration hold");
-  await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1", [timelineIds.member]);
+  await denied("registration without accepted or paid funding");
+  await f.db.query("delete from member_registration_access where member_id=$1", [timelineIds.member]);
   await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [timelineIds.auth]);
   await denied("revoked member role");
   await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [timelineIds.auth]);

@@ -466,6 +466,7 @@ test("layout withholds premature badge celebrations and fails navigation closed 
       "@/lib/platform/repository": { getOperatorRole: async () => null },
       "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
       "@/lib/membership/registration-repository": { getMemberRegistration: async () => { if (value === "failure") throw Error("unavailable"); return value; } },
+      "@/lib/membership/member-search-repository": { canBrowseMemberDirectory: async () => false },
       "@/lib/platform/visibility": { isMyRuinedVisible: () => true }, "@/lib/sharing": { privateSharingMetadata: {} },
     }, { console: { error() {} } })).default;
     const tree = await Layout({ children: "content" });
@@ -473,6 +474,105 @@ test("layout withholds premature badge celebrations and fails navigation closed 
     assert.equal(nodes(tree).find(node => node.type === Shell).props.registrationOnly, held);
     assert.equal(tree.props.celebration === null, held);
   }
+});
+
+test("held members receive only an authorized directory shortcut and keep a way back to registration", async () => {
+  let pathname = "/my/registered";
+  const Shell = (await load("src/components/membership/MemberJourneyShell.tsx", {
+    "next/image": Image, "next/link": Link, "next/navigation": { usePathname: () => pathname },
+    "@/components/platform/MemberNavigationFab": () => React.createElement("span", null, "PRIVATE MENU"),
+    "@/components/membership/MemberIcon": Stub, "@/components/membership/InstallRuined": Stub,
+    "@/lib/membership/navigation": await load("src/lib/membership/navigation.ts"),
+    "@/lib/site": { publicWebsiteHref: path => `https://theruinedproject.com${path}` },
+    "@/styles/member-journey-pages.css": {}, "./MemberJourneyShell.module.css": {},
+  })).default;
+  for (const path of ["/my/join", "/my/payment-method", "/my/registered", "/my/members"]) {
+    pathname = path;
+    for (const memberDirectoryAvailable of [false, true]) {
+      const html = renderToStaticMarkup(React.createElement(Shell, {
+        configuration: { mode: "connected" }, viewerLabel: "new@example.test", registrationOnly: true, memberDirectoryAvailable,
+      }, "Directory content"));
+      const header = html.match(/<header[^>]*>([\s\S]*?)<\/header>/)?.[1];
+      assert.ok(header);
+      assert.doesNotMatch(html, /PRIVATE MENU|Member pages|href="\/my\/(?:profile|account|practice|circle|updates|foundations)/);
+      assert.match(html, /Directory content/);
+      assert.match(html, /Sign out/);
+      assert.match(html, /Dark mode/);
+      assert.match(html, /mailto:connect@theruinedproject.com[^>]*>Need a hand\?/);
+      if (!memberDirectoryAvailable) {
+        assert.doesNotMatch(header, /Browse members|Continue registration|href="\/my(?:"|\/members)/);
+        assert.match(header, /Support/);
+      } else if (path === "/my/members") {
+        assert.match(header, /href="\/my"[^>]*aria-label="Continue registration"/);
+        assert.match(header, /<strong>Members<\/strong>/);
+        assert.doesNotMatch(header, /Support|Browse members/);
+      } else {
+        assert.match(header, /href="\/my\/members"[^>]*aria-label="Browse members"/);
+        assert.match(header, /<strong>Registration<\/strong>/);
+        assert.doesNotMatch(header, /Support|Continue registration/);
+      }
+    }
+  }
+});
+
+test("layout independently authorizes the held-member directory shortcut without releasing registration or celebrations", async () => {
+  const Session = () => null, Shell = () => null;
+  let currentRegistration = registration(), outcome = true, status = "authenticated";
+  const reads = [], logs = [];
+  const Layout = (await load("app/my/layout.tsx", {
+    "next/navigation": { notFound: () => assert.fail("Visible member site") }, "next/headers": {},
+    "@/components/membership/MemberPreviewSwitcher": Stub, "@/lib/membership/preview-scenarios": {},
+    "@/components/membership/MemberJourneyShell": Shell, "@/components/membership/MemberSessionContinuity": Session,
+    "@/components/membership/MemberBadgeCelebration": Stub, "@/components/membership/MemberPortraitState": Stub,
+    "@/components/membership/MemberTimelineDraftState": Stub, "@/components/membership/MemberJournalDraftState": Stub,
+    "@/components/membership/MemberPracticeDraftState": Stub,
+    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status, viewer: { authUserId: "verified-member", email: "new@example.test" } }) },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
+    "@/lib/platform/repository": { getOperatorRole: async () => null },
+    "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
+    "@/lib/membership/registration-repository": { getMemberRegistration: async () => {
+      if (currentRegistration === "failure") throw Error("PRIVATE registration detail");
+      return currentRegistration;
+    } },
+    "@/lib/membership/member-search-repository": { canBrowseMemberDirectory: async authUserId => {
+      reads.push(authUserId);
+      if (outcome === "failure") throw Error("PRIVATE eligibility detail");
+      return outcome;
+    } },
+    "@/lib/platform/visibility": { isMyRuinedVisible: () => true }, "@/lib/sharing": { privateSharingMetadata: {} },
+  }, { console: { error: (...args) => logs.push(args) } })).default;
+  for (const state of ["collecting", "registered"]) {
+    currentRegistration = registration({ state });
+    for (const value of [true, false, "failure"]) {
+      outcome = value;
+      reads.length = 0;
+      const tree = await Layout({ children: "content" });
+      const shell = nodes(tree).find(node => node.type === Shell);
+      assert.equal(shell.props.registrationOnly, true);
+      assert.equal(shell.props.memberDirectoryAvailable, value === true);
+      assert.equal(tree.props.celebration, null);
+      assert.deepEqual(reads, ["verified-member"]);
+    }
+  }
+  for (const value of [registration({ state: "activated" }), null, "failure"]) {
+    currentRegistration = value;
+    outcome = true;
+    reads.length = 0;
+    const tree = await Layout({ children: "content" });
+    const shell = nodes(tree).find(node => node.type === Shell);
+    assert.equal(shell.props.memberDirectoryAvailable, false);
+    assert.equal(shell.props.registrationOnly, value === "failure");
+    assert.deepEqual(reads, [], "Do not authorize a held-only shortcut outside a known registration");
+  }
+  currentRegistration = registration();
+  for (const value of ["signed_out", "unavailable"]) {
+    status = value;
+    reads.length = 0;
+    const tree = await Layout({ children: "content" });
+    assert.equal(nodes(tree).find(node => node.type === Shell).props.memberDirectoryAvailable, false);
+    assert.deepEqual(reads, [], "A session is required before directory eligibility is read");
+  }
+  assert.doesNotMatch(JSON.stringify(logs), /PRIVATE|new@example/);
 });
 
 
