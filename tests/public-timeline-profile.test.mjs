@@ -275,7 +275,7 @@ test("directory preview links open their matching fictional profiles only in loc
     "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => null },
     "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
     "@/lib/membership/member-search-preview": { getPreviewMemberProfile: tag => {
-      previewReads++; return tag === "avery_chen" ? { name: "Avery Chen", memberTag: tag, bio: "Example bio", memberNumber: 4 } : null;
+      previewReads++; return tag === "avery_chen" ? { name: "Avery Chen", memberTag: tag, bio: "Example bio", memberNumber: 4, avatarUrl: "/membership/circle/portrait-3.webp" } : null;
     } },
     "@/components/membership/PublicJournal": () => null,
   });
@@ -284,6 +284,7 @@ test("directory preview links open their matching fictional profiles only in loc
   const page = await render();
   assert.equal(page.props.identity.name, "Avery Chen");
   assert.equal(page.props.identity.memberTag, "avery_chen");
+  assert.equal(page.props.identity.avatarUrl, "/membership/circle/portrait-3.webp");
   assert.ok(page.props.previewEntries.length);
   process.env.NODE_ENV = "production";
   await assert.rejects(render, /not found/);

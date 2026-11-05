@@ -5,7 +5,8 @@ const BIOS = ["Building things with care. Making room for what matters.", "A cre
 const MEMBERS: MemberSearchResult[] = NAMES.map((name, index) => {
   const memberTag = name.toLowerCase().replaceAll(" ", "_");
   return { name, memberTag, bio: BIOS[index % BIOS.length], memberNumber: name === "Preview Member" ? 1 : index + 2,
-    href: `/profile/${memberTag}` };
+    href: `/profile/${memberTag}`, avatarUrl: name === "Preview Member" ? "/membership/foundations/beginning.webp"
+      : index % 4 === 3 ? null : `/membership/circle/portrait-${index % 9 + 1}.webp` };
 });
 
 export function getPreviewMemberProfile(memberTag: string): MemberSearchResult | null {

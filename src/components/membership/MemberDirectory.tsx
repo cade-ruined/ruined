@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import MemberIcon from "./MemberIcon";
 import { memberTier } from "@/lib/membership/member-number";
@@ -9,6 +10,16 @@ import { getMemberSearchPreview } from "@/lib/membership/member-search-preview";
 import styles from "./MemberDirectory.module.css";
 
 type SearchError = { message: string; signIn: boolean; denied: boolean };
+
+function DirectoryPortrait({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const initials = [words[0]?.[0], words.length > 1 ? words.at(-1)?.[0] : ""].join("").toUpperCase() || "M";
+  return <span className={styles.portrait} aria-hidden="true">
+    {avatarUrl && !failed ? <Image src={avatarUrl} alt="" width={88} height={88} unoptimized
+      loading="lazy" decoding="async" onError={() => setFailed(true)} /> : <span>{initials}</span>}
+  </span>;
+}
 
 function initialQuery(fallback: string): string {
   if (typeof window === "undefined") return fallback;
@@ -118,8 +129,13 @@ export default function MemberDirectory({ initialSearch, preview = false }: {
           return <li key={member.href}>
             <Link href={member.href} prefetch={false} className={styles.member}>
               <div className={styles.memberTop}><span className={styles.membership}>{tier ? `${tier.label} · No. ${tier.displayNumber}` : "Member"}</span><MemberIcon name="arrow" /></div>
-              <h3>{member.name}</h3>
-              {member.memberTag ? <p className={styles.tag}>@{member.memberTag.replace(/^@/, "")}</p> : null}
+              <div className={styles.identity}>
+                <DirectoryPortrait key={member.avatarUrl ?? "no-portrait"} name={member.name} avatarUrl={member.avatarUrl} />
+                <div className={styles.identityText}>
+                  <h3>{member.name}</h3>
+                  {member.memberTag ? <p className={styles.tag}>@{member.memberTag.replace(/^@/, "")}</p> : null}
+                </div>
+              </div>
               {member.bio ? <p className={styles.bio}>{member.bio}</p> : null}
               <span className={styles.profileLink}>View profile<span className={styles.srOnly}> for {member.name}</span></span>
             </Link>

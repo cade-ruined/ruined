@@ -29,6 +29,7 @@ test("member search normalizes names and @tags and bounds requests without wildc
 
 test("member discovery uses public fields, complete eligible pages, and current member access", async t => {
   const f = await publicJournalFixture(t);
+  await f.db.exec("create table member_directory_preferences(member_id uuid primary key, avatar_visible boolean default true)");
   const search = await load("src/lib/membership/member-search-repository.ts", {
     "server-only": {}, "./repository": f.repository, "./public-card-repository": f.cardRepository, "./member-search-model": model,
   });
@@ -45,7 +46,7 @@ test("member discovery uses public fields, complete eligible pages, and current 
   };
   await t.test("empty query browses, tag and multiword matching are case-insensitive, and results contain only public projection",async()=>{
     const result=await run();assert.equal(result.results.length,2);assert.equal(result.hasMore,false);
-    assert.deepEqual(Object.keys(result.results[0]).sort(),["bio","href","memberNumber","memberTag","name"]);
+    assert.deepEqual(Object.keys(result.results[0]).sort(),["avatarUrl","bio","href","memberNumber","memberTag","name"]);
     assert.equal((await run(" @SHARED_TAG ")).results[0].href,"/profile/shared_tag");
     assert.equal((await run("name SHARED")).results.length,2);
     assert.doesNotMatch(JSON.stringify(result),/PRIVATE|email|phone|location|personId|memberId|storage/);
@@ -58,6 +59,34 @@ test("member discovery uses public fields, complete eligible pages, and current 
     await f.db.query("update person_profiles set display_name='  ' where person_id=$1",[timelineIds.person]);
     assert.equal((await run("UNPUBLISHED ALIAS")).results[0].name,"UNPUBLISHED ALIAS","published fallback is searchable");
     await f.db.query("update person_profiles set display_name='Shared name' where person_id=$1",[timelineIds.person]);
+  });
+  await t.test("portraits match public-profile visibility and expose only gated uploads or validated legacy URLs",async()=>{
+    const target=await add("Portrait Fixture","portrait_fixture");
+    const fileName="88888888-8888-4888-8888-888888888888.webp";
+    const owned=`/api/member-photos/${target.member}/${fileName}`;
+    const setAvatar=url=>f.db.query("update person_profiles set avatar_storage_path=$1 where person_id=$2",[url,target.member]);
+    const portrait=async()=>{const result=await run("portrait_fixture");assert.equal(result.results.length,1);return result.results[0].avatarUrl;};
+    assert.equal(await portrait(),null);
+    await setAvatar(owned);
+    assert.equal(await portrait(),"/api/profile/portrait_fixture/portrait");
+    assert.doesNotMatch(JSON.stringify(await run("portrait_fixture")),/\/api\/member-photos|storage_path|88888888/);
+    await f.db.query("insert into member_directory_preferences values($1,false)",[target.member]);
+    assert.equal(await portrait(),null,"hidden portraits stay hidden");
+    await f.db.query("update member_directory_preferences set avatar_visible=true where member_id=$1",[target.member]);
+    for(const url of ["/images/member.webp","https://cdn.example.test/member.webp"]){await setAvatar(url);assert.equal(await portrait(),url);}
+    for(const url of [null,"","private-bucket/member.webp","http://cdn.example.test/member.webp","javascript:alert(1)","data:image/png;base64,AA==","//cdn.example.test/member.webp","https://user:password@cdn.example.test/member.webp","https://cdn.example.test/with space.webp","/api/ops/member-photos/private",`/api/member-photos/${timelineIds.member}/${fileName}`,`${owned}?download=1`]){
+      await setAvatar(url);assert.equal(await portrait(),null,`Rejected portrait ${url}`);
+    }
+    await setAvatar(owned);
+    await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1",[target.member]);
+    assert.equal((await run("portrait_fixture")).results.length,0,"a picture cannot bypass profile eligibility");
+    await f.db.query("update member_lifecycle set account_state='active' where member_id=$1",[target.member]);
+    await f.db.query("update person_profiles set member_tag=null where person_id=$1",[target.member]);
+    assert.equal((await run("Portrait Fixture")).results[0].avatarUrl,`/api/profile/${target.member}/portrait`);
+    let withdrew=false;
+    f.setAfterQuery(async query=>{if(!withdrew && query.includes("profile.avatar_storage_path")){withdrew=true;await f.db.query("update member_lifecycle set account_state='suspended' where member_id=$1",[target.member]);}});
+    assert.equal((await run("Portrait Fixture")).results.length,0,"eligibility is checked again after reading portrait metadata");
+    f.setAfterQuery(null);
   });
   await t.test("hidden matches cannot consume visible result pages; stable ordering and literal punctuation preserve discoverability",async()=>{
     for(let i=0;i<28;i++) await add(`Browse A Hidden ${i}`,`hidden_${i}`,true);

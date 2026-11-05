@@ -6,6 +6,8 @@ import { getApplicationDatabase } from "@/lib/database/server";
 import { deriveMemberAccessPolicy, memberCan } from "@/lib/membership/access-policy";
 import type { MemberAccessIdentity } from "@/lib/membership/access-policy";
 import { getMemberIdentity } from "@/lib/membership/repository";
+import { ownedMemberPhotoPath } from "@/lib/membership/photo-policy";
+import { safeMemberAvatarUrl } from "./avatar-url";
 import type { MemberSearchSnapshot } from "./member-search-model";
 import {
   defaultMemberCardSettings, MEMBER_CARD_TOKEN, MEMBER_PROFILE_IDENTIFIER, projectMemberCard, PublicCardError,
@@ -309,10 +311,32 @@ export async function getPublicMemberProfile(identifier: string): Promise<Public
   return row ? profileProjection(row) : null;
 }
 
+type ProfilePortraitRow = { member_id: string; avatar_storage_path: string | null; avatar_visible: boolean };
+async function profilePortraitRows(memberIds: string[], sql: CardSql): Promise<Map<string, ProfilePortraitRow>> {
+  if (!memberIds.length) return new Map();
+  const rows = await sql<ProfilePortraitRow[]>`
+    select member.id as member_id, profile.avatar_storage_path, coalesce(preference.avatar_visible,true) as avatar_visible
+    from ruined_members member join person_profiles profile on profile.person_id=member.person_id
+    left join member_directory_preferences preference on preference.member_id=member.id
+    where member.id in ${sql(memberIds)} and member.deleted_at is null
+  `;
+  return new Map(rows.map(row => [row.member_id, row]));
+}
+/** Match public-profile portrait policy without exposing an uploaded photo's private object route. */
+function profilePortraitUrl(row: ProfilePortraitRow | undefined, profile: ProfileRow): string | null {
+  if (!row?.avatar_visible) return null;
+  const avatarUrl = safeMemberAvatarUrl(row.avatar_storage_path);
+  if (!avatarUrl) return null;
+  const ownedUpload = ownedMemberPhotoPath(profile.member_id, avatarUrl);
+  if (avatarUrl.startsWith("/api/") && !ownedUpload) return null;
+  return ownedUpload ? `/api/profile/${encodeURIComponent(profileScope(profile).token)}/portrait` : avatarUrl;
+}
+
 /** Server-only search projection. Caller must authorize the member, query and page. */
 export async function getPublicMemberProfileSearch(query: string, page: number, pageSize: number): Promise<MemberSearchSnapshot> {
   const sql = getApplicationDatabase();
   const rows = await readPublicProfileRows(sql, null, query, pageSize + 1, (page - 1) * pageSize);
+  const portraits = await profilePortraitRows(rows.map(row => row.member_id), sql);
   // Eligibility and published text can change while the list is being assembled.
   const current = new Map((await publicProfileRows(rows.map(row => row.member_id), sql)).map(row => [row.member_id, row]));
   const words = query.toLowerCase().split(" ").filter(Boolean);
@@ -321,7 +345,8 @@ export async function getPublicMemberProfileSearch(query: string, page: number, 
     if (!latest) return [];
     const profile = profileProjection(latest);
     if (!words.every(word => `${profile.name} ${profile.memberTag ?? ""}`.toLowerCase().includes(word))) return [];
-    return [{ ...profile, href: `/profile/${encodeURIComponent(profileScope(latest).token)}` }];
+    return [{ ...profile, href: `/profile/${encodeURIComponent(profileScope(latest).token)}`,
+      avatarUrl: profilePortraitUrl(portraits.get(latest.member_id), latest) }];
   });
   return { query, page, results: visible.slice(0, pageSize), hasMore: visible.length > pageSize };
 }

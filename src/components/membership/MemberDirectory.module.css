@@ -23,6 +23,11 @@
 .memberTop { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: 1.5rem; }
 .membership { color: var(--member-muted); font-size: .65rem; line-height: 1.5; letter-spacing: .08em; text-transform: uppercase; }
 .memberTop svg { flex: none; width: 18px; height: 18px; }
+.identity { display: flex; align-items: center; gap: 1.25rem; }
+.identityText { min-width: 0; }
+.portrait { display: grid; place-items: center; flex: 0 0 5.5rem; width: 5.5rem; height: 5.5rem; overflow: hidden; border: 1px solid var(--member-rule); background: var(--member-soft); color: var(--member-muted); }
+.directory .portrait img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: cover; }
+.portrait > span { font-family: var(--font-display); font-size: 1.75rem; line-height: 1; letter-spacing: -.03em; }
 .member h3 { margin: 0; font-family: var(--font-display); font-size: clamp(1.65rem,2.3vw,2.2rem); font-weight: 400; line-height: 1.12; letter-spacing: -.035em; overflow-wrap: anywhere; }
 .tag { margin: .55rem 0 0; color: var(--member-muted); font-size: .78rem; overflow-wrap: anywhere; }
 .bio { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 1rem 0 0; font-size: .85rem; line-height: 1.65; color: var(--member-muted); overflow-wrap: anywhere; }
@@ -44,6 +49,8 @@
   .member { min-height: 13.5rem; padding: 1.25rem; }
   .member h3 { font-size: 1.9rem; }
   .memberTop { margin-bottom: 1.2rem; }
+  .identity { gap: 1rem; }
+  .portrait { flex-basis: 4.5rem; width: 4.5rem; height: 4.5rem; }
   .resultsHeader { align-items: start; }
 }
 @media (prefers-reduced-motion: reduce) { .member { transition: none; } }

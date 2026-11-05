@@ -8,6 +8,7 @@ export type MemberSearchResult = {
   bio: string | null;
   memberNumber: number | null;
   href: string;
+  avatarUrl: string | null;
 };
 export type MemberSearchSnapshot = {
   query: string;

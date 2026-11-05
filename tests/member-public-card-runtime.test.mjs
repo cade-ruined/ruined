@@ -21,6 +21,7 @@ async function load(path, dependencies = {}) {
 const model = await load("src/lib/membership/public-card-model.ts");
 const policy = await load("src/lib/membership/access-policy.ts");
 const photoPolicy = await load("src/lib/membership/photo-policy.ts");
+const avatars = await load("src/lib/membership/avatar-url.ts", { "./photo-policy": photoPolicy });
 async function fixture() {
   const PGlite = await loadPGliteForSchemaChecks(); const pg = new PGlite();
   await pg.exec(`
@@ -75,7 +76,7 @@ async function fixture() {
   const repository = await load("src/lib/membership/public-card-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/membership/access-policy": policy, "@/lib/membership/repository": { getMemberIdentity },
-    "@/lib/membership/photo-policy": photoPolicy, "./public-card-model": model,
+    "@/lib/membership/photo-policy": photoPolicy, "./avatar-url": avatars, "./public-card-model": model,
     "@supabase/supabase-js": { createClient: () => ({ storage: { from: bucket => ({ download: async path => {
       downloaded.push({ bucket, path }); if (storageHook) await storageHook(); return { data: new Blob(["portrait"]), error: null };
     } }) } }) },

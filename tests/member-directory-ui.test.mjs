@@ -24,15 +24,17 @@ function load(path, dependencies = {}, globals = {}) {
 const model = load("src/lib/membership/member-search-model.ts");
 const preview = load("src/lib/membership/member-search-preview.ts", { "./member-search-model": model });
 const tiers = load("src/lib/membership/member-number.ts");
-const alex = { name: "Alex Rivera", memberTag: "alex_rivera", bio: "Making room for what matters.", memberNumber: 6, href: "/profile/alex_rivera" };
-const cherry = { name: "Cherry Hill", memberTag: "cherry_hill", bio: null, memberNumber: null, href: "/profile/cherry_hill" };
-const libby = { name: "Libby Zaritsky", memberTag: "libby", bio: "A creative practice.", memberNumber: 52, href: "/profile/libby" };
-const riley = { name: "Riley Jordan", memberTag: null, bio: null, memberNumber: 201, href: "/profile/riley_jordan" };
+const alex = { name: "Alex Rivera", memberTag: "alex_rivera", bio: "Making room for what matters.", memberNumber: 6, href: "/profile/alex_rivera", avatarUrl: "/api/profile/alex_rivera/portrait?v=1" };
+const cherry = { name: "Cherry Hill", memberTag: "cherry_hill", bio: null, memberNumber: null, href: "/profile/cherry_hill", avatarUrl: null };
+const libby = { name: "Libby Zaritsky", memberTag: "libby", bio: "A creative practice.", memberNumber: 52, href: "/profile/libby", avatarUrl: "/api/profile/libby/portrait?v=1" };
+const riley = { name: "Riley Jordan", memberTag: null, bio: null, memberNumber: 201, href: "/profile/riley_jordan", avatarUrl: null };
 const snapshot = (results = [alex, cherry], changes = {}) => ({ query: "", page: 1, results, hasMore: false, ...changes });
 
 function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = {}) {
   const slots = [], effectSlots = new Set(), timers = new Map(), calls = [], history = [];
   let cursor = 0, dirty = false, tree, timerId = 0;
+  const portraitSlots = new Map();
+  let currentPortraitSlots = null, portraitCursor = 0;
   const initialUrl = new URL("https://members.example.test/my/members?source=menu#directory");
   if (initialSearch.query) initialUrl.searchParams.set("q", initialSearch.query);
   const browser = {
@@ -43,11 +45,12 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = 
   };
   const hooks = { ...React,
     useState(initial) {
-      const i = cursor++;
-      if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial;
-      return [slots[i], value => {
-        const next = typeof value === "function" ? value(slots[i]) : value;
-        if (!Object.is(next, slots[i])) { slots[i] = next; dirty = true; }
+      const owner = currentPortraitSlots ?? slots;
+      const i = currentPortraitSlots ? portraitCursor++ : cursor++;
+      if (!(i in owner)) owner[i] = typeof initial === "function" ? initial() : initial;
+      return [owner[i], value => {
+        const next = typeof value === "function" ? value(owner[i]) : value;
+        if (!Object.is(next, owner[i])) { owner[i] = next; dirty = true; }
       }];
     },
     useRef(initial) { const i = cursor++; return slots[i] ??= { current: initial }; },
@@ -62,6 +65,7 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = 
   const Component = load("src/components/membership/MemberDirectory.tsx", {
     react: hooks,
     "next/link": { __esModule: true, default: "a" },
+    "next/image": { __esModule: true, default: "img" },
     "./MemberIcon": { __esModule: true, default: "svg" },
     "@/lib/membership/member-number": tiers,
     "@/lib/membership/member-search-model": model,
@@ -98,6 +102,17 @@ function fixture(t, { initialSearch = snapshot(), previewMode = false, href } = 
     navigate(href) { browser.location.href = new URL(href, browser.location.href).href; },
     input: () => find(node => node.type === "input" && node.props.name === "q"),
     profiles: () => nodes(render()).filter(node => node.type === "a" && node.props.className === "member"),
+    portrait(href) {
+      const profile = find(node => node.type === "a" && node.props.className === "member" && node.props.href === href);
+      const child = nodes(profile).find(node => typeof node.type === "function" && node.type.name === "DirectoryPortrait");
+      assert.ok(child, "The profile card renders its portrait component");
+      // Child hook state belongs to its profile and React key, not the directory.
+      const key = `${href}:${child.key}`;
+      if (!portraitSlots.has(key)) portraitSlots.set(key, []);
+      currentPortraitSlots = portraitSlots.get(key); portraitCursor = 0;
+      try { return child.type(child.props); }
+      finally { currentPortraitSlots = null; }
+    },
     results: () => find(node => node.props?.id === "member-directory-results"),
     change(value) { find(node => node.type === "input").props.onChange({ target: { value } }); render(); },
     click(label) { const target = button(label); assert.ok(target, label); assert.notEqual(target.props.disabled, true, "only enabled controls are clickable"); target.props.onClick(); render(); },
@@ -135,6 +150,48 @@ test("initial browse renders accessible public profile links without refetching 
   assert.ok(f.profiles().every(node => node.props.prefetch === false));
   assert.match(text(f.profiles()[0]), /Originals · No. 0006.*Alex Rivera.*@alex_rivera.*View profile for Alex Rivera/);
   assert.equal(f.button("Clear member search"), undefined);
+});
+
+test("profile portraits load lazily as decorative images and a failed photo falls back only for that member", t => {
+  const f = fixture(t, { initialSearch: snapshot([alex, libby]) });
+  const portrait = f.portrait(alex.href);
+  assert.equal(portrait.props["aria-hidden"], "true");
+  const image = nodes(portrait).find(node => node.type === "img");
+  assert.equal(image.props.src, alex.avatarUrl);
+  assert.equal(image.props.alt, "");
+  assert.equal(image.props.loading, "lazy");
+  assert.equal(image.props.decoding, "async");
+  assert.equal(image.props.width, 88); assert.equal(image.props.height, 88);
+  assert.equal(image.props.unoptimized, true, "the access-checked portrait URL is requested directly");
+  image.props.onError();
+  assert.equal(nodes(f.portrait(alex.href)).some(node => node.type === "img"), false);
+  assert.equal(text(f.portrait(alex.href)), "AR");
+  assert.equal(nodes(f.portrait(libby.href)).find(node => node.type === "img").props.src, libby.avatarUrl);
+  assert.deepEqual(f.profiles().map(node => node.props.href), [alex.href, libby.href]);
+  assert.match(text(f.profiles()[0]), /Alex Rivera.*View profile for Alex Rivera/);
+  assert.deepEqual(f.calls, []);
+});
+
+test("members without photos use initials without requesting an empty or invented image URL", t => {
+  for (const [name, initials] of [["Cherry Marie Hill", "CH"], ["Björk", "B"], ["   ", "M"]]) {
+    const f = fixture(t, { initialSearch: snapshot([{ ...cherry, name }]) });
+    const portrait = f.portrait(cherry.href);
+    assert.equal(portrait.props["aria-hidden"], "true");
+    assert.equal(nodes(portrait).some(node => node.type === "img"), false);
+    assert.equal(text(portrait), initials);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test("an updated portrait URL recovers from an earlier image error for the same profile", async t => {
+  const f = fixture(t, { initialSearch: snapshot([alex], { hasMore: true }) });
+  nodes(f.portrait(alex.href)).find(node => node.type === "img").props.onError();
+  assert.equal(text(f.portrait(alex.href)), "AR");
+  f.click("Load more members"); f.startTimer();
+  const updated = { ...alex, avatarUrl: "/api/profile/alex_rivera/portrait?v=2" };
+  await f.reply(0, snapshot([updated], { page: 2 }));
+  assert.deepEqual(f.profiles().map(node => node.props.href), [alex.href]);
+  assert.equal(nodes(f.portrait(alex.href)).find(node => node.type === "img").props.src, updated.avatarUrl);
 });
 
 test("name and @tag searches debounce, replace results, and preserve a shareable normalized query", async t => {
