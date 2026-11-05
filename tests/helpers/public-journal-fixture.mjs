@@ -65,11 +65,13 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   const model = await load("src/lib/membership/journal-model.ts");
   const cardModel = await load("src/lib/membership/public-card-model.ts");
   const access = await load("src/lib/membership/access-policy.ts");
+  const photoPolicy = await load("src/lib/membership/photo-policy.ts");
+  const avatars = await load("src/lib/membership/avatar-url.ts", { "./photo-policy": photoPolicy });
   const cardRepository = await load("src/lib/membership/public-card-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@supabase/supabase-js": {},
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/membership/repository": base.repository, "@/lib/membership/access-policy": access,
-    "@/lib/membership/photo-policy": await load("src/lib/membership/photo-policy.ts"), "./public-card-model": cardModel,
+    "@/lib/membership/photo-policy": photoPolicy, "./avatar-url": avatars, "./public-card-model": cardModel,
   });
   const blobs = new Map(), downloads = [];
   let storageHook = null;
