@@ -40,6 +40,7 @@ test("member discovery uses public fields, complete eligible pages, and current 
     await f.db.query("insert into ruined_members(id,person_id,email) values($1,$1,'PRIVATE EMAIL')",[member]);
     await f.db.query("insert into platform_users(auth_user_id,member_id,person_id) values($1,$2,$2)",[auth,member]);
     await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'member')",[auth]);
+    await f.db.query("insert into person_email_addresses(person_id,email_normalized,verification_state) select person_id,email_normalized,'verified' from ruined_members where id=$1",[member]);
     await f.db.query("insert into member_lifecycle(member_id,account_state) values($1,$2)",[member,hidden?"suspended":"active"]);
     await f.db.query("insert into person_profiles(person_id,display_name,preferred_name,member_tag,bio) values($1,$2,'PRIVATE ALIAS',$3,'Published bio')",[member,name,tag]);
     return {member,auth};
@@ -113,12 +114,13 @@ test("member discovery uses public fields, complete eligible pages, and current 
     await f.db.query("insert into member_complimentary_grants(member_id) values($1)",[target.member]);
     assert.equal((await run("visible_fixture")).results.length,1,"complimentary onboarding remains discoverable");
     await f.db.query("insert into member_registration_access(member_id,profile_activated_at) values($1,null)",[target.member]);
-    assert.equal((await run("visible_fixture")).results.length,0);
+    assert.equal((await run("visible_fixture")).results.length,1,"accepted complimentary funding does not await a release stamp");
     await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1",[target.member]);
     await f.db.query("delete from member_complimentary_grants where member_id=$1",[target.member]);
     await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[target.auth]);
     assert.equal((await run("visible_fixture")).results.length,1,"operator funding remains discoverable");
     await f.db.query("delete from platform_role_grants where auth_user_id=$1 and role_slug='ops_admin'",[target.auth]);
+    await f.db.query("delete from member_registration_access where member_id=$1",[target.member]);
     const reservation=randomUUID();
     await f.db.query("insert into stripe_subscriptions(id,member_id,stripe_status) values('sub_member_search',$1,'active')",[timelineIds.otherMember]);
     await f.db.query("insert into membership_commercial_reservations(id,payer_member_id,kind,status,stripe_subscription_id,created_at) values($1,$2,'couple','activated','sub_member_search',now())",[reservation,timelineIds.otherMember]);
@@ -139,6 +141,30 @@ test("member discovery uses public fields, complete eligible pages, and current 
     assert.equal((await run("Visibility Fixture")).results[0].href,`/profile/${target.member}`);
     await f.db.query("update ruined_members set deleted_at=now() where id=$1",[target.member]);
     assert.equal((await run("Visibility Fixture")).results.length,0);
+  });
+  await t.test("accepted complimentary members can browse before intake and release; revoked funding closes actor access",async()=>{
+    const target=await add("Accepted Funding Fixture","accepted_funding_fixture");
+    await f.db.query("update member_lifecycle set program_state='prospect',standing_state='pre_active',administrative_onboarding_state='in_progress',billing_state='pending' where member_id=$1",[target.member]);
+    await f.db.query("insert into member_registration_access(member_id,registered_at,profile_activated_at) values($1,null,null)",[target.member]);
+    f.identities.set(target.auth,{...f.identities.get(timelineIds.auth),member_id:target.member,person_id:target.member,auth_user_id:target.auth,
+      program_state:"prospect",standing_state:"pre_active",administrative_onboarding_state:"in_progress",billing_state:"pending"});
+    assert.equal((await run("accepted_funding_fixture")).results.length,0,"an account without accepted funding stays private");
+    await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')",[target.auth]);
+    assert.equal((await run("accepted_funding_fixture")).results.length,0,"a pending operator is not an accepted complimentary member");
+    await f.db.query("delete from platform_role_grants where auth_user_id=$1 and role_slug='ops_admin'",[target.auth]);
+    await f.db.query("insert into member_complimentary_grants(member_id) values($1)",[target.member]);
+    const state=async()=>Promise.all([f.db.query("select * from member_lifecycle where member_id=$1",[target.member]),f.db.query("select * from member_registration_access where member_id=$1",[target.member])]);
+    const before=await state();
+    assert.equal(await search.canBrowseMemberDirectory(target.auth),true);
+    const result=await run("accepted_funding_fixture",1,target.auth);
+    assert.equal(result.results.length,1);assert.equal(result.results[0].href,"/profile/accepted_funding_fixture");
+    assert.deepEqual(await state(),before,"discovery never completes intake, releases profiles or changes lifecycle");
+    let reads=0;
+    f.setAfterQuery(async query=>{if(query.includes("with candidates") && ++reads===2) await f.db.query("update member_complimentary_grants set revoked_at=now() where member_id=$1",[target.member]);});
+    await assert.rejects(run("accepted_funding_fixture",1,target.auth),{status:403});
+    f.setAfterQuery(null);
+    assert.equal(await search.canBrowseMemberDirectory(target.auth),false);
+    assert.equal((await run("accepted_funding_fixture")).results.length,0);
   });
   await t.test("target withdrawal while results are assembled is discarded",async()=>{
     const target=await add("Withdrawn Fixture","withdrawn_fixture");let reads=0;
@@ -162,6 +188,21 @@ test("member discovery uses public fields, complete eligible pages, and current 
     await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1",[timelineIds.auth]);
     assert.ok(f.executedQueries.filter(q=>q.includes("with candidates")).every(q=>/^\s*with/.test(q)));
   });
+});
+
+test("directory navigation authorization propagates unavailable reads and never loads result pages",async()=>{
+  const outage=new Error("Database unavailable");let failure=null, scope={memberId:timelineIds.member};
+  const search=await load("src/lib/membership/member-search-repository.ts",{
+    "server-only":{},"./member-search-model":model,
+    "./repository":{getMemberIdentity:async()=>({memberId:timelineIds.member})},
+    "./public-card-repository":{
+      getOwnMemberProfilePublicScope:async()=>{if(failure)throw failure;return scope;},
+      getPublicMemberProfileSearch:()=>{throw Error("Navigation must not browse profiles");},
+    },
+  });
+  assert.equal(await search.canBrowseMemberDirectory(timelineIds.auth),true);
+  scope=null;assert.equal(await search.canBrowseMemberDirectory(timelineIds.auth),false);
+  failure=outage;await assert.rejects(search.canBrowseMemberDirectory(timelineIds.auth),error=>error===outage);
 });
 
 test("member search API authenticates, validates pages, disables caching and safely reports failures",async()=>{

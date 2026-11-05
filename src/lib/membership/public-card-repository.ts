@@ -39,7 +39,7 @@ function wearSeed(memberId: string) { return createHash("sha256").update(`ruined
 function sourceRevision(source: MemberCardSource): string {
   return createHash("sha256").update(JSON.stringify(source)).digest("hex");
 }
-/** Released, participating members can share their profile regardless of card activation history. */
+/** Legacy participation gate retained for collectible cards and pre-registration members. */
 export function canPublishMemberProfile(identity: MemberAccessIdentity): boolean {
   if (identity.accountState !== "active" ||
       !["onboarding", "active"].includes(identity.programState) || !["active", "cancellation_requested"].includes(identity.standingState)) return false;
@@ -226,6 +226,7 @@ type ProfileRow = Pick<PublicRow, "account_state" | "billing_state" | "program_s
   "complimentary_funded" | "shared_billing_state"> & {
   member_id: string; public_token: string | null; display_name: string | null; preferred_name: string | null;
   member_tag: string | null; bio: string | null; member_number: number | null;
+  has_registration: boolean; identity_verified: boolean; paid_registration_funded: boolean; accepted_complimentary_funded: boolean;
 };
 async function publicProfileRows(identifiers: string[], sql: CardSql): Promise<ProfileRow[]> {
   const validIdentifiers = [...new Set(identifiers.filter(identifier => MEMBER_PROFILE_IDENTIFIER.test(identifier)))];
@@ -245,8 +246,43 @@ async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null,
       private.ruined_member_has_operator_funding(member.id) as operator_funded,
       not private.ruined_member_profile_released(member.id) as registration_held,
       private.ruined_member_shared_billing_state(member.id) as shared_billing_state,
-      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded
+      private.ruined_member_has_complimentary_funding(member.id) as complimentary_funded,
+      registration.member_id is not null as has_registration,
+      exists(select 1 from platform_users identity
+          join platform_role_grants grant_row on grant_row.auth_user_id=identity.auth_user_id
+            and grant_row.role_slug='member' and grant_row.revoked_at is null
+          join person_email_addresses address on address.person_id=identity.person_id
+            and address.email_normalized=identity.email_normalized and address.verification_state='verified' and address.retired_at is null
+          where identity.person_id=member.person_id and identity.status='active'
+            and (identity.member_id is null or identity.member_id=member.id) and identity.email_normalized=member.email_normalized) as identity_verified,
+      (private.ruined_member_has_complimentary_funding(member.id) and exists(
+        select 1 from member_complimentary_grants funding where funding.member_id=member.id and funding.revoked_at is null
+          and funding.starts_at<=statement_timestamp() and (funding.ends_at is null or funding.ends_at>statement_timestamp())
+      )) as accepted_complimentary_funded,
+      (registration.payment_setup_livemode is true and exists(
+        select 1 from membership_commercial_reservations reservation
+        join stripe_subscriptions subscription on subscription.id=reservation.stripe_subscription_id
+        join ruined_members payer_member on payer_member.id=reservation.payer_member_id and payer_member.deleted_at is null
+        join people payer_person on payer_person.id=payer_member.person_id and payer_person.status='active'
+        join member_lifecycle payer on payer.member_id=payer_member.id and payer.account_state='active'
+        where reservation.id=private.ruined_member_paid_reservation(member.id)
+          and payer.billing_state in ('pending','active') and payer.program_state in ('prospect','onboarding','active')
+          and payer.standing_state in ('pre_active','active','cancellation_requested')
+          and (payer.standing_state<>'cancellation_requested' or payer.cancellation_effective_at>statement_timestamp())
+          and exists(select 1 from platform_users payer_identity
+            join platform_role_grants payer_grant on payer_grant.auth_user_id=payer_identity.auth_user_id
+              and payer_grant.role_slug='member' and payer_grant.revoked_at is null
+            join person_email_addresses payer_address on payer_address.person_id=payer_identity.person_id
+              and payer_address.email_normalized=payer_identity.email_normalized and payer_address.verification_state='verified' and payer_address.retired_at is null
+            where payer_identity.person_id=payer_member.person_id and payer_identity.status='active'
+              and (payer_identity.member_id is null or payer_identity.member_id=payer_member.id) and payer_identity.email_normalized=payer_member.email_normalized)
+          and (subscription.cancel_at is null or subscription.cancel_at>statement_timestamp())
+          and not exists(select 1 from membership_enrollment_episodes episode
+            where episode.reservation_id=reservation.id and episode.member_id in (member.id,payer_member.id) and episode.ended_at is not null)
+      )) as paid_registration_funded
     from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id = member.id
+    join people person on person.id=member.person_id and person.status='active'
+    left join member_registration_access registration on registration.member_id=member.id
     left join person_profiles profile on profile.person_id = member.person_id
     left join member_public_cards card on card.member_id = member.id
     where member.deleted_at is null
@@ -258,11 +294,16 @@ async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null,
         where viewer.person_id = member.person_id and viewer.status = 'active')
     )
     select * from candidates
-    where account_state='active' and program_state in ('onboarding','active')
-      and standing_state in ('active','cancellation_requested')
-      and administrative_onboarding_state='completed' and not registration_held
-      and (operator_funded or complimentary_funded
-        or coalesce(shared_billing_state,billing_state) not in ('pending','attention_required','ended'))
+    where account_state='active' and identity_verified and (
+      ((not has_registration or operator_funded) and program_state in ('onboarding','active')
+        and standing_state in ('active','cancellation_requested')
+        and administrative_onboarding_state='completed' and not registration_held
+        and (operator_funded or complimentary_funded
+          or coalesce(shared_billing_state,billing_state) not in ('pending','attention_required','ended')))
+      or (program_state in ('prospect','onboarding','active')
+        and standing_state in ('pre_active','active','cancellation_requested')
+        and (accepted_complimentary_funded or paid_registration_funded))
+    )
       and (standing_state<>'cancellation_requested' or cancellation_effective_at>statement_timestamp())
       and not exists (select 1 from regexp_split_to_table(${query},' ') word
         where position(lower(word) in lower(public_name || ' ' || coalesce(member_tag,'')))=0)
@@ -273,6 +314,16 @@ async function readPublicProfileRows(sql: CardSql, identifiers: string[] | null,
   return rows.filter(profileRowIsPublic);
 }
 function profileRowIsPublic(row: ProfileRow): boolean {
+  if (row.account_state !== "active" || !row.identity_verified) return false;
+  // Accepted funding publishes immediately, before intake or program activation.
+  // A former payment or release stamp cannot override withdrawn funding.
+  if (row.accepted_complimentary_funded || row.paid_registration_funded) {
+    return (
+      ["prospect", "onboarding", "active"].includes(row.program_state) &&
+      ["pre_active", "active", "cancellation_requested"].includes(row.standing_state) &&
+      (row.standing_state !== "cancellation_requested" || Boolean(row.cancellation_effective_at && new Date(row.cancellation_effective_at).getTime() > Date.now())));
+  }
+  if (row.has_registration && !row.operator_funded) return false;
   const identity: MemberAccessIdentity = {
     accountState: row.account_state, billingState: row.shared_billing_state ?? row.billing_state, programState: row.program_state,
     standingState: row.standing_state, administrativeOnboardingState: row.administrative_onboarding_state,

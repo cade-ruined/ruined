@@ -16,6 +16,7 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
 import { getMemberRegistration } from "@/lib/membership/registration-repository";
+import { canBrowseMemberDirectory } from "@/lib/membership/member-search-repository";
 import { hasEligibleExplicitExperienceInvitations } from "@/lib/platform/experience-member-access";
 import { privateSharingMetadata } from "@/lib/sharing";
 
@@ -36,6 +37,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
   const scenario = configuration.mode === "preview" ? memberPreviewScenario((await cookies()).get(MEMBER_PREVIEW_COOKIE)?.value) : null;
   let registrationOnly = Boolean(scenario && isRegistrationPreview(scenario));
   let invitedCalendarAvailable = false;
+  let memberDirectoryAvailable = false;
   if (viewer) {
     try {
       const registration = await getMemberRegistration(viewer.authUserId);
@@ -43,8 +45,10 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       if (registration?.state === "registered" && registration.ready) {
         invitedCalendarAvailable = await hasEligibleExplicitExperienceInvitations(viewer.authUserId);
       }
+      if (registrationOnly) memberDirectoryAvailable = await canBrowseMemberDirectory(viewer.authUserId);
     } catch (error) {
       registrationOnly = true;
+      memberDirectoryAvailable = false;
       console.error("Member registration navigation could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
     }
   }
@@ -71,6 +75,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       operatorRole={operatorRole}
       registrationOnly={registrationOnly}
       invitedCalendarAvailable={invitedCalendarAvailable}
+      memberDirectoryAvailable={memberDirectoryAvailable}
       viewerLabel={configuration.mode === "preview" ? "Preview member" : viewer?.email}
     >
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}

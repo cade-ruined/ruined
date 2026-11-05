@@ -19,7 +19,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Prom
     async authUserId => {
       try { return await withFreshApplicationDatabaseRead("member-search", () => getMemberSearch(authUserId, query)); }
       catch (error) { if (error instanceof MemberSearchError && error.status === 403) return null; throw error; }
-    }, "members");
+    }, "members", { authorizeBeforeRegistrationRedirect: true });
   if (context.state === "signed_out") redirect("/my/access");
   if (context.state === "denied") return <PlatformUnavailable reason="member_access" />;
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;

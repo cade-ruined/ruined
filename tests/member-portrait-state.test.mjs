@@ -187,6 +187,7 @@ test("layout scopes portrait memory to verified members inside session recovery 
       "@/lib/platform/repository": { getOperatorRole: async () => null },
       "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
       "@/lib/membership/registration-repository": { getMemberRegistration: async () => null },
+      "@/lib/membership/member-search-repository": { canBrowseMemberDirectory: async () => false },
       "@/lib/platform/visibility": { isMyRuinedVisible: () => true },
       "@/lib/sharing": { privateSharingMetadata: {} },
     }).default;
