@@ -154,6 +154,8 @@ async function fixture({ revealed = true } = {}) {
     "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
   });
   const cardModel = await loadModule("src/lib/membership/public-card-model.ts", {});
+  const photoPolicy = await loadModule("src/lib/membership/photo-policy.ts", {});
+  const avatars = await loadModule("src/lib/membership/avatar-url.ts", { "./photo-policy": photoPolicy });
   let cardRepository;
   const repository = await loadModule("src/lib/membership/repository.ts", {
     "@/lib/foundations/availability": loadFoundationsAvailability(),
@@ -185,7 +187,8 @@ async function fixture({ revealed = true } = {}) {
     "@/lib/membership/access-policy": policy,
     "@/lib/membership/member-tag": await loadModule("src/lib/membership/member-tag.ts", {}),
     "@/lib/membership/repository": { getMemberIdentity: repository.getMemberIdentity },
-    "@/lib/membership/photo-policy": await loadModule("src/lib/membership/photo-policy.ts", {}),
+    "@/lib/membership/photo-policy": photoPolicy,
+    "./avatar-url": avatars,
     "./public-card-model": cardModel,
   });
   return { pg, identity, repository, cardRepository, cardModel };
