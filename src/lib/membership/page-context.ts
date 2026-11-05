@@ -29,6 +29,11 @@ export type MembershipPageContext<T> = {
   invitedCalendarOnly?: boolean;
 };
 
+type MembershipPageOptions = {
+  /** The loader must independently authorize access before returning any data. */
+  authorizeBeforeRegistrationRedirect?: boolean;
+};
+
 function safeErrorDetails(error: unknown) {
   const errorCode =
     typeof error === "object" &&
@@ -48,6 +53,7 @@ export async function getMembershipPageContext<T>(
   preview: T,
   load: (authUserId: string) => Promise<T | null>,
   area: string,
+  options: MembershipPageOptions = {},
 ): Promise<MembershipPageContext<T>> {
   const configuration = getPlatformConfiguration();
 
@@ -86,10 +92,11 @@ export async function getMembershipPageContext<T>(
       return { configuration, data: null, state: "unavailable", viewer };
     }
   }
-  if (destination) redirect(destination);
+  if (destination && !options.authorizeBeforeRegistrationRedirect) redirect(destination);
+  let context: MembershipPageContext<T>;
   try {
     const data = await load(viewer.authUserId);
-    return {
+    context = {
       configuration,
       data,
       state: data ? "authenticated" : "denied",
@@ -98,9 +105,14 @@ export async function getMembershipPageContext<T>(
     };
   } catch (error) {
     if (error instanceof MembershipAccessDeniedError) {
-      return { configuration, data: null, state: "denied", viewer };
+      context = { configuration, data: null, state: "denied", viewer };
+    } else {
+      console.error(`Ruined Membership ${area} could not be loaded`, safeErrorDetails(error));
+      return { configuration, data: null, state: "unavailable", viewer };
     }
-    console.error(`Ruined Membership ${area} could not be loaded`, safeErrorDetails(error));
-    return { configuration, data: null, state: "unavailable", viewer };
   }
+  // Registration can guide an ineligible visitor without overriding a separate,
+  // current authorization for member discovery. Never redirect inside the catch.
+  if (destination && context.state === "denied") redirect(destination);
+  return context;
 }

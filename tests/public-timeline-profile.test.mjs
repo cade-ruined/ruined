@@ -7,6 +7,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { publicJournalFixture, timelineIds } from "./helpers/public-journal-fixture.mjs";
+import { seedMemberSmsPaidReservation } from "./helpers/member-sms-funding-fixture.mjs";
 
 const require = createRequire(import.meta.url);
 const token = "x".repeat(43);
@@ -99,6 +100,10 @@ test("released completed members can publish their profile and Timeline without 
     await f.db.query("delete from member_complimentary_grants where member_id=$1", [timelineIds.member]);
     if (scenario.operator) await f.db.query("insert into platform_role_grants(auth_user_id,role_slug) values($1,'ops_admin')", [timelineIds.auth]);
     if (scenario.complimentary) await f.db.query("insert into member_complimentary_grants(member_id) values($1)", [timelineIds.member]);
+    if (!scenario.operator && !scenario.complimentary) {
+      await seedMemberSmsPaidReservation(f.db,{memberId:timelineIds.member,personId:timelineIds.person,reservation:randomUUID(),contract:randomUUID()});
+      await f.db.query("update member_lifecycle set billing_state='active',standing_state='active' where member_id=$1",[timelineIds.member]);
+    }
     assert.deepEqual(await f.cardRepository.getPublicMemberProfile("shared_tag"), {
       name: "Shared name", memberTag: "shared_tag", bio: "PUBLIC BIO", memberNumber: null,
     }, scenario.name);
@@ -120,7 +125,7 @@ test("released completed members can publish their profile and Timeline without 
   assert.equal(await f.cardRepository.getPublicMemberCard(f.token), null, "A future activation date still cannot publish a collectible card.");
 });
 
-test("profile eligibility keeps incomplete, suspended, ended, unreleased and removed members private", async t => {
+test("legacy participation and unfunded registration gates preserve account and identity withdrawal", async t => {
   const f = await publicJournalFixture(t);
   await f.db.query("update ruined_members set membership_activated_at=null where id=$1", [timelineIds.member]);
   const denied = async message => {
@@ -144,8 +149,8 @@ test("profile eligibility keeps incomplete, suspended, ended, unreleased and rem
     await f.db.query("update member_lifecycle set account_state='active',administrative_onboarding_state='completed',billing_state='active',program_state='active',standing_state='active',cancellation_effective_at=null where member_id=$1", [timelineIds.member]);
   }
   await f.db.query("insert into member_registration_access(member_id,profile_activated_at) values($1,null)", [timelineIds.member]);
-  await denied("registration hold");
-  await f.db.query("update member_registration_access set profile_activated_at=now() where member_id=$1", [timelineIds.member]);
+  await denied("registration without accepted or paid funding");
+  await f.db.query("delete from member_registration_access where member_id=$1", [timelineIds.member]);
   await f.db.query("update platform_role_grants set revoked_at=now() where auth_user_id=$1", [timelineIds.auth]);
   await denied("revoked member role");
   await f.db.query("update platform_role_grants set revoked_at=null where auth_user_id=$1", [timelineIds.auth]);
@@ -255,10 +260,40 @@ test("public card links to the profile and visitor route passes only fixed publi
     "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[A-Za-z0-9_-]{43}$/ },
     "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => ({ profile }) },
     "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
+    "@/lib/membership/member-search-preview": { getPreviewMemberProfile: () => { throw new Error("Connected profiles must not read preview people"); } },
     "@/components/membership/PublicJournal": Timeline,
   });
   const rendered = await route.default({ params: Promise.resolve({ token }) });
   assert.deepEqual(rendered.props.identity, profile);
   assert.equal(route.metadata.title, "Profile / Ruined");
   assert.deepEqual(route.metadata.robots, { index: false, follow: false });
+});
+
+test("directory preview links open their matching fictional profiles only in local preview mode", async t => {
+  const previousEnvironment = process.env.NODE_ENV;
+  t.after(() => { if (previousEnvironment === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousEnvironment; });
+  let mode = "preview", previewReads = 0;
+  const route = load("app/journal/[token]/page.tsx", {
+    "next/navigation": { notFound: () => { throw new Error("not found"); } },
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode }) },
+    "@/lib/membership/public-card-model": { MEMBER_PROFILE_IDENTIFIER: /^[a-z_]+$/ },
+    "@/lib/membership/public-badge-repository": { getPublicMemberTimelineProfile: async () => null },
+    "@/lib/membership/guided-timeline-preview": load("src/lib/membership/guided-timeline-preview.ts"),
+    "@/lib/membership/member-search-preview": { getPreviewMemberProfile: tag => {
+      previewReads++; return tag === "avery_chen" ? { name: "Avery Chen", memberTag: tag, bio: "Example bio", memberNumber: 4, avatarUrl: "/membership/circle/portrait-3.webp" } : null;
+    } },
+    "@/components/membership/PublicJournal": () => null,
+  });
+  const render = () => route.default({ params: Promise.resolve({ token: "avery_chen" }) });
+  process.env.NODE_ENV = "development";
+  const page = await render();
+  assert.equal(page.props.identity.name, "Avery Chen");
+  assert.equal(page.props.identity.memberTag, "avery_chen");
+  assert.equal(page.props.identity.avatarUrl, "/membership/circle/portrait-3.webp");
+  assert.ok(page.props.previewEntries.length);
+  process.env.NODE_ENV = "production";
+  await assert.rejects(render, /not found/);
+  process.env.NODE_ENV = "development"; mode = "connected";
+  await assert.rejects(render, /not found/);
+  assert.equal(previewReads, 1, "production and connected requests never read fictional directory people");
 });

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as crypto from "node:crypto";
 import ts from "typescript";
 import { timelineFixture, timelineIds } from "./canonical-journal-fixture.mjs";
+import { installPublicProfileFundingFixture } from "./public-profile-funding-fixture.mjs";
 
 export { timelineIds };
 export const source = path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -42,6 +43,7 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
     if (meaningMigration) await migrateReflections();
   };
   if (applyPrivacy) await migratePrivacy();
+  await installPublicProfileFundingFixture(db);
   const token = "a".repeat(43), otherToken = "b".repeat(43);
   for (const [member, person, shareToken] of [[timelineIds.member, timelineIds.person, token], [timelineIds.otherMember, timelineIds.otherMember, otherToken]]) {
     await db.query("insert into person_profiles(person_id,display_name,member_tag,bio,location_label,building_now,website_url) values($1,'Shared name',$2,'PUBLIC BIO','PRIVATE LOCATION','PRIVATE BUILDING','https://private.example.test')", [person, member === timelineIds.member ? "shared_tag" : "other_tag"]);
@@ -65,11 +67,13 @@ export async function publicJournalFixture(t, { applyPrivacy = true, applyTimeli
   const model = await load("src/lib/membership/journal-model.ts");
   const cardModel = await load("src/lib/membership/public-card-model.ts");
   const access = await load("src/lib/membership/access-policy.ts");
+  const photoPolicy = await load("src/lib/membership/photo-policy.ts");
+  const avatars = await load("src/lib/membership/avatar-url.ts", { "./photo-policy": photoPolicy });
   const cardRepository = await load("src/lib/membership/public-card-repository.ts", {
     "server-only": {}, "node:crypto": crypto, "@supabase/supabase-js": {},
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/membership/repository": base.repository, "@/lib/membership/access-policy": access,
-    "@/lib/membership/photo-policy": await load("src/lib/membership/photo-policy.ts"), "./public-card-model": cardModel,
+    "@/lib/membership/photo-policy": photoPolicy, "./avatar-url": avatars, "./public-card-model": cardModel,
   });
   const blobs = new Map(), downloads = [];
   let storageHook = null;

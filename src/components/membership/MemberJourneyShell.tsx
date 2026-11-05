@@ -20,13 +20,14 @@ function appearanceValue(value: string | null): MemberAppearance {
   return value === "paper" || value === "ink" ? value : "system";
 }
 
-export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, registrationOnly: restrictedRegistration = false, invitedCalendarAvailable = false }: {
+export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, registrationOnly: restrictedRegistration = false, invitedCalendarAvailable = false, memberDirectoryAvailable = false }: {
   children: React.ReactNode;
   configuration: PlatformConfiguration;
   operatorRole?: OperatorNavigationRole | null;
   viewerLabel?: string | null;
   registrationOnly?: boolean;
   invitedCalendarAvailable?: boolean;
+  memberDirectoryAvailable?: boolean;
 }) {
   const pathname = usePathname();
   const registrationOnly = restrictedRegistration || pathname === "/my/registered";
@@ -41,7 +42,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
   const preview = configuration.mode === "preview";
   const current = currentMemberDestination(pathname);
   const currentPrimary = currentMemberPrimaryDestination(pathname);
-  const pageLabel = registrationOnly ? invitedCalendarAvailable && pathname === "/my/experiences" ? "Calendar" : "Registration" : MEMBER_DESTINATIONS.find(({ href }) => href === current)?.label ?? "Membership";
+  const pageLabel = registrationOnly ? memberDirectoryAvailable && pathname === "/my/members" ? "Members" : invitedCalendarAvailable && pathname === "/my/experiences" ? "Calendar" : "Registration" : MEMBER_DESTINATIONS.find(({ href }) => href === current)?.label ?? "Membership";
   const theme = appearance === "system" ? systemDark ? "ink" : "paper" : appearance;
 
   useEffect(() => {
@@ -84,7 +85,13 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
               <MemberIcon name="moon" className={styles.appearanceMoon} />
             </span>
           </button>
-          {hasNavigation ? <MemberNavigationFab {...menuProps} trigger="search" /> : <Link className={styles.quietLink} href={focused ? "/my/foundations" : "mailto:connect@theruinedproject.com"}>{focused ? "Back to Foundations" : "Support"}</Link>}
+          {hasNavigation ? <MemberNavigationFab {...menuProps} trigger="search" /> : registrationOnly && memberDirectoryAvailable
+            ? <Link className={styles.iconButton} href={pathname === "/my/members" ? "/my" : "/my/members"}
+                aria-label={pathname === "/my/members" ? "Continue registration" : "Browse members"}
+                title={pathname === "/my/members" ? "Continue registration" : "Browse members"}>
+                <MemberIcon name={pathname === "/my/members" ? "person" : "search"} />
+              </Link>
+            : <Link className={styles.quietLink} href={focused ? "/my/foundations" : "mailto:connect@theruinedproject.com"}>{focused ? "Back to Foundations" : "Support"}</Link>}
           {hasNavigation ? <Link className={styles.iconButton} aria-label="Updates" title="Updates" href="/my/updates"><MemberIcon name="bell" /></Link> : null}
           {registrationOnly ? viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post"><button className={styles.quietLink} type="submit">Sign out</button></form> : null : <MemberNavigationFab {...menuProps} trigger="settings" />}
         </div>
