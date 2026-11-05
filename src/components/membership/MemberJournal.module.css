@@ -186,3 +186,12 @@
   .feedBody { font-size:14px; }
   .destinationChoices>button { padding:18px; }
 }
+
+.draftNav { display:flex; gap:8px; margin:12px 0 20px; }
+.draftNav button { min-height:44px; padding:10px 18px; border:1px solid var(--member-rule); color:var(--member-muted); font-size:13px; }
+.draftNav button[aria-pressed="true"] { background:var(--member-ink); color:var(--member-paper); border-color:var(--member-ink); }
+.draftNav button:focus-visible { outline:2px solid var(--member-red); outline-offset:3px; }
+.draftsHint { margin:-4px 0 24px; color:var(--member-muted); font-size:13px; line-height:1.6; }
+.draftCard { border-top:3px solid var(--member-yellow, #ffcf25); }
+.draftLabel { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--member-muted); }
+.draftDelete { display:block; min-height:44px; margin:0 20px 8px; font-size:11px; color:var(--member-muted); text-decoration:underline; text-underline-offset:4px; }

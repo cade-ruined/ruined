@@ -16,6 +16,8 @@ export type JournalDraft = {
   keptMedia: JournalMedia[];
   editingId: string | null;
   editingVersion: string | null;
+  persistedDraft?: boolean;
+  saveIntent?: "draft" | "entry";
   attempted: boolean;
   draftId: string;
   uploadIds: Array<[File, string]>;
@@ -30,7 +32,7 @@ export function copyJournalDraft<T extends JournalDraft>(draft: T): T {
   return { ...draft, files: [...draft.files], keptMedia: draft.keptMedia.map(media => ({ ...media })), uploadIds: draft.uploadIds.map(([file, id]): [File, string] => [file, id]) };
 }
 
-/** A single private draft lives only for this verified member-layout instance. */
+/** Recovery checkpoint for unsaved work; saved drafts live in the member's account. */
 export function createJournalDraftStore(ownerId?: string) {
   let stored: StoredDraft | null = null;
   return {
