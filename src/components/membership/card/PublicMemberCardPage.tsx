@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { publicMemberCardIdentity, type PublicMemberCard } from "@/lib/membership/public-card-model";
+import { publicWebsiteHref } from "@/lib/site";
 import MemberCard from "./MemberCard";
 import AmbientParticles from "./AmbientParticles";
 import type { ArchiveShadow } from "./archive-lighting";
@@ -45,7 +46,7 @@ export default function PublicMemberCardPage({ card, preview = false, variant = 
     </div>
     <svg ref={tableShadow} className={styles.tableShadow} preserveAspectRatio="none" aria-hidden="true"><polygon ref={shadowShape} fill="#050403" /></svg>
     <AmbientParticles className={styles.particles} archive />
-    <header className={styles.header}><Link href="/" aria-label="Ruined home"><img src="/ruined-wordmark.svg" width={120} height={36} alt="Ruined" /></Link><span>{title ?? (preview ? "MEMBERS’ ARCHIVE / PREVIEW" : "THE MEMBERS’ ARCHIVE")}</span><div className={styles.headerActions}>{headerActions !== undefined ? headerActions : preview ? <Link href="/my/card">My Card ↗</Link> : <button type="button" onClick={share}>Share card ↗</button>}</div></header>
+    <header className={styles.header}><Link href={publicWebsiteHref("/")} aria-label="Ruined home"><img src="/ruined-wordmark.svg" width={120} height={36} alt="Ruined" /></Link><span>{title ?? (preview ? "MEMBERS’ ARCHIVE / PREVIEW" : "THE MEMBERS’ ARCHIVE")}</span><div className={styles.headerActions}>{headerActions !== undefined ? headerActions : preview ? <Link href="/my/card">My Card ↗</Link> : <button type="button" onClick={share}>Share card ↗</button>}</div></header>
     <div className={styles.content}><div className={styles.caption}><h1>{variant === "invitation" ? `An invitation from ${identity}` : `${identity} — Ruined member card`}</h1></div><div className={styles.card}><MemberCard card={card} variant={variant} invitationExpiresAt={invitationExpiresAt} invitationRecipientName={invitationRecipientName} invitationSource={invitationSource} archive onArchiveShadow={updateShadow} /></div></div>
     <p className={styles.status} role="status">{status}</p>
     {children ? <div className={styles.belowCard}>{children}</div> : null}

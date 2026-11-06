@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { memberTier } from "@/lib/membership/member-number";
 import { fetchMemberRead } from "@/lib/membership/member-read-client";
+import { publicWebsiteHref } from "@/lib/site";
 import MemberBadges from "./MemberBadges";
 import TimelineStoryContent from "./TimelineStoryContent";
 import type { MemberBadge } from "@/lib/membership/badge-model";
@@ -45,7 +46,7 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
   const Root = embedded ? "div" : "main";
   return <Root className={`${journeyStyles.journey} ${journeyStyles.focused}${embedded ? ` ${styles.embedded}` : ""}`} data-member-journey data-member-theme="paper" data-public-profile>
     <div className={`${journeyStyles.content} ${styles.content}`}>
-      {!embedded && <Link href="/" className={styles.back}>The Ruined Project</Link>}
+      {!embedded && <Link href={publicWebsiteHref("/")} className={styles.back}>The Ruined Project</Link>}
       {previewEntries !== undefined && <p className={styles.preview}>Preview · Example profile and posts</p>}
       <div className={profileStyles.profile}>
         {!unavailable && <header className={profileStyles.identity}>
@@ -88,7 +89,7 @@ export default function PublicJournal({ token, identity, badges = [], previewEnt
             </>}
           </div>
         </section>
-        {!embedded && <footer className={styles.footer}><Link href="/">The Ruined Project</Link></footer>}
+        {!embedded && <footer className={styles.footer}><Link href={publicWebsiteHref("/")}>The Ruined Project</Link></footer>}
       </div>
     </div>
   </Root>;

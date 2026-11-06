@@ -70,13 +70,13 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
 
   return <div className={`${styles.journey} ${timelineWorksheet ? styles.timelineWorksheet : ""} ${!hasNavigation ? styles.focused : ""}`} data-member-journey data-member-theme={theme} data-platform-surface="member" data-platform-member-home={pathname === "/my" ? "true" : undefined} data-platform-threshold={threshold ? "true" : undefined}>
     {hasNavigation ? <aside className={styles.sidebar}>
-      <Link href="/my" aria-label="My Ruined profile" className={styles.brand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
+      <Link href={publicWebsiteHref("/")} aria-label="Ruined home" className={styles.brand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
       <nav className={styles.desktopNavigation} aria-label="Member pages">{primaryLinks()}</nav>
       <div className={styles.sideBottom}><p>Your membership.<br />Your own way through.</p><Link href="/my/account">Account <MemberIcon name="arrow" /></Link><Link href={publicWebsiteHref("/")}>Back to Ruined <span aria-hidden="true">↗</span></Link></div>
     </aside> : null}
     <div className={styles.workspace}>
       <header className={styles.topbar}>
-        <Link href={threshold ? publicWebsiteHref("/") : "/my"} aria-label={threshold ? "Ruined home" : "My Ruined profile"} className={styles.mobileBrand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
+        <Link href={publicWebsiteHref("/")} aria-label="Ruined home" className={styles.mobileBrand}><Image src="/ruined-wordmark.svg" alt="Ruined" width={1000} height={300} priority className={styles.wordmark} /></Link>
         <div className={styles.breadcrumb}><span>My Ruined</span><span aria-hidden="true">/</span><strong>{pageLabel}</strong></div>
         <div className={styles.tools}>
           {registrationOnly && invitedCalendarAvailable ? <Link className={styles.quietLink} href={pathname === "/my/experiences" ? "/my/registered" : "/my/experiences"}>{pathname === "/my/experiences" ? "Registration" : "Calendar"}</Link> : null}
