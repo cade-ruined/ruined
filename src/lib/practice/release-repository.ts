@@ -7,17 +7,32 @@ import { AdminEmailError } from "@/lib/communications/admin-email-model";
 import { requireAdminEmailActor } from "@/lib/communications/admin-email-repository";
 import { getMemberEmailCadenceDeliveryConfiguration, assertCadencePayload } from "@/lib/communications/member-email-cadence-delivery";
 import { reviewCadenceProviderRecipients } from "@/lib/communications/member-email-cadence-provider";
+import { checkEmailGroupRecipientPermissionInTransaction } from "@/lib/communications/email-group-repository";
 import { readLifecycleMembers, type LifecycleMember } from "@/lib/communications/member-lifecycle-email-repository";
 import { isPracticeReleaseCourse, PRACTICE_RECAPS, PRACTICE_RECAP_VERSION, PRACTICE_TIME_RELEASE_AT, type PracticeReleaseCourse, type PracticeReleaseOverview, type PracticeReleaseReview } from "./release-model";
 import { renderPracticeRecap } from "./release-email";
 
 export async function readPracticeReleaseRecipients(tx: TransactionSql, memberId?: string, lock = false): Promise<LifecycleMember[]> {
   const members = await readLifecycleMembers(tx, memberId, lock);
-  const rows = await tx<Array<{ id: string }>>`select member.id from ruined_members member join member_lifecycle lifecycle on lifecycle.member_id=member.id
-    where member.deleted_at is null and lifecycle.program_state in ('onboarding','active')
-      and private.ruined_member_profile_released(member.id) and (${memberId ?? null}::uuid is null or member.id=${memberId ?? null}::uuid)`;
-  const participants = new Set(rows.map(row => row.id));
-  return members.map(member => participants.has(member.id) ? member : { ...member, eligible: false, reason: "Member is not currently participating with a released profile" });
+  const rows = await tx<Array<{ id: string; personId: string }>>`select member.id,member.person_id as "personId" from ruined_members member
+    where member.deleted_at is null and private.ruined_member_profile_released(member.id)
+      and (${memberId ?? null}::uuid is null or member.id=${memberId ?? null}::uuid)`;
+  const released = new Map(rows.map(row => [row.id, row]));
+  const recipients: LifecycleMember[] = [];
+  for (const member of members) {
+    const identity = released.get(member.id);
+    // A completed, funded registration can receive service emails while its
+    // administrative Foundations onboarding is still in progress. Use the same
+    // current permission evidence as membership-update campaigns, not the
+    // broader participation capabilities used by lifecycle automations.
+    const eligible = Boolean(identity) && await checkEmailGroupRecipientPermissionInTransaction(tx, member.email, "membership_updates", {
+      lock, expectedIdentity: { memberId: member.id, personId: identity!.personId },
+    });
+    recipients.push({ ...member, eligible, reason: eligible ? "" : identity
+      ? "Current registration or membership email permission does not qualify"
+      : "Member profile has not been released" });
+  }
+  return recipients;
 }
 export const practiceAudienceHash = (members: Array<Pick<LifecycleMember, "id" | "email" | "consentId" | "eligible">>) => createHash("sha256")
   .update(JSON.stringify(members.filter(m => m.eligible && m.consentId).map(m => [m.id, m.email, m.consentId]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))).digest("hex");

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import * as parse5 from 'parse5';
 import ts from 'typescript';
 import { practiceFixture, ids } from './helpers/practice-fixture.mjs';
 const read = file => readFile(new URL('../' + file, import.meta.url), 'utf8');
@@ -13,6 +14,10 @@ class AdminEmailError extends Error {constructor(status,message){super(message);
 class CadenceDeliveryError extends Error {constructor(code,terminal=false){super(code);this.code=code;this.terminal=terminal;}}
 const model=await load('src/lib/practice/release-model.ts');
 const email=await load('src/lib/practice/release-email.ts',{'./release-model':model});
+const allNodes=node=>[node,...(node.childNodes??[]).flatMap(allNodes)];
+const attr=(node,name)=>node.attrs?.find(attribute=>attribute.name===name)?.value;
+const textContent=node=>node.nodeName==='#text'?node.value:(node.childNodes??[]).map(textContent).join('');
+const inBlendLayer=node=>Boolean(node&&(attr(node,'class')?.split(/\s+/).some(value=>value==='gmail-blend-screen'||value==='gmail-blend-difference')||inBlendLayer(node.parentNode)));
 async function fixture(t) {
  const f=await practiceFixture(t);await f.db.exec(await read('db/migrations/20261104190000_member_practice_release_emails.sql'));
  await f.db.exec("create table if not exists operator_audit_events(actor_auth_user_id uuid,action text,subject_type text,subject_id text,metadata jsonb)");
@@ -28,26 +33,73 @@ async function fixture(t) {
  const lifecycle={readLifecycleMembers:async(_tx,memberId,lock)=>{if(lock){state.reads++;if(state.withdrawAfterPrepare&&state.reads>=2)state.permission=false;}return members.filter(m=>!memberId||m.id===memberId).map(m=>({...m,eligible:m.eligible&&state.permission}));}};
  const delivery={getMemberEmailCadenceDeliveryConfiguration:()=>({enabled:state.ready,ready:state.ready,activatedAt:'2020-01-01T00:00:00Z'}),assertCadencePayload:(p,to)=>{assert.equal(p.to,to);assert.ok(p.from);},sendCadencePayload:async(p,id)=>{sends.push({payload:structuredClone(p),id});if(state.failSend){state.failSend=false;throw new CadenceDeliveryError('provider_timeout');}return 'provider-123';}};
  const provider={reviewCadenceProviderRecipients:async values=>values.map(v=>({...v,eligible:v.eligible&&state.providerAllowed})),assertCadenceRecipientDeliverable:async address=>{providerChecks.push(address);if(!state.providerAllowed)throw new CadenceDeliveryError('recipient_suppressed',true);}};
- const repository=await load('src/lib/practice/release-repository.ts',{'server-only':{},'node:crypto':crypto,'@/lib/database/server':{getApplicationDatabase:()=>f.sql},'@/lib/foundations/availability':{isFoundationsLaunched:()=>state.launched},'@/lib/communications/admin-email-model':{AdminEmailError},'@/lib/communications/admin-email-repository':{requireAdminEmailActor:requireActor},'@/lib/communications/member-email-cadence-delivery':delivery,'@/lib/communications/member-email-cadence-provider':provider,'@/lib/communications/member-lifecycle-email-repository':lifecycle,'./release-model':model,'./release-email':email});
+ const repository=await load('src/lib/practice/release-repository.ts',{'server-only':{},'node:crypto':crypto,'@/lib/database/server':{getApplicationDatabase:()=>f.sql},'@/lib/foundations/availability':{isFoundationsLaunched:()=>state.launched},'@/lib/communications/admin-email-model':{AdminEmailError},'@/lib/communications/admin-email-repository':{requireAdminEmailActor:requireActor},'@/lib/communications/member-email-cadence-delivery':delivery,'@/lib/communications/member-email-cadence-provider':provider,'@/lib/communications/member-lifecycle-email-repository':lifecycle,'@/lib/communications/email-group-repository':{checkEmailGroupRecipientPermissionInTransaction:async(_tx,address)=>members.some(m=>m.email===address&&m.eligible)&&state.permission},'./release-model':model,'./release-email':email});
  const worker=await load('src/lib/practice/release-worker.ts',{'server-only':{},'node:crypto':crypto,'@/lib/database/server':{getApplicationDatabase:()=>f.sql},'@/lib/foundations/availability':{isFoundationsLaunched:()=>state.launched},'@/lib/communications/admin-email-repository':{requireAdminEmailActor:requireActor},'@/lib/communications/member-email-cadence-delivery':delivery,'@/lib/communications/member-email-cadence-provider':provider,'@/lib/communications/member-email-cadence-repository':{CadenceDeliveryError},'./release-email':email,'./release-repository':repository,'./release-model':model});
  const release=async course=>{const review=await repository.reviewPracticeRelease(ids.auth,course);await repository.releasePracticeAssignment(ids.auth,review.token);return review;};
  const rows=async()=> (await f.db.query('select * from private.member_practice_release_deliveries order by id')).rows;
  return {...f,repository,worker,state,sends,providerChecks,release,rows};
 }
 
-test('recap copy is escaped, points to The Work, and uses only the course badge image',()=>{
+test('recap preserves approved copy and delivery fields while using official brand and course artwork',()=>{
  for(const course of ['f1','f4','time']){
   const p=email.renderPracticeRecap(course,'<private name>','member@example.test','Ruined <hello@example.test>');
-  assert.match(p.html,/&lt;private name&gt;/);assert.doesNotMatch(p.html,/<private name>/);assert.match(p.text,new RegExp('/my/practice\\?course='+course));
-  const images=[...p.html.matchAll(/<img\b[^>]*src="([^"]+)"/g)].map(match=>match[1]);
-  assert.deepEqual(images,course==='time'?[]:[`https://members.theruinedproject.com/membership/badges/foundations-${course}-v2.png`]);
+  const copy=model.PRACTICE_RECAPS[course],link=`https://members.theruinedproject.com/my/practice?course=${course}`;
+  const preferences='https://members.theruinedproject.com/my/account';
+  assert.equal(p.subject,copy.subject);assert.equal(p.to,'member@example.test');assert.equal(p.from,'Ruined <hello@example.test>');assert.deepEqual(p.replyTo,['connect@theruinedproject.com']);
+  assert.match(p.html,/&lt;private name&gt;/);assert.doesNotMatch(p.html,/<private name>/);
+  assert.equal(p.text,['<private name>,',copy.heading,...copy.paragraphs,copy.assignment,...copy.steps.map((step,index)=>`${index+1}. ${step}`),copy.closing,`Open The Work: ${link}`,'RUINED · After the fear.',`Membership email preferences: ${preferences}`].join('\n\n'));
+  const nodes=allNodes(parse5.parse(p.html));
+  assert.equal(textContent(nodes.find(node=>node.tagName==='h1')),copy.heading);
+  const paragraphs=nodes.filter(node=>node.tagName==='p').map(textContent);
+  for(const value of [copy.title.toUpperCase(),'<private name>,',...copy.paragraphs,copy.assignment,copy.closing])assert.ok(paragraphs.includes(value),`Retains approved copy: ${value}`);
+  assert.deepEqual(nodes.filter(node=>node.tagName==='li').map(textContent),copy.steps);
+  assert.deepEqual(nodes.filter(node=>node.tagName==='a').map(node=>[textContent(node),attr(node,'href')]),[['Open The Work →',link],['Membership email preferences',preferences]]);
+  const images=nodes.filter(node=>node.tagName==='img');
+  assert.deepEqual(images.map(node=>attr(node,'src')),[
+   'https://members.theruinedproject.com/ruined-wordmark-email-bone.png',
+   ...(course==='time'?[]:[`https://members.theruinedproject.com/membership/badges/foundations-${course}-v2.png`]),
+   'https://members.theruinedproject.com/membership/email/after-the-fear-cadehandy2.png',
+  ]);
+  assert.equal(attr(images[0],'alt'),'RU/NED');assert.equal(attr(images.at(-1),'alt'),'After the fear.');
   if(course!=='time'){
-   const image=p.html.match(/<img\b[^>]*>/)[0];
-   assert.match(image,/width="112"/);assert.match(image,/height:auto/);assert.doesNotMatch(image,/\sheight="/);
+   const badge=images[1];
+   assert.equal(attr(badge,'width'),'112');assert.match(attr(badge,'style'),/height:auto/);assert.equal(attr(badge,'height'),undefined);
   }
  }
  assert.equal(model.isPracticeReleaseCourse('f2'),false);assert.equal(model.isPracticeReleaseCourse('f3'),false);
  assert.equal(model.practiceDeliveryMustStop(6,null),true);assert.equal(model.practiceDeliveryMustStop(2,new Date(Date.now()-24*60*60_000)),true);
+});
+
+test('ink theme preserves readable text, typography fallbacks, and unaltered artwork in dark-mode protection',()=>{
+ for(const course of ['f1','f4','time']){
+  const {html}=email.renderPracticeRecap(course,'Member','member@example.test','Ruined <hello@example.test>');
+  const nodes=allNodes(parse5.parse(html)),body=nodes.find(node=>node.tagName==='body');
+  for(const [name,content] of [['color-scheme','light only'],['supported-color-schemes','light']]){
+   const metas=nodes.filter(node=>node.tagName==='meta'&&attr(node,'name')===name);
+   assert.equal(metas.length,1);assert.equal(attr(metas[0],'content'),content);assert.equal(metas[0].parentNode.tagName,'head');
+  }
+  const frame=nodes.find(node=>node.tagName==='table'&&attr(node,'background'));
+  assert.equal(attr(frame,'background'),'https://members.theruinedproject.com/membership/design/printers-ink.jpg');
+  assert.equal(attr(frame,'bgcolor'),'#10100f');assert.match(attr(frame,'style'),/color:#e9e4d9/);
+  assert.match(attr(body,'style'),/background:#080807/);
+  assert.match(attr(body,'style'),/font-family:'InterRuined',Inter,'Helvetica Neue',Helvetica,Arial,sans-serif/);
+  for(const heading of nodes.filter(node=>['h1','h2'].includes(node.tagName)))assert.match(attr(heading,'style'),/font-family:'IvyOraRuined',Georgia,'Times New Roman',serif/);
+  assert.match(html,/IvyOraText-Medium\.ttf/);assert.match(html,/Inter-Variable-Latin\.woff2/);assert.match(html,/mso-font-alt:Georgia/);assert.match(html,/mso-font-alt:Arial/);
+  assert.match(html,/u \+ \.ruined-email \.gmail-blend-screen\{background:#000;mix-blend-mode:screen\}/);
+  assert.match(html,/u \+ \.ruined-email \.gmail-blend-difference\{background:#000;mix-blend-mode:difference\}/);
+  const layers=nodes.filter(node=>attr(node,'class')?.startsWith('gmail-blend-'));
+  assert.ok(layers.length>0);
+  for(const layer of layers){
+   assert.doesNotMatch(attr(layer,'style')??'',/background:/,'Blend backgrounds must apply only in Gmail');
+   assert.equal(allNodes(layer).filter(node=>node.tagName==='img').length,0,'Artwork must remain outside blend layers');
+  }
+  const action=nodes.find(node=>node.tagName==='a'&&textContent(node)==='Open The Work →');
+  assert.equal(inBlendLayer(action),false,'Yellow action and its dark text must not be recolored by bone-text protection');
+  assert.equal(attr(action.parentNode,'bgcolor'),'#ffca2c');assert.match(attr(action,'style'),/color:#10100f/);
+  for(const node of allNodes(body).filter(node=>node.nodeName==='#text'&&node.value.trim())){
+   assert.ok(inBlendLayer(node)||node.parentNode===action,`Live text remains readable: ${node.value.trim()}`);
+  }
+ }
 });
 
 test('installing release automation never announces F1/F4 or sends TIME early',async t=>{

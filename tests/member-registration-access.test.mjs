@@ -99,7 +99,8 @@ test("registration preserves prior access, opens eligible complimentary profiles
   const rolloverMigration = "db/migrations/20261104190000_paid_foundations_cohort_rollover.sql";
   const complimentaryCohortMigration = "db/migrations/20261104190000_complimentary_foundations_cohorts.sql";
   const complimentaryProfileMigration = "db/migrations/20261104202219_automatic_complimentary_profile_release.sql";
-  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,profilePaymentMigration,rolloverMigration,complimentaryCohortMigration,complimentaryProfileMigration].includes(migration[1])) await db.exec(read(migration[1]));
+  const activeCohortExceptionMigration = "db/migrations/20261105235000_active_complimentary_foundations_exception.sql";
+  for (const migration of migrations) if (![legalMigration, pricingMigration, paymentMigration, capacityMigration, quoteMigration, nativeConsentMigration, evidenceMigration, legacyCheckoutMigration, operatorCheckoutMigration, operatorSavedPaymentMigration,profilePaymentMigration,rolloverMigration,complimentaryCohortMigration,complimentaryProfileMigration,activeCohortExceptionMigration].includes(migration[1])) await db.exec(read(migration[1]));
   const sql = sqlFor(db), load = sourceLoader({ "@/lib/database/server": { getApplicationDatabase: () => sql } });
   const registration = load("src/lib/membership/registration-repository.ts");
   const admission = load("src/lib/membership/public-signup-admission.ts");
@@ -174,6 +175,7 @@ test("registration preserves prior access, opens eligible complimentary profiles
   await db.exec(read(rolloverMigration));
   await db.exec(read(complimentaryCohortMigration));
   await db.exec(read(complimentaryProfileMigration));
+  await db.exec(read(activeCohortExceptionMigration));
   paymentSchemaReady = true;
   environment.MEMBERSHIP_REGISTRATION_ONLY_ENABLED="false";
   const existing = await member("existing@example.test");

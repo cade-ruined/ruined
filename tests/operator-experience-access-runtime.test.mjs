@@ -361,7 +361,7 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
       await db.query("update circle_staff_assignments set ended_at=now() where auth_user_id=$1", [ids.operator]);
       await deny(() => attendance(registrationId, "credited"));
     });
-    await t.test("late complimentary group placement requires an audited administrator exception and replaces only future automatic invitations",async()=>{
+    await t.test("late complimentary group placement requires an audited administrator exception and replaces only future automatic invitations",async(t)=>{
       await reset("ops_admin");
       await db.exec(`create role service_role;
         alter table member_registration_access add column registered_at timestamptz,add column completion_basis text;
@@ -372,23 +372,42 @@ test("operator roster authorization executes against isolated PostgreSQL, not so
         create function private.ruined_member_registration_ready(uuid) returns boolean language sql as 'select registered_at is not null from public.member_registration_access where member_id=$1';`);
       await db.exec(await readFile(new URL("../db/migrations/20261012200000_foundations_schedule_v3.sql",import.meta.url),"utf8"));
       await db.exec(await readFile(new URL("../db/migrations/20261104190000_complimentary_foundations_cohorts.sql",import.meta.url),"utf8"));
+      await db.exec(await readFile(new URL("../db/migrations/20261105235000_active_complimentary_foundations_exception.sql",import.meta.url),"utf8"));
       await db.query("insert into member_complimentary_grants(member_id) values($1)",[ids.member]);
       await db.query("insert into member_registration_access(member_id,registered_at,completion_basis) values($1,'2099-11-01T00:00:00Z','complimentary')",[ids.member]);
       for(const [eventId,month]of [[ids.event,"2099-10"],[ids.otherEvent,"2099-11"]]) {
         await db.query("update experiences set kind='member_event',visibility='invite_only',circle_id=null,registration_mode='internal',starts_at=(private.ruined_complimentary_foundations_schedule(now(),$2)->>'serviceStartsAt')::timestamptz,ends_at=(private.ruined_complimentary_foundations_schedule(now(),$2)->>'serviceStartsAt')::timestamptz+interval '90 minutes' where id=$1",[eventId,month]);
         await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01','members',$2)",[eventId,month]);
       }
+      // Freeze time just after F1. The in-memory PostgreSQL clock follows
+      // Date.now too, so both application and database late-entry guards run.
+      const remaining=randomUUID();
+      await db.query(`insert into experiences (id,slug,kind,title,starts_at,ends_at,visibility,status,published_at,registration_mode)
+        select $1,'remaining-f2','member_event','Remaining F2',
+          (schedule->'callStartsAt'->>1)::timestamptz,(schedule->'callStartsAt'->>1)::timestamptz+interval '90 minutes',
+          'invite_only','published',now(),'internal'
+        from (select private.ruined_complimentary_foundations_schedule(now(),'2099-10') as schedule) target`,[remaining]);
+      await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_02','members','2099-10')",[remaining]);
+      const firstCall=(await db.query("select starts_at from experiences where id=$1",[ids.event])).rows[0].starts_at;
+      t.mock.method(Date,"now",()=>new Date(firstCall).getTime()+60*60_000);
       const old=await registerFixture(ids.member,"registered",ids.otherEvent);
       await db.query("update experience_registrations set metadata='{"+'"source":"complimentary_foundations_cohort"'+"}' where id=$1",[old]);
       await assert.rejects(roster({memberId:ids.member}),error=>error.code==="conflict" && /exception/.test(error.message));
       await assert.rejects(roster({memberId:ids.member,foundationsCutoffOverride:true,reason:"short"}),error=>error.code==="invalid_request");
       assert.equal((await db.query("select private.ruined_assign_complimentary_foundations($1)->>'cohortMonth' as month",[ids.member])).rows[0].month,"2099-11");
+      await db.query("update experiences set cancelled_at=now() where id=$1",[remaining]);
+      await assert.rejects(roster({memberId:ids.member,foundationsCutoffOverride:true,reason:"Approved late placement into this group"}),error=>error.code==="conflict" && /finished/.test(error.message));
+      assert.equal((await db.query("select status from experience_registrations where id=$1",[old])).rows[0].status,"registered","failed placement cannot cancel the original group");
+      assert.equal((await db.query("select count(*)::int n from private.member_complimentary_foundations_overrides")).rows[0].n,0);
+      await db.query("update experiences set cancelled_at=null where id=$1",[remaining]);
       const result=await roster({memberId:ids.member,foundationsCutoffOverride:true,reason:"Approved late placement into this group"});
       assert.equal(result.status,"registered");
       assert.equal((await db.query("select private.ruined_assign_complimentary_foundations($1)->>'cohortMonth' as month",[ids.member])).rows[0].month,"2099-10");
       assert.equal((await db.query("select status from experience_registrations where id=$1",[old])).rows[0].status,"cancelled");
       assert.equal((await db.query("select count(*)::int n from operator_audit_events where action='experience.foundations_cutoff_override'")).rows[0].n,1);
       assert.equal(calendarInvalidations,2,"old automatic group and replacement call both request calendar reconciliation");
+      assert.equal((await db.query("select metadata->>'lateEntry' as late from operator_audit_events where action='experience.foundations_cutoff_override'")).rows[0].late,"true");
+      assert.equal((await db.query("select count(*)::int n from experience_attendance_events")).rows[0].n,0,"a late registration never asserts attendance");
     });
   } finally { await db.close(); await driver.end(); }
 });

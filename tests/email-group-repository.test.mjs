@@ -305,3 +305,53 @@ test('group model rejects unsupported rules, duplicate destinations and oversize
   const model=loader()('src/lib/communications/email-group-model.ts');
   for(const input of [manual('Duplicate',[{email:'a@example.test'},{email:'A@example.test'}]),manual('Too large',Array.from({length:1001},(_,i)=>({email:`a${i}@example.test`}))),rule('SQL',{kind:'custom_sql',sql:'select *'}),rule('Invalid cohort',{kind:'foundations_cohort',cohortMonth:'2026-13'})]) assert.throws(()=>model.normalizeEmailGroupInput(input),status(400));
 });
+
+test('practice recaps use canonical service-email permission for released registrations still marked as prospects',async t=>{
+  const f=await fixture(t),{db,sql,paid}=f;
+  await f.consent(paid);
+  await f.contact(paid.email);
+  await db.query('update member_registration_access set profile_activated_at=now() where member_id=$1',[paid.memberId]);
+  await db.query("update member_lifecycle set administrative_onboarding_state='in_progress',program_state='prospect',standing_state='pre_active' where member_id=$1",[paid.memberId]);
+  await db.exec(`create function private.ruined_member_profile_released(target uuid) returns boolean language sql as $$
+    select exists(select 1 from member_registration_access where member_id=target and profile_activated_at is not null)
+  $$;`);
+  const projection={id:paid.memberId,name:paid.name,email:paid.email,consentId:'1',eligible:false,reason:'Membership is not currently active'};
+  const load=loader({}, {
+    '@/lib/database/server':{getApplicationDatabase:()=>sql},
+    '@/lib/foundations/availability':{},
+    '@/lib/communications/admin-email-repository':{},
+    '@/lib/communications/member-email-cadence-delivery':{},
+    '@/lib/communications/member-email-cadence-provider':{},
+    '@/lib/communications/member-lifecycle-email-repository':{readLifecycleMembers:async()=>[{...projection}]},
+    '@/lib/communications/email-group-repository':f.repo,
+    './release-email':{},
+  });
+  const recap=load('src/lib/practice/release-repository.ts');
+  const eligible=async(lock=false)=>(await sql.begin(tx=>recap.readPracticeReleaseRecipients(tx,paid.memberId,lock)))[0].eligible;
+  assert.equal(await eligible(),true,'Completed funded registration must not wait for administrative Foundations status');
+  assert.equal(await eligible(true),true,'Dispatch checks the same canonical permission under identity locks');
+  for(const [description,change,restore] of [
+    ['unreleased profile','update member_registration_access set profile_activated_at=null','update member_registration_access set profile_activated_at=now()'],
+    ['incomplete registration','update member_registration_access set registered_at=null','update member_registration_access set registered_at=now()'],
+    ['unfunded reservation',"update stripe_invoices set stripe_status='open'","update stripe_invoices set stripe_status='paid'"],
+    ['refunded reservation',"update stripe_membership_prepaid_proofs set refund_state='refunded',amount_refunded=34900","update stripe_membership_prepaid_proofs set refund_state='none',amount_refunded=0"],
+    ['suppressed email',"update communication_contacts set delivery_state='suppressed'","update communication_contacts set delivery_state='active'"],
+    ['unverified identity',"update person_email_addresses set verification_state='unverified'","update person_email_addresses set verification_state='verified'"],
+    ['suspended account',"update member_lifecycle set account_state='suspended'","update member_lifecycle set account_state='active'"],
+    ['closed account',"update member_lifecycle set account_state='closed'","update member_lifecycle set account_state='active'"],
+    ['revoked member role',"update platform_role_grants set revoked_at=now() where role_slug='member'","update platform_role_grants set revoked_at=null where role_slug='member'"],
+    ['retired address','update person_email_addresses set retired_at=now()','update person_email_addresses set retired_at=null'],
+  ])await t.test(description,async()=>{
+    await db.exec(change);
+    try{assert.equal(await eligible(),false);assert.equal(await eligible(true),false);}
+    finally{await db.exec(restore);}
+    assert.equal(await eligible(),true);
+  });
+  await f.consent(paid,{decision:'withdrawn',evidence:{requested:false}});
+  assert.equal(await eligible(true),false,'Latest email withdrawal still wins over completed registration');
+  await f.consent(paid);
+  assert.equal(await eligible(),true);
+  projection.email='different-person@example.test';
+  assert.equal(await eligible(true),false,'A stale lifecycle email cannot be used for a different identity');
+  assert.equal((await db.query('select count(*)::int as count from operator_audit_events')).rows[0].count,0,'Review never changes member state or sends email');
+});

@@ -11,7 +11,7 @@ async function fixture(t) {
     create table platform_users(auth_user_id uuid primary key,status text);
     create table platform_role_grants(auth_user_id uuid,role_slug text,revoked_at timestamptz);
     create table member_registration_access(member_id uuid primary key,registered_at timestamptz,completion_basis text,ready boolean default true,complimentary boolean default true);
-    create table experiences(id uuid primary key,status text,cancelled_at timestamptz,visibility text,registration_mode text);
+    create table experiences(id uuid primary key,status text,cancelled_at timestamptz,visibility text,registration_mode text,starts_at timestamptz);
     create table experience_registrations(member_id uuid,experience_id uuid,status text,source text);
     create table private.member_email_cadence_event_bindings(experience_id uuid,kind text,track text,cohort_month text);
     create function private.ruined_member_registration_ready(uuid) returns boolean language sql as 'select ready from public.member_registration_access where member_id=$1';
@@ -19,6 +19,7 @@ async function fixture(t) {
     create function private.ruined_member_has_operator_funding(uuid) returns boolean language sql as 'select false';`);
   await db.exec(read("db/migrations/20261012200000_foundations_schedule_v3.sql"));
   await db.exec(read("db/migrations/20261104190000_complimentary_foundations_cohorts.sql"));
+  await db.exec(read("db/migrations/20261105235000_active_complimentary_foundations_exception.sql"));
   const resolve=async memberId=>(await db.query("select private.ruined_assign_complimentary_foundations($1) as schedule",[memberId])).rows[0].schedule;
   async function member(at,basis="complimentary",ready=true,complimentary=true) {
     const id=randomUUID();await db.query("insert into member_registration_access values($1,$2,$3,$4,$5)",[id,at,basis,ready,complimentary]);return id;
@@ -58,7 +59,7 @@ test("legacy explicit member invitations are preserved; founder practice calls d
   const {db,resolve,member}=await fixture(t);
   const existing=await member(null),practice=await member(null),ambiguous=await member(null);
   async function invite(memberId,month,track="members") {
-    const event=randomUUID();await db.query("insert into experiences values($1,'published',null,'invite_only','internal')",[event]);
+    const event=randomUUID();await db.query("insert into experiences(id,status,cancelled_at,visibility,registration_mode) values($1,'published',null,'invite_only','internal')",[event]);
     await db.query("insert into experience_registrations values($1,$2,'registered','ops')",[memberId,event]);
     await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_01',$2,$3)",[event,track,month]);
   }
@@ -84,4 +85,34 @@ test("administrator group exceptions are explicit, append-only and preserve orig
   await db.query("select private.ruined_override_complimentary_foundations($1,'2099-11',$2,'Approved by the member and team')",[person,actor]);
   assert.equal((await db.query("select count(*)::int n from private.member_complimentary_foundations_overrides")).rows[0].n,1);
   await assert.rejects(db.exec("delete from private.member_complimentary_foundations_overrides"),/append-only/);
+});
+
+test("started group exceptions require a real remaining published call and close at the last call",async t=>{
+  const {db}=await fixture(t);
+  const schedule=schedules.foundationsBillingScheduleForMonth("2099-11","monthly");
+  const open=async at=>(await db.query("select private.ruined_complimentary_foundations_group_open($1::jsonb,$2::timestamptz) as open",[JSON.stringify(schedule),at])).rows[0].open;
+  assert.equal(await open(new Date(Date.parse(schedule.callStartsAt[0])-1).toISOString()),true,"upcoming groups retain the existing exception path");
+  assert.equal(await open(schedule.callStartsAt[0]),false,"a started group without remaining published calls is closed");
+  const event=randomUUID();
+  await db.query("insert into experiences values($1,'published',null,'invite_only','internal',$2)",[event,schedule.callStartsAt[1]]);
+  await db.query("insert into private.member_email_cadence_event_bindings values($1,'foundations_02','members','2099-11')",[event]);
+  assert.equal(await open(schedule.callStartsAt[0]),true);
+  assert.equal(await open(schedule.callStartsAt[1]),false,"a call that has started is not a remaining opportunity");
+  for(const mutation of [
+    "update experiences set cancelled_at=now()",
+    "update experiences set status='draft'",
+    "update experiences set visibility='public'",
+    "update experiences set registration_mode='external'",
+    "update experiences set starts_at=starts_at+interval '1 day'",
+    "update private.member_email_cadence_event_bindings set track='founder_test'",
+    "update private.member_email_cadence_event_bindings set cohort_month='2099-12'",
+  ]) {
+    await db.exec("begin");await db.exec(mutation);
+    assert.equal(await open(schedule.callStartsAt[0]),false,mutation);
+    await db.exec("rollback");
+  }
+  await db.query("update experiences set starts_at=$1",[schedule.callStartsAt[3]]);
+  await db.exec("update private.member_email_cadence_event_bindings set kind='foundations_04'");
+  assert.equal(await open(new Date(Date.parse(schedule.callStartsAt[3])-1).toISOString()),true);
+  assert.equal(await open(schedule.callStartsAt[3]),false,"completed groups cannot accept a late placement");
 });
