@@ -98,7 +98,8 @@ async function fixture({ revealed = true } = {}) {
     await pg.query("insert into learning_resources(id,slug,title,content_type,status,current_version_id) values($1,$2,'Circle notes','article','published',$3)", [resource, slug, version]);
     await pg.query("insert into learning_resource_versions(id,learning_resource_id,version,body_text) values($1,$2,1,'Private Circle content')", [version, resource]);
     await pg.query("insert into circle_resources(circle_id,learning_resource_version_id) values($1,$2)", [circle, version]);
-    await pg.query("insert into learning_resource_targets(learning_resource_id,audience_type) values($1,'all_members')", [resource]);
+    // These resources are private to their explicit Circle assignment. An
+    // all_members target would intentionally publish them to every learner.
   }
   await pg.exec(`
     alter table ruined_members add column membership_activated_at timestamptz default '2020-01-01';
@@ -399,6 +400,28 @@ test("revealed members retain explicitly assigned Circle resources within existi
     assert.equal(await repository.getMemberLearningResource(ids.auth, "circle-notes"), null);
     identity.billing_state = "pending";
     assert.equal(await repository.getMemberLearningResource(ids.auth, "circle-notes"), null);
+  } finally { await pg.close(); }
+});
+
+test("onboarding members can read all-member Library resources without revealing private Circle resources", async () => {
+  const { pg, repository } = await fixture({ revealed: false });
+  const resourceId = uuid(90);
+  const versionId = uuid(91);
+  try {
+    await pg.query("insert into learning_resources(id,slug,title,content_type,status,current_version_id) values($1,'foundations-recording','Foundations recording','article','published',$2)", [resourceId, versionId]);
+    await pg.query("insert into learning_resource_versions(id,learning_resource_id,version,body_text) values($1,$2,1,'Shared Foundations content')", [versionId, resourceId]);
+    await pg.query("insert into learning_resource_targets(learning_resource_id,audience_type) values($1,'all_members')", [resourceId]);
+
+    const library = await repository.getMemberLearning(ids.auth);
+    assert.deepEqual(library.uncollected.map((resource) => resource.id), [resourceId]);
+    assert.equal((await repository.getMemberLearningResource(ids.auth, "foundations-recording")).bodyMarkdown, "Shared Foundations content");
+    assert.equal(await repository.getMemberLearningResource(ids.auth, "circle-notes"), null);
+    assert.equal(await repository.getMemberLearningResource(ids.auth, "other-notes"), null);
+    assert.equal((await repository.getMemberCircle(ids.auth)).revealStatus, "locked");
+
+    await pg.query("delete from learning_resource_targets where learning_resource_id=$1", [resourceId]);
+    assert.deepEqual((await repository.getMemberLearning(ids.auth)).uncollected, []);
+    assert.equal(await repository.getMemberLearningResource(ids.auth, "foundations-recording"), null);
   } finally { await pg.close(); }
 });
 

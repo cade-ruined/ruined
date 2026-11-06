@@ -387,7 +387,7 @@ export default function PlatformShell({
   const memberHome = member && pathname === "/my";
   const memberCircle = member && pathname.startsWith("/my/circle");
   const memberExperiences = member && pathname.startsWith("/my/experiences");
-  const memberLearning = member && pathname.startsWith("/my/learn");
+  const memberLearning = member && (pathname === "/my/library" || pathname.startsWith("/my/library/") || pathname === "/my/learn" || pathname.startsWith("/my/learn/"));
   const memberSupport = member && pathname.startsWith("/my/support");
   const memberSettings = member && (pathname === "/my/account" || pathname === "/my/profile");
   const foundations = member && isMemberFoundations(pathname);

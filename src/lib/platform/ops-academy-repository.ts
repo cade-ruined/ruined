@@ -331,12 +331,6 @@ function validateResourceInput(input: OpsAcademyResourceInput) {
     throw new OpsOperatingRepositoryError("invalid_request", "Choose a supported Academy format.");
   }
   const effectiveExternalUrl = externalUrl ?? (contentType === "video" ? videoUrl : null);
-  if (!bodyText && !effectiveExternalUrl) {
-    throw new OpsOperatingRepositoryError(
-      "invalid_request",
-      "Add lesson copy or a secure media/resource URL before saving.",
-    );
-  }
   return {
     audiences: input.audiences,
     bodyText,
@@ -355,6 +349,18 @@ function validateResourceInput(input: OpsAcademyResourceInput) {
     title,
     videoUrl,
   };
+}
+
+function requireResourceContent(
+  values: ReturnType<typeof validateResourceInput>,
+  hasStoredMedia = false,
+) {
+  if (!values.bodyText && !values.effectiveExternalUrl && !hasStoredMedia) {
+    throw new OpsOperatingRepositoryError(
+      "invalid_request",
+      "Add lesson copy or a secure media/resource URL before saving.",
+    );
+  }
 }
 
 function normalizedAudiences(values: AcademyAudienceInput[], requireOne = false) {
@@ -683,6 +689,7 @@ export async function saveOpsAcademyResource(
     await requireCollection(tx, values.collectionId);
 
     if (!input.resourceId) {
+      requireResourceContent(values);
       const resourceId = randomUUID();
       try {
         await tx`
@@ -733,13 +740,14 @@ export async function saveOpsAcademyResource(
     const resourceId = requireUuid(input.resourceId, "Academy resource");
     const revision = expectedRevision(input.expectedRevision);
     const rows = await tx<Array<{
+      content_type: string;
       published_at: Date | string | null;
       revision: number | string;
       slug: string;
       status: string;
       title: string;
     }>>`
-      select slug, title, status, published_at, revision
+      select content_type, slug, title, status, published_at, revision
       from learning_resources
       where id = ${resourceId}::uuid
       for update
@@ -755,21 +763,42 @@ export async function saveOpsAcademyResource(
     if (resource.published_at && values.slug !== resource.slug) {
       throw new OpsOperatingRepositoryError("conflict", "A published lesson keeps its original URL.");
     }
-    const versionRows = await tx<Array<{ next_version: number | string }>>`
-      select coalesce(max(version), 0) + 1 as next_version
+    const versionRows = await tx<Array<{
+      content_sha256: string | null;
+      metadata: unknown;
+      storage_bucket: string | null;
+      storage_path: string | null;
+      version: number | string;
+    }>>`
+      select version, storage_bucket, storage_path, content_sha256, metadata
       from learning_resource_versions
       where learning_resource_id = ${resourceId}::uuid
+      order by version desc
+      limit 1
     `;
-    const version = Number(versionRows[0]?.next_version ?? 1);
+    const latest = versionRows[0];
+    const latestContentType = versionMetadata(latest?.metadata)?.academyDraft.contentType ?? resource.content_type;
+    // Editing copy must not detach privately hosted media. A replacement URL or
+    // format change deliberately replaces the media attached to this draft.
+    const preserveStoredMedia = Boolean(
+      latest?.storage_bucket && latest.storage_path &&
+      latestContentType === values.contentType && !values.externalUrl && !values.videoUrl,
+    );
+    requireResourceContent(values, preserveStoredMedia);
+    const version = Number(latest?.version ?? 0) + 1;
     await tx`
       insert into learning_resource_versions (
-        learning_resource_id, version, body_text, external_url, metadata,
+        learning_resource_id, version, body_text, external_url, storage_bucket,
+        storage_path, content_sha256, metadata,
         created_by_auth_user_id
       ) values (
         ${resourceId}::uuid,
         ${version},
         ${values.bodyText},
         ${values.effectiveExternalUrl},
+        ${preserveStoredMedia ? latest.storage_bucket : null},
+        ${preserveStoredMedia ? latest.storage_path : null},
+        ${preserveStoredMedia ? latest.content_sha256 : null},
         ${tx.json(metadata as unknown as postgres.JSONValue)},
         ${actorAuthUserId}::uuid
       )
@@ -877,6 +906,7 @@ export async function changeOpsAcademyResourceState(
 
     const versionRows = await tx<Array<{
       body_text: string | null;
+      content_sha256: string | null;
       external_url: string | null;
       id: string;
       metadata: unknown;
@@ -885,7 +915,7 @@ export async function changeOpsAcademyResourceState(
       storage_path: string | null;
       version: number | string;
     }>>`
-      select id, version, body_text, external_url, storage_bucket, storage_path, metadata, published_at
+      select id, version, body_text, external_url, storage_bucket, storage_path, content_sha256, metadata, published_at
       from learning_resource_versions
       where learning_resource_id = ${resourceId}::uuid
       order by version desc
@@ -909,7 +939,7 @@ export async function changeOpsAcademyResourceState(
       const publishedRows = await tx<Array<{ id: string }>>`
         insert into learning_resource_versions (
           learning_resource_id, version, body_text, external_url, storage_bucket,
-          storage_path, metadata, created_by_auth_user_id, published_at
+          storage_path, content_sha256, metadata, created_by_auth_user_id, published_at
         ) values (
           ${resourceId}::uuid,
           ${publishedVersion},
@@ -917,6 +947,7 @@ export async function changeOpsAcademyResourceState(
           ${latest.external_url},
           ${latest.storage_bucket},
           ${latest.storage_path},
+          ${latest.content_sha256},
           ${tx.json(metadata as unknown as postgres.JSONValue)},
           ${actorAuthUserId}::uuid,
           statement_timestamp()

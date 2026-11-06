@@ -33,7 +33,7 @@ const expectedDestinations = {
   "/my/members": "Members",
   "/my/experiences": "Calendar",
   "/my/practice": "The Work",
-  "/my/learn": "Academy",
+  "/my/library": "Library",
   "/my/updates": "Updates",
   "/my/profile": "Edit profile",
   "/my/account": "Account",
@@ -151,6 +151,10 @@ test("Member route selection chooses the longest matching page and respects segm
     if (href !== "/my") assert.equal(currentMemberDestination(`${href}/example`), href);
   }
   assert.equal(currentMemberDestination("/my/timeline/new"), "/my/timeline");
+  for (const path of ["/my/library", "/my/library/foundations-01", "/my/learn", "/my/learn/foundations-01"]) {
+    assert.equal(currentMemberDestination(path), "/my/library");
+    assert.equal(currentMemberPrimaryDestination(path), "/my/library");
+  }
   assert.equal(currentMemberDestination("/my/foundations/experience"), "/my/practice");
   for (const path of ["/my/learning", "/my/circles", "/my/cards", "/my/card-other", "/my/profile-other", "/my/supporting", "/my/unknown", "/my-other", "/ops"]) {
     assert.equal(currentMemberDestination(path), undefined, path);
@@ -174,6 +178,9 @@ test("Member page search supports common task terms, whitespace, case, and multi
     ["saved entries", ["/my"]],
     ["  profile   photo ", ["/my/profile"]],
     ["events", ["/my/experiences"]],
+    ["recordings", ["/my/library"]],
+    ["replay", ["/my/library"]],
+    ["academy", ["/my/library"]],
     ["help", ["/my/support"]],
     ["unread", ["/my/updates"]],
     ["timeline reflections", ["/my/timeline"]],
@@ -276,13 +283,13 @@ test("settings never mounts member search and keeps appearance, account links an
   f.unmount();
 });
 
-test("Members is discoverable in the menu without adding a fifth primary mobile destination", () => {
+test("Members remains searchable while Library has a primary destination", () => {
   const f = fixture("/my/members");
   f.trigger().props.onClick(); f.draw();
   const current = nodes(f.menu()).filter(node => node.props?.["aria-current"] === "page");
   assert.deepEqual(current.map(node => node.props.href), ["/my/members"]);
   assert.equal(MEMBER_DESTINATIONS.find(row => row.href === "/my/members").group, "Your membership");
-  assert.deepEqual(navigation.MEMBER_PRIMARY_DESTINATIONS.map(row => row.href), ["/my", "/my/circle", "/my/practice", "/my/experiences"]);
+  assert.deepEqual(navigation.MEMBER_PRIMARY_DESTINATIONS.map(row => row.href), ["/my", "/my/circle", "/my/practice", "/my/library", "/my/experiences"]);
   assert.equal(currentMemberPrimaryDestination("/my/members"), undefined);
   f.unmount();
 });

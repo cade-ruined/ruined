@@ -66,6 +66,10 @@ test("every member page context handles denied before its unavailable fallback",
       assert.match(contents, /getSupportAccessUrl\(`/);
       assert.match(contents, /query\.set\("practice", "f1"\)/);
       assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\(accessHref\)/);
+    } else if (entry === "library/page.tsx") {
+      assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\("\/access\?returnTo=%2Fmy%2Flibrary"\)/);
+    } else if (entry === "library/[slug]/page.tsx") {
+      assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\(`\/access\?returnTo=\$\{encodeURIComponent\(`\/my\/library\/\$\{slug\}`\)\}`\)/);
     } else {
       assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\("\/my\/access"\)/);
     }

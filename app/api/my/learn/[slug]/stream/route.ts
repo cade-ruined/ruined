@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentPlatformViewer } from "@/lib/auth/session";
-import { getMemberLearningResource } from "@/lib/membership/repository";
+import {
+  getMemberLearningResource,
+  MembershipAccessDeniedError,
+} from "@/lib/membership/repository";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+
+const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0" };
+// Keep range requests valid for a full call, pauses, and later seeking.
+const PLAYBACK_URL_SECONDS = 4 * 60 * 60;
 
 export async function GET(
   _request: Request,
@@ -14,7 +21,7 @@ export async function GET(
   if (getPlatformConfiguration().mode !== "connected") {
     return NextResponse.json(
       { error: "Member videos are not connected." },
-      { status: 503 },
+      { status: 503, headers: PRIVATE_HEADERS },
     );
   }
 
@@ -22,12 +29,21 @@ export async function GET(
   if (!viewer) {
     return NextResponse.json(
       { error: "Passwordless member access is required." },
-      { status: 401 },
+      { status: 401, headers: PRIVATE_HEADERS },
     );
   }
 
   const { slug } = await context.params;
-  const resource = await getMemberLearningResource(viewer.authUserId, slug);
+  let resource;
+  try {
+    resource = await getMemberLearningResource(viewer.authUserId, slug);
+  } catch (error) {
+    if (!(error instanceof MembershipAccessDeniedError)) throw error;
+    return NextResponse.json(
+      { error: "That member video is not available." },
+      { status: 404, headers: PRIVATE_HEADERS },
+    );
+  }
   if (
     !resource ||
     resource.resourceType !== "video" ||
@@ -36,7 +52,7 @@ export async function GET(
   ) {
     return NextResponse.json(
       { error: "That member video is not available." },
-      { status: 404 },
+      { status: 404, headers: PRIVATE_HEADERS },
     );
   }
 
@@ -44,20 +60,20 @@ export async function GET(
   if (!supabase) {
     return NextResponse.json(
       { error: "Member video storage is unavailable." },
-      { status: 503 },
+      { status: 503, headers: PRIVATE_HEADERS },
     );
   }
 
   const { data, error } = await supabase.storage
     .from(resource.storageBucket)
-    .createSignedUrl(resource.storagePath, 15 * 60);
+    .createSignedUrl(resource.storagePath, PLAYBACK_URL_SECONDS);
 
-  if (error || !data.signedUrl) {
+  if (error || !data?.signedUrl) {
     return NextResponse.json(
       { error: "That member video could not be opened." },
-      { status: 502 },
+      { status: 502, headers: PRIVATE_HEADERS },
     );
   }
 
-  return NextResponse.redirect(data.signedUrl, 307);
+  return NextResponse.redirect(data.signedUrl, { status: 307, headers: PRIVATE_HEADERS });
 }

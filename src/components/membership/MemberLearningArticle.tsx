@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import MemberLibraryVideo from "@/components/membership/MemberLibraryVideo";
 import styles from "@/components/membership/MemberLearningArticle.module.css";
 import type {
   MemberLearningResourceDetail,
@@ -52,28 +53,14 @@ function ResourceCopy({ body }: { body: string | null }) {
   );
 }
 
-function AcademyPlayer({ resource }: { resource: AcademyResourceDetail }) {
-  const videoSrc = resource.videoUrl ?? (
-    resource.storageBucket && resource.storagePath
-      ? `/api/my/learn/${resource.slug}/stream`
-      : null
-  );
+function LibraryPlayer({ resource }: { resource: AcademyResourceDetail }) {
+  const videoSrc = resource.storageBucket && resource.storagePath
+    ? `/api/my/learn/${resource.slug}/stream`
+    : resource.videoUrl;
 
   if (videoSrc) {
     return (
-      <video
-        className="h-full w-full bg-black object-contain"
-        controls
-        playsInline
-        poster={resource.thumbnailUrl ?? undefined}
-        preload="metadata"
-      >
-        <source src={videoSrc} />
-        {resource.captionsUrl ? (
-          <track default kind="captions" label="English" src={resource.captionsUrl} srcLang="en" />
-        ) : null}
-        Your browser does not support embedded video. You can still open the lesson below.
-      </video>
+      <MemberLibraryVideo captionsUrl={resource.captionsUrl} poster={resource.thumbnailUrl} src={videoSrc} title={resource.title} />
     );
   }
 
@@ -92,7 +79,7 @@ function AcademyPlayer({ resource }: { resource: AcademyResourceDetail }) {
           <PlayMark />
         </span>
         <p className="font-[var(--font-body)] text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[var(--member-muted)]">
-          Hosted lesson
+          {resource.externalUrl ? "Recording" : "Recording unavailable"}
         </p>
         <p className="mt-2 font-[var(--font-display)] text-[clamp(1.8rem,4vw,3.4rem)] leading-[0.9] tracking-[-0.04em]">
           {resource.title}
@@ -104,9 +91,9 @@ function AcademyPlayer({ resource }: { resource: AcademyResourceDetail }) {
             rel="noopener noreferrer"
             target="_blank"
           >
-            Open lesson <span aria-hidden="true">↗</span>
+            Open recording <span aria-hidden="true">↗</span>
           </a>
-        ) : null}
+        ) : <p className="mt-4 text-sm leading-relaxed text-white/80">This recording is not ready to play yet. Please check back shortly.</p>}
       </div>
     </div>
   );
@@ -214,30 +201,34 @@ export default function MemberLearningArticle({
 }: MemberLearningArticleProps) {
   const isVideo = resource.resourceType === "video";
   const hasBody = Boolean(resource.bodyMarkdown?.trim());
+  const relatedResources = related.filter((item) => ![
+    `/my/library/${resource.slug}`,
+    `/my/learn/${resource.slug}`,
+  ].includes(item.href.split(/[?#]/)[0].replace(/\/$/, "")));
 
   return (
-    <main className="member-journey-page member-lesson-page member-profile-dossier mx-auto max-w-[88rem] pb-20 pt-1 sm:pb-24" data-member-academy-lesson>
+    <main className="member-journey-page member-lesson-page member-profile-dossier mx-auto max-w-[88rem] pb-20 pt-1 sm:pb-24" data-member-library-resource>
       <Link
-        className="inline-flex min-h-11 items-center gap-2 font-[var(--font-body)] text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[var(--member-muted)] transition-colors hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-        href="/my/learn"
+        className="inline-flex min-h-11 items-center gap-2 font-[var(--font-body)] text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[var(--member-muted)] transition-colors hover:text-[var(--member-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--member-ink)]"
+        href="/my/library"
       >
-        <span aria-hidden="true">←</span> Academy
+        <span aria-hidden="true">←</span> Library
       </Link>
 
       {isVideo ? (
         <>
           <section
-            aria-label={`${resource.title} lesson`}
-            className={`mt-3 grid gap-7 ${related.length ? "lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.34fr)]" : ""} lg:items-start`}
+            aria-label={`${resource.title} recording`}
+            className={`mt-3 grid gap-7 ${relatedResources.length ? "lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.34fr)]" : ""} lg:items-start`}
           >
             <div className="min-w-0">
               <div className={`${styles.mediaFrame} aspect-video overflow-hidden rounded-[0.45rem] bg-black shadow-[6px_6px_0_#2a2a2a] sm:shadow-[9px_9px_0_#2a2a2a]`}>
-                <AcademyPlayer resource={resource} />
+                <LibraryPlayer resource={resource} />
               </div>
 
               <header className="mt-7 max-w-[58rem] sm:mt-9">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-[var(--font-body)] text-[0.62rem] font-semibold uppercase tracking-[0.11em] text-[var(--member-muted)]">
-                  <span className="text-[var(--member-red)]">{resource.collectionName ?? "Academy"}</span>
+                  <span className="text-[var(--member-red)]">{resource.collectionName ?? "Library"}</span>
                   {resource.durationLabel ? <><span aria-hidden="true">/</span><span>{resource.durationLabel}</span></> : null}
                   {resource.presenter ? <><span aria-hidden="true">/</span><span>With {resource.presenter}</span></> : null}
                 </div>
@@ -252,10 +243,16 @@ export default function MemberLearningArticle({
                 <p className="mt-5 font-[var(--font-body)] text-[0.6rem] uppercase tracking-[0.1em] text-[var(--member-muted)]">
                   Added {formatDate(resource.publishedAt)}
                 </p>
+                {resource.slug === "foundations-01" ? (
+                  <div className={styles.workLink}>
+                    <div><span>Put it into practice</span><p>Return to the Foundations 01 exercises.</p></div>
+                    <Link href="/my/practice?course=f1">Open The Work <span aria-hidden="true">→</span></Link>
+                  </div>
+                ) : null}
               </header>
             </div>
 
-            <RelatedLessons resources={related.filter((item) => item.href !== `/my/learn/${resource.slug}`)} />
+            <RelatedLessons resources={relatedResources} />
           </section>
 
           {hasBody ? (
@@ -264,8 +261,8 @@ export default function MemberLearningArticle({
               className="mt-14 grid gap-6 rounded-[0.45rem] bg-[var(--member-soft)] px-5 py-7 sm:mt-20 sm:px-8 sm:py-10 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-12"
             >
               <div>
-                <p className="[font-family:var(--font-cadehandy2)] text-[1.35rem] leading-none text-[var(--member-red)]">Mark it up</p>
-                <h2 className="mt-2 font-[var(--font-display)] text-3xl leading-none tracking-[-0.03em]" id="lesson-notes-heading">Lesson notes</h2>
+                <p className="[font-family:var(--font-cadehandy2)] text-[1.35rem] leading-none text-[var(--member-red)]">Take it with you</p>
+                <h2 className="mt-2 font-[var(--font-display)] text-3xl leading-none tracking-[-0.03em]" id="lesson-notes-heading">About this call</h2>
               </div>
               <ResourceCopy body={resource.bodyMarkdown} />
             </section>
@@ -275,7 +272,7 @@ export default function MemberLearningArticle({
         <article className="mt-7 max-w-[72rem]">
           <header className="max-w-[58rem]">
             <p className="[font-family:var(--font-cadehandy2)] text-[1.45rem] leading-none text-[var(--member-red)] sm:text-[1.7rem]">
-              {resource.collectionName ?? "Ruined Academy"}
+              {resource.collectionName ?? "Ruined Library"}
             </p>
             <p className="mt-4 font-[var(--font-body)] text-[0.62rem] font-semibold uppercase tracking-[0.11em] text-[var(--member-muted)]">
               {formatKind(resource.resourceType)} / {formatDate(resource.publishedAt)}
@@ -297,7 +294,7 @@ export default function MemberLearningArticle({
             </section>
           ) : !resource.externalUrl && !resource.storagePath ? (
             <p className="mt-14 max-w-2xl font-[var(--font-body)] text-sm leading-7 text-[var(--member-muted)]">
-              This lesson is published, but its member material has not been attached yet.
+              This resource is not ready to open yet. Please check back shortly.
             </p>
           ) : null}
         </article>
