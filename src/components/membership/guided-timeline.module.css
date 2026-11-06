@@ -11,6 +11,8 @@
 .header { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin: 0 0 20px; }
 .back { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-bottom: 5px; color: var(--muted); text-decoration: none; font-size: 12px; }
 .back svg { width: 15px; }
+.graphicsLink { display:flex; align-items:center; justify-content:space-between; gap:12px; width:fit-content; min-height:44px; margin:0 0 20px auto; padding:10px 15px; border:1px solid #26262350; background:var(--member-blue); color:#262623; font-size:12px; font-weight:500; text-decoration:none; }
+.graphicsLink:hover { box-shadow:3px 3px 0 var(--ink); }
 .header h1 { font: 500 30px/1.15 var(--font-display); letter-spacing: var(--tracking-emphasis); margin: 0; }
 .headerActions { display: flex; align-items: center; gap: 14px; }
 .headerActions > a { display: flex; align-items: center; min-height: 44px; color: var(--muted); font-size: 12px; text-decoration: none; }

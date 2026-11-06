@@ -30,13 +30,15 @@ type GraphicsState =
   | { kind: "ready"; key: string; entries: TimelineDraftEntry[] }
   | { kind: "error"; key: string; message: string };
 
-export default function TimelineGraphics({ ownerId, preview, entries, revision }: {
+export default function TimelineGraphics({ ownerId, preview, entries, revision, expanded = false }: {
   ownerId?: string;
   preview: boolean;
   entries: JournalEntry[];
   revision: string;
+  expanded?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [disclosed, setDisclosed] = useState(false);
+  const open = expanded || disclosed;
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<GraphicsState | null>(null);
   const requestVersion = useRef(0);
@@ -88,15 +90,15 @@ export default function TimelineGraphics({ ownerId, preview, entries, revision }
   function toggle() {
     requestVersion.current += 1;
     setState(null);
-    setOpen(value => !value);
+    setDisclosed(value => !value);
   }
 
-  return <section className={styles.graphics} data-timeline-graphics aria-labelledby={`${id}-title`}>
-    <div className={styles.callout}>
+  return <section className={styles.graphics} data-timeline-graphics data-expanded={expanded} aria-label={expanded ? "Timeline graphics" : undefined} aria-labelledby={expanded ? undefined : `${id}-title`}>
+    {!expanded ? <div className={styles.callout}>
       <svg className={styles.mark} aria-hidden="true" viewBox="0 0 52 42" fill="none"><path d="M5 33C13 33 10 10 25 10s9 22 22 22" stroke="currentColor" strokeWidth="1.5"/><circle cx="5" cy="33" r="3" fill="currentColor"/><circle cx="25" cy="10" r="3" fill="currentColor"/><circle cx="47" cy="32" r="3" fill="currentColor"/></svg>
       <div className={styles.copy}><h2 id={`${id}-title`}>Timeline graphics</h2><p>Turn your public posts into a carousel, story, or print.</p></div>
-      <button className={styles.toggle} type="button" aria-controls={`${id}-studio`} aria-expanded={open} onClick={toggle}>{open ? "Close graphics" : "Create a graphic"}<span aria-hidden="true">{open ? "−" : "↗"}</span></button>
-    </div>
+      {!expanded ? <button className={styles.toggle} type="button" aria-controls={`${id}-studio`} aria-expanded={open} onClick={toggle}>{open ? "Close graphics" : "Create a graphic"}<span aria-hidden="true">{open ? "−" : "↗"}</span></button> : null}
+    </div> : null}
     {open ? <div className={styles.panel} id={`${id}-studio`}>
       {!current || current.kind === "loading" ? <p className={styles.status} role="status">Loading your public Timeline…</p> : current.kind === "error" ? <div className={styles.error}><p role="alert">{current.message}</p><button className={styles.retry} type="button" onClick={() => setRetry(value => value + 1)}>Try again</button></div> : <>
         {!current.entries.length ? <p className={styles.sample}><strong>Example artwork.</strong> Publish a Timeline post to create a graphic from your own story. Private Journal entries and drafts stay private.</p> : <p className={styles.note}>Made from your published Timeline posts. Private Journal entries and drafts stay private.</p>}

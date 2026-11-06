@@ -10,12 +10,14 @@ import {
 } from "@/lib/membership/journal-model";
 import { TIMELINE_MONTHS, type TimelineDraftEntry } from "./timeline-model";
 import TimelineExportStudio from "./TimelineExportStudio";
+import TimelineGraphics from "./TimelineGraphics";
 import TimelineStoryContent from "./TimelineStoryContent";
 import useJournalDraftGuard from "./useJournalDraftGuard";
 import type { JournalDraft } from "./MemberJournalDraftState";
 import styles from "./MemberJournal.module.css";
 
 type ReadingMode = "all" | "timeline";
+type TimelineCollection = "posts" | "drafts" | "graphics";
 type Page = JournalSnapshot & { nextCursor?: string | null; total?: number; years?: number[] };
 type SavedJournalDraft = JournalEntry & { updatedAt?: string };
 class JournalRequestError extends Error {
@@ -96,6 +98,9 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   const timelineApi = "/api/my/timeline";
   const [mode, setMode] = useState<ReadingMode>(initialMode);
   const timelineView = view === "journal" && (onModeChange ? initialMode : mode) === "timeline";
+  const [timelineCollection, setTimelineCollection] = useState<TimelineCollection>("posts");
+  const timelineDraftsView = sharing && timelineView && timelineCollection === "drafts";
+  const graphicsView = sharing && timelineView && timelineCollection === "graphics";
   const [showDrafts, setShowDrafts] = useState(false);
   const draftsView = view === "journal" && !timelineView && showDrafts;
   const [entries, setEntries] = useState<JournalEntry[]>(preview && !previewEmpty ? previewEntries : []);
@@ -126,6 +131,21 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     return readJournalResponse<T>(url, { ...init, headers });
   }, [ownerId]);
   useEffect(() => { setMode(initialMode); setSearch(""); setQuery(""); setYear(""); }, [initialMode]);
+  useEffect(() => {
+    if (!sharing) return;
+    function synchronize() {
+      const hash = window.location.hash;
+      setTimelineCollection(hash === "#graphics" ? "graphics" : hash === "#timeline-drafts" ? "drafts" : "posts");
+    }
+    synchronize();
+    window.addEventListener("hashchange", synchronize);
+    window.addEventListener("popstate", synchronize);
+    return () => { window.removeEventListener("hashchange", synchronize); window.removeEventListener("popstate", synchronize); };
+  }, [sharing]);
+  function changeTimelineCollection(value: TimelineCollection) {
+    setTimelineCollection(value); setSearch(""); setQuery(""); setYear(""); setNotice("");
+    window.history.replaceState(window.history.state, "", value === "graphics" ? "#graphics" : value === "drafts" ? "#timeline-drafts" : "#timeline");
+  }
   useEffect(() => { if (composer) window.requestAnimationFrame(() => titleRef.current?.focus()); }, [composer]);
   useEffect(() => { const timer = window.setTimeout(() => setQuery(search.trim()), 250); return () => window.clearTimeout(timer); }, [search]);
   useEffect(() => { const urls = draft.files.map(file => URL.createObjectURL(file)); setFileUrls(urls); return () => urls.forEach(url => URL.revokeObjectURL(url)); }, [draft.files]);
@@ -133,18 +153,19 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
   const listUrl = useCallback((cursor?: string | null) => {
     const params = new URLSearchParams();
     if (view === "saved") params.set("saved", "true");
-    if (sharing) params.set("collection", timelineView ? "public" : "private");
-    if (timelineView && !sharing) params.set("view", "timeline");
+    if (sharing) params.set("collection", timelineView && !timelineDraftsView ? "public" : "private");
+    if (timelineView && (!sharing || timelineDraftsView)) params.set("view", "timeline");
     if (timelineView) params.set("order", order);
     if (query) params.set("search", query);
     if (year) params.set("year", year);
     if (cursor) params.set("before", cursor);
     return `${draftsView ? draftsApi : journalApi}?${params}`;
-  }, [view, timelineView, order, query, year, journalApi, draftsApi, draftsView, sharing]);
+  }, [view, timelineView, timelineDraftsView, order, query, year, journalApi, draftsApi, draftsView, sharing]);
   useEffect(() => {
     listVersion.current += 1;
+    if (graphicsView) return;
     if (preview) {
-      const collection = (draftsView ? previewDrafts : previewData).filter(entry => (view !== "saved" || entry.saved) && (sharing ? (timelineView ? isPublicTimeline(entry) : !isPublicTimeline(entry)) : !timelineView || entry.includeOnTimeline));
+      const collection = (draftsView ? previewDrafts : previewData).filter(entry => (view !== "saved" || entry.saved) && (sharing ? (timelineView ? timelineDraftsView ? entry.includeOnTimeline && !isPublicTimeline(entry) : isPublicTimeline(entry) : !isPublicTimeline(entry)) : !timelineView || entry.includeOnTimeline));
       const filtered = collection.filter(entry => (!year || String(timelineYear(entry)) === year) && (!query || `${entry.title}\n${entry.body}\n${eventDate(entry)}`.toLowerCase().includes(query.toLowerCase())));
       filtered.sort((a, b) => {
         if (!timelineView || sharing) return (timelineView && order === "oldest" ? -1 : 1) * ((b as SavedJournalDraft).updatedAt ?? b.createdAt).localeCompare((a as SavedJournalDraft).updatedAt ?? a.createdAt);
@@ -163,7 +184,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       setEntries(data.entries); setListedDrafts(draftsView); setHasMore(data.hasMore); setNextCursor(data.nextCursor ?? data.entries.at(-1)?.id ?? null); setMediaReady(data.mediaReady); setPublicUrl(data.publicUrl ?? null); setTotal(data.total ?? data.entries.length); setYears(data.years ?? []);
     }).catch(cause => { if (!abort.signal.aborted) setError(cause.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => abort.abort();
-  }, [preview, previewData, previewDrafts, draftsView, listUrl, reload, view, timelineView, order, query, year, requestJson, sharing]);
+  }, [preview, previewData, previewDrafts, draftsView, timelineDraftsView, graphicsView, listUrl, reload, view, timelineView, order, query, year, requestJson, sharing]);
   useEffect(() => {
     if (!timelineView || sharing || preview) return;
     const abort = new AbortController(); setCanComplete(false);
@@ -395,7 +416,7 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     finally { setCompleting(false); }
   }
   // Keep each audience separate even on the render before its new list loads.
-  const visibleEntries = useMemo(() => listedDrafts !== draftsView ? [] : sharing ? entries.filter(entry => timelineView ? isPublicTimeline(entry) : !isPublicTimeline(entry)) : entries, [entries, sharing, timelineView, listedDrafts, draftsView]);
+  const visibleEntries = useMemo(() => listedDrafts !== draftsView ? [] : sharing ? entries.filter(entry => timelineView ? timelineDraftsView ? entry.includeOnTimeline && !isPublicTimeline(entry) : isPublicTimeline(entry) : !isPublicTimeline(entry)) : entries, [entries, sharing, timelineView, timelineDraftsView, listedDrafts, draftsView]);
 
   const groups = useMemo(() => {
     // A view switch can render the previous list before its loading effect runs.
@@ -412,6 +433,11 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       .map(([year, entries]) => ({ year, entries }));
   }, [visibleEntries, order, sharing]);
   function card(entry: JournalEntry) {
+    if (timelineDraftsView) return <article className={`${styles.storyCard} ${styles.draftCard}`} key={entry.id}>
+      <Link className={styles.storyOpen} href={`/my/timeline?moment=${encodeURIComponent(entry.id)}`} aria-label={`Continue draft: ${entryTitle(entry)}`}>
+        <span className={styles.storyWords}><span className={styles.draftLabel}>Draft · Private</span><span className={styles.storyTitle}>{entryTitle(entry)}</span>{entry.title && entry.body ? <span className={styles.storyExcerpt}>{entry.body}</span> : null}<span className={styles.storyMeta}>Only you can see this<span>Continue writing ↗</span></span></span>
+      </Link>
+    </article>;
     if (draftsView) return <article className={`${styles.storyCard} ${styles.draftCard}`} key={entry.id}>
       <button className={styles.storyOpen} type="button" disabled={!writable || pending || Boolean(recoveryDraft)} onClick={() => openSavedDraft(entry)} aria-label={`Open draft: ${entryTitle(entry)}`}>
         {entry.kind === "images" && entry.media[0] ? <span className={styles.storyImage}><Image src={entry.media[0].url} alt="" fill sizes="(max-width: 600px) 100vw, 360px" unoptimized/></span> : null}
@@ -446,7 +472,9 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
       {view === "journal" ? <div className={styles.storySwitch} role="group" aria-label="Journal view"><button type="button" aria-pressed={!timelineView} onClick={() => changeMode("all")}>{sharing ? "Journal" : "All entries"}</button><button type="button" aria-pressed={timelineView} onClick={() => changeMode("timeline")}>Timeline</button></div> : null}
     </> : null}
     {preview ? <p className={styles.previewNote}>Example entries · Changes stay in this preview.</p> : null}
-    {sharing ? <div className={styles.visibilityBar}><p>{timelineView ? "Public · These posts appear on your profile." : "Private · Only you can see your Journal."}</p>{!preview && publicUrl && timelineView ? <Link href={publicUrl}>View as visitor ↗</Link> : null}</div> : null}
+    {sharing && timelineView ? <div id="graphics" className={styles.timelineNav} role="group" aria-label="Timeline views">{(["posts", "drafts", "graphics"] as const).map(value => <button type="button" key={value} aria-pressed={timelineCollection === value} onClick={() => changeTimelineCollection(value)}>{value === "graphics" ? <svg aria-hidden="true" width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="3" width="12" height="14"/><path d="M7 1h10v14M5 13l3-4 3 3 2-2"/></svg> : null}{value[0].toUpperCase() + value.slice(1)}</button>)}</div> : null}
+    {graphicsView ? <TimelineGraphics ownerId={ownerId ?? undefined} preview={preview} entries={previewData} revision={String(reload)} expanded /> : <>
+    {sharing ? <div className={styles.visibilityBar}><p>{timelineView ? timelineDraftsView ? "Private · These drafts are only visible to you." : "Public · These posts appear on your profile." : "Private · Only you can see your Journal."}</p>{!preview && publicUrl && timelineView && !timelineDraftsView ? <Link href={publicUrl}>View as visitor ↗</Link> : null}</div> : null}
     {view === "journal" && !timelineView ? <div className={styles.draftNav} role="group" aria-label="Journal entries and drafts"><button type="button" aria-pressed={!draftsView} onClick={() => { setNotice(""); changeCollection(false); }}>Entries</button><button type="button" aria-pressed={draftsView} onClick={() => { setNotice(""); changeCollection(true); }}>View drafts</button></div> : null}
     {draftsView ? <p className={styles.draftsHint}>Pick up where you left off. Drafts stay private. Finish an entry whenever you’re ready.</p> : null}
     {recoveryDraft ? <div className={styles.storyNotice}><p>You have an unfinished entry from earlier in this visit.</p><button type="button" className="member-button" onClick={restoreDraft}>Restore draft</button><button type="button" className={styles.quiet} onClick={dismissRecovery}>Discard draft</button></div> : null}
@@ -456,11 +484,12 @@ export default function MemberJournal({ preview, writable, view = "journal", ini
     {loading && !visibleEntries.length ? <p role="status">{timelineView && sharing ? "Opening your Timeline…" : draftsView ? "Opening your drafts…" : "Opening your Journal…"}</p> : null}
     {(query || year) && !loading ? <p className={styles.storyCount} role="status">{total} {total === 1 ? "entry" : "entries"} found <button type="button" className={styles.quiet} onClick={() => { setSearch(""); setQuery(""); setYear(""); }}>Clear filters</button></p> : null}
     <div aria-busy={loading} className={sharing && timelineView ? styles.feed : timelineView ? styles.storyTimeline : styles.storyGrid}>{timelineView && !sharing ? groups.map(group => <section className={styles.storyYear} key={group.year} aria-labelledby={`${id}-year-${group.year}`}><h3 id={`${id}-year-${group.year}`}>{group.year}</h3><div>{group.entries.map(card)}</div></section>) : visibleEntries.map(card)}</div>
-    {!loading && !visibleEntries.length && !error ? <div className={styles.empty}><h3>{query || year ? "No matching entries." : draftsView ? "Room for unfinished thoughts." : view === "saved" ? "Keep something worth returning to." : timelineView ? "Your story starts anywhere." : sharing ? "Your Journal starts with you." : "Start with a moment."}</h3><p>{query || year ? "Try another word or year." : draftsView ? "Choose Save draft while writing. Come back here whenever you’re ready." : view === "saved" ? "Save an entry to find it here." : sharing ? (timelineView ? "Choose New +, then Timeline to share a thought, photograph, or moment." : "Choose New +, then Journal to keep a thought, photograph, or moment for yourself.") : timelineView ? "Mark a journal entry for your timeline, or add a milestone from your past." : "A few words, a photograph, a video. It can be that simple."}</p></div> : null}
+    {!loading && !visibleEntries.length && !error ? <div className={styles.empty}><h3>{query || year ? "No matching entries." : draftsView || timelineDraftsView ? "Room for unfinished thoughts." : view === "saved" ? "Keep something worth returning to." : timelineView ? "Your story starts anywhere." : sharing ? "Your Journal starts with you." : "Start with a moment."}</h3><p>{query || year ? "Try another word or year." : timelineDraftsView ? "Save a private draft from the post options. Come back here to keep writing." : draftsView ? "Choose Save draft while writing. Come back here whenever you’re ready." : view === "saved" ? "Save an entry to find it here." : sharing ? (timelineView ? "Choose New +, then Timeline to share a thought, photograph, or moment." : "Choose New +, then Journal to keep a thought, photograph, or moment for yourself.") : timelineView ? "Mark a journal entry for your timeline, or add a milestone from your past." : "A few words, a photograph, a video. It can be that simple."}</p></div> : null}
     {hasMore ? <button type="button" className={`member-button ${styles.more}`} disabled={loading} onClick={() => void loadMore()}>{loading ? "Loading…" : "Show more entries"}</button> : null}
     {timelineView && !sharing ? <footer className={styles.storyFooter}><div>{!sharing && completedAt ? <p>Foundations step complete. Your story keeps going.</p> : !sharing && canComplete && total > 0 ? <button type="button" className={styles.quiet} disabled={completing || pending || dirty} onClick={() => void completeTimeline()}>{completing ? "Recording…" : "Complete Foundations step"}</button> : null}</div><button type="button" className={styles.quiet} aria-expanded={exportOpen} onClick={() => void openExport()}>{exportOpen ? "Close export" : "Export timeline ↗"}</button></footer> : null}
     {timelineView && !sharing && exportOpen ? <section aria-label="Export your timeline" className={styles.storyExport}>{exportLoading ? <p role="status">Preparing your full timeline…</p> : exportError ? <p role="alert">{exportError}</p> : exportEntries.length ? <TimelineExportStudio entries={exportEntries} examples={preview}/> : <p>Add a milestone to prepare your timeline artwork.</p>}</section> : null}
 
+    </>}
     <Dialog open={newEntryOpen} onClose={() => setNewEntryOpen(false)} title="Create something.">
       <p className={styles.subtitle}>Choose where it belongs.</p>
       <div className={styles.destinationChoices}>

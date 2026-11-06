@@ -140,3 +140,27 @@ test("unmount aborts graphics loading", async () => {
   assert.equal(ui.calls[0].signal.aborted, true);
   pending.resolve(json({ entries: [entry()] })); await tick();
 });
+
+test("expanded profile Graphics loads immediately and preserves the full public-only owner-bound export", async () => {
+  const ui = fixture({ props: { expanded: true, entries: [entry({ title: "Partial feed" })] }, source: [
+    entry({ id: "public", title: "Public graphic" }),
+    entry({ id: "private", visibility: "private", title: "Never show this draft" }),
+    entry({ id: "unmarked", includeOnTimeline: false, title: "Never show Journal" }),
+  ] });
+  await ui.flush();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].url, "/api/my/journal/export?collection=public");
+  assert.equal(new Headers(ui.calls[0].headers).get("x-ruined-session-owner"), "owner-a");
+  assert.deepEqual(ui.studio().props.entries.map(value => value.title), ["Public graphic"]);
+  assert.equal(nodes(ui.render()).some(node => node.type === "button" && /Create a graphic|Close graphics/.test(text(node))), false, "the profile tab must not require a second reveal button");
+  ui.unmount();
+});
+
+test("expanded Graphics refuses a missing session owner instead of silently loading another account", async () => {
+  const ui = fixture({ props: { expanded: true, ownerId: undefined } });
+  await ui.flush();
+  assert.equal(ui.calls.length, 0);
+  assert.equal(ui.studio(), undefined);
+  assert.match(text(ui.render()), /Sign in again to open your Timeline graphics/);
+  ui.unmount();
+});
