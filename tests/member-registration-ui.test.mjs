@@ -461,11 +461,11 @@ test("layout withholds premature badge celebrations and fails navigation closed 
       "@/components/membership/MemberBadgeCelebration": Celebration, "@/components/membership/MemberPortraitState": Stub,
       "@/components/membership/MemberTimelineDraftState": Stub, "@/components/membership/MemberJournalDraftState": Stub,
       "@/components/membership/MemberPracticeDraftState": Stub,
-      "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: "new-member", email: "new@example.test" } }) },
+      "@/lib/auth/page-session": { resolveCurrentPlatformSession: async () => ({ status: "authenticated", viewer: { authUserId: "new-member", email: "new@example.test" } }) },
       "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
-      "@/lib/platform/repository": { getOperatorRole: async () => null },
+      "@/lib/platform/page-reads": { getOperatorRole: async () => null },
       "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
-      "@/lib/membership/registration-repository": { getMemberRegistration: async () => { if (value === "failure") throw Error("unavailable"); return value; } },
+      "@/lib/membership/page-reads": { getMemberRegistration: async () => { if (value === "failure") throw Error("unavailable"); return value; } },
       "@/lib/membership/member-search-repository": { canBrowseMemberDirectory: async () => false },
       "@/lib/platform/visibility": { isMyRuinedVisible: () => true }, "@/lib/sharing": { privateSharingMetadata: {} },
     }, { console: { error() {} } })).default;
@@ -526,11 +526,11 @@ test("layout independently authorizes the held-member directory shortcut without
     "@/components/membership/MemberBadgeCelebration": Stub, "@/components/membership/MemberPortraitState": Stub,
     "@/components/membership/MemberTimelineDraftState": Stub, "@/components/membership/MemberJournalDraftState": Stub,
     "@/components/membership/MemberPracticeDraftState": Stub,
-    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status, viewer: { authUserId: "verified-member", email: "new@example.test" } }) },
+    "@/lib/auth/page-session": { resolveCurrentPlatformSession: async () => ({ status, viewer: { authUserId: "verified-member", email: "new@example.test" } }) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
-    "@/lib/platform/repository": { getOperatorRole: async () => null },
+    "@/lib/platform/page-reads": { getOperatorRole: async () => null },
     "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
-    "@/lib/membership/registration-repository": { getMemberRegistration: async () => {
+    "@/lib/membership/page-reads": { getMemberRegistration: async () => {
       if (currentRegistration === "failure") throw Error("PRIVATE registration detail");
       return currentRegistration;
     } },

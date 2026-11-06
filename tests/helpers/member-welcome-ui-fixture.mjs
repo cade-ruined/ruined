@@ -14,7 +14,10 @@ export const text = node => React.isValidElement(node)
 
 export function welcomeUIFixture(initial, { fetch = async () => { throw new Error('Unexpected request'); } } = {}) {
   const props = { ...initial }, slots = [], effects = [], requests = [], listeners = new Map();
-  let cursor = 0, dirty = false;
+  let cursor = 0, dirty = false, clock = 0, nextTimer = 0;
+  const timers = new Map();
+  const setTimer = (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, at: clock + delay }); return id; };
+  const clearTimer = id => timers.delete(id);
   const hooks = {
     useId() { const key = cursor++; return slots[key] ??= `welcome-${key}`; },
     useRef(initial) { const key = cursor++; return slots[key] ??= { current: initial }; },
@@ -52,7 +55,7 @@ export function welcomeUIFixture(initial, { fetch = async () => { throw new Erro
     if (name.endsWith('.module.css')) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     throw Error(`Unexpected welcome dependency: ${name}`);
   }
-  new Function('require', 'module', 'exports', 'window', 'fetch', code)(loadDependency, loaded, loaded.exports, window, async (url, init = {}) => { requests.push({ url, ...init }); return fetch(url, init); });
+  new Function('require', 'module', 'exports', 'window', 'fetch', 'setTimeout', 'clearTimeout', code)(loadDependency, loaded, loaded.exports, window, async (url, init = {}) => { requests.push({ url, ...init }); return fetch(url, init); }, setTimer, clearTimer);
   function draw(next = {}) {
     Object.assign(props, next); let tree, budget = 10;
     do {
@@ -67,6 +70,7 @@ export function welcomeUIFixture(initial, { fetch = async () => { throw new Erro
   }
   return {
     draw, requests, listeners, button,
+    advance(ms = 250) { clock += ms; for (const [id, timer] of timers) { if (timer.at <= clock) { timers.delete(id); timer.fn(); } } },
     click(label) { const node = button(label); if (!node.props.disabled) node.props.onClick(); return draw(); },
     dispatch(type, detail) { listeners.get(type)?.forEach(callback => callback({ type, detail })); return draw(); },
     async settle() { for (let i = 0; i < 4; i++) { await new Promise(resolve => setImmediate(resolve)); draw(); } return draw(); },

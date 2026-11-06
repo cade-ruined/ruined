@@ -5,7 +5,7 @@ import OperatorAcademyEditor from "@/components/platform/OperatorAcademyEditor";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getOpsAcademyEditor } from "@/lib/platform/ops-academy-repository";
 import { getPreviewOpsAcademyEditor } from "@/lib/platform/ops-academy-preview";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 
 export const metadata: Metadata = { title: "Academy lesson" };
 export const dynamic = "force-dynamic";
@@ -15,10 +15,10 @@ export default async function OperationsAcademyEditorPage({
 }: {
   params: Promise<{ resourceId: string }>;
 }) {
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
   const { resourceId } = await params;
   if (context.state === "preview") {
     const editor = getPreviewOpsAcademyEditor(resourceId);

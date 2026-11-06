@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorRegistrations, { type OperatorRegistrationRow } from "@/components/platform/OperatorRegistrations";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 import { getOpsMemberRegistrations } from "@/lib/membership/registration-repository";
 
 export const metadata: Metadata = { title: "Registrations | Ruined Operations", robots: { index: false, follow: false } };
@@ -22,10 +22,10 @@ const previewRows: OperatorRegistrationRow[] = [
 ];
 
 export default async function OperationsRegistrationsPage() {
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied" || (context.state !== "preview" && context.role !== "ops_admin")) return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
   let rows: OperatorRegistrationRow[];
   if (context.state === "preview") rows = previewRows;
   else {

@@ -11,11 +11,12 @@ import MemberPortraitState from "@/components/membership/MemberPortraitState";
 import MemberTimelineDraftState from "@/components/membership/MemberTimelineDraftState";
 import MemberJournalDraftState from "@/components/membership/MemberJournalDraftState";
 import MemberPracticeDraftState from "@/components/membership/MemberPracticeDraftState";
-import { resolveCurrentPlatformSession } from "@/lib/auth/session";
+import { resolveCurrentPlatformSession } from "@/lib/auth/page-session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
+import type { OperatorRole } from "@/lib/platform/repository";
+import { getOperatorRole } from "@/lib/platform/page-reads";
 import { isMyRuinedVisible } from "@/lib/platform/visibility";
-import { getMemberRegistration } from "@/lib/membership/registration-repository";
+import { getMemberRegistration } from "@/lib/membership/page-reads";
 import { canBrowseMemberDirectory } from "@/lib/membership/member-search-repository";
 import { hasEligibleExplicitExperienceInvitations } from "@/lib/platform/experience-member-access";
 import { privateSharingMetadata } from "@/lib/sharing";
@@ -38,29 +39,38 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
   let registrationOnly = Boolean(scenario && isRegistrationPreview(scenario));
   let invitedCalendarAvailable = false;
   let memberDirectoryAvailable = false;
-  if (viewer) {
-    try {
-      const registration = await getMemberRegistration(viewer.authUserId);
-      registrationOnly = Boolean(registration && registration.state !== "activated");
-      if (registration?.state === "registered" && registration.ready) {
-        invitedCalendarAvailable = await hasEligibleExplicitExperienceInvitations(viewer.authUserId);
-      }
-      if (registrationOnly) memberDirectoryAvailable = await canBrowseMemberDirectory(viewer.authUserId);
-    } catch (error) {
-      registrationOnly = true;
-      memberDirectoryAvailable = false;
-      console.error("Member registration navigation could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
-    }
-  }
   let operatorRole: OperatorRole | null = scenario === "operator" ? "ops_admin" : null;
   if (viewer) {
-    try {
-      operatorRole = await getOperatorRole(viewer.authUserId);
-    } catch (error) {
-      console.error("Member navigation permissions could not be loaded", {
-        errorType: error instanceof Error ? error.name : "UnknownError",
-      });
-    }
+    // These independent navigation reads must not wait on one another.
+    await Promise.all([
+      (async () => {
+        try {
+          const registration = await getMemberRegistration(viewer.authUserId);
+          registrationOnly = Boolean(registration && registration.state !== "activated");
+          const [calendar, directory] = await Promise.all([
+            registration?.state === "registered" && registration.ready
+              ? hasEligibleExplicitExperienceInvitations(viewer.authUserId) : false,
+            registrationOnly ? canBrowseMemberDirectory(viewer.authUserId) : false,
+          ]);
+          invitedCalendarAvailable = calendar;
+          memberDirectoryAvailable = directory;
+        } catch (error) {
+          registrationOnly = true;
+          invitedCalendarAvailable = false;
+          memberDirectoryAvailable = false;
+          console.error("Member registration navigation could not be loaded", { errorType: error instanceof Error ? error.name : "UnknownError" });
+        }
+      })(),
+      (async () => {
+        try {
+          operatorRole = await getOperatorRole(viewer.authUserId);
+        } catch (error) {
+          console.error("Member navigation permissions could not be loaded", {
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          });
+        }
+      })(),
+    ]);
   }
 
   return (

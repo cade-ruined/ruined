@@ -1,10 +1,10 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getMemberRegistrationDestination } from "./registration-repository";
+import { getMemberRegistrationDestination } from "./page-reads";
 import { MEMBER_PREVIEW_COOKIE, memberPreviewScenario, memberPreviewSnapshot } from "@/lib/membership/preview-scenarios";
 
-import { resolveCurrentPlatformSession } from "@/lib/auth/session";
+import { resolveCurrentPlatformSession } from "@/lib/auth/page-session";
 import {
   getPlatformConfiguration,
   type PlatformConfiguration,

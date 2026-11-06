@@ -5,6 +5,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import { MemberWelcomeError, type MemberWelcomeAction } from "@/lib/membership/welcome-model";
 import { getMemberWelcome, updateMemberWelcome } from "@/lib/membership/welcome-repository";
+import { getMemberExperiences } from "@/lib/membership/repository";
+import { withFreshApplicationDatabaseRead } from "@/lib/database/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +65,18 @@ async function readAction(request: Request): Promise<{ action: MemberWelcomeActi
 export async function GET(request: Request) {
   try {
     const authUserId = await welcomeViewer(request);
-    return json(await getMemberWelcome(authUserId));
+    const result = await withFreshApplicationDatabaseRead("member-welcome", async () => {
+      const [welcome, experiences] = await Promise.all([
+        getMemberWelcome(authUserId),
+        getMemberExperiences(authUserId),
+      ]);
+      return {
+        ...welcome,
+        hasUpcomingCall: experiences?.upcoming.some(event => Boolean(event.meetingUrl)
+          && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now()) ?? false,
+      };
+    });
+    return json(result);
   } catch (error) { return failure(error); }
 }
 

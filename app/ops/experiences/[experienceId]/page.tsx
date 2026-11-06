@@ -13,7 +13,7 @@ import {
   getPreviewOpsExperienceRecord,
   PREVIEW_OPS_EXPERIENCE_DIRECTORY,
 } from "@/lib/platform/ops-experience-preview";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 import { OpsOperatingRepositoryError } from "@/lib/platform/ops-operating-repository";
 
 export const metadata: Metadata = { title: "Experience" };
@@ -24,10 +24,10 @@ export default async function OperationsExperiencePage({
 }: {
   params: Promise<{ experienceId: string }>;
 }) {
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
   const { experienceId } = await params;
 
   if (context.state === "preview") {

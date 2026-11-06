@@ -1,6 +1,6 @@
 import "server-only";
 
-import { resolveCurrentPlatformSession } from "@/lib/auth/session";
+import { resolveCurrentPlatformSession } from "@/lib/auth/page-session";
 import { getPlatformConfiguration, type PlatformConfiguration } from "@/lib/platform/config";
 import {
   PREVIEW_MEMBER,
@@ -12,9 +12,10 @@ import {
 import {
   getMemberPlatformSnapshot,
   getOperatorDashboard,
-  getOperatorRole,
   type OperatorRole,
 } from "@/lib/platform/repository";
+
+import { getOperatorRole } from "@/lib/platform/page-reads";
 
 type PageState = "authenticated" | "denied" | "preview" | "signed_out" | "unavailable";
 

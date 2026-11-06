@@ -373,7 +373,8 @@ test("Members page keeps the compatible Add member anchor and exact Administrato
     "@/components/platform/OperatorPeopleWorkspace": { __esModule: true, default: ({ children, pendingJoining, directInvitations }) => React.createElement("div", { "data-people-workspace": true }, children, pendingJoining, directInvitations) },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: ({ children }) => React.createElement("main", null, children) },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: () => React.createElement("p", null, "Unavailable") },
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => context },
+    "@/lib/platform/model": { PREVIEW_OPERATOR_DASHBOARD: { members: [] } },
+    "@/lib/platform/page-data": { getOperatorAccessContext: async () => context },
     "@/lib/platform/repository": { getOperatorMemberDirectoryPage: async (...input) => { calls.push(input); return directory; } },
   }).default;
   const render = () => Page({ searchParams: Promise.resolve({ q: "name", page: "2", filter: "unassigned", sort: "newest", archive: "archived" }) });

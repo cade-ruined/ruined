@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
 import PlatformShell from "@/components/platform/PlatformShell";
-import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { getCurrentPlatformViewer } from "@/lib/auth/page-session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
-import { getOperatorRole, type OperatorRole } from "@/lib/platform/repository";
+import type { OperatorRole } from "@/lib/platform/repository";
+import { getOperatorRole } from "@/lib/platform/page-reads";
 import { privateSharingMetadata } from "@/lib/sharing";
 
 export const metadata: Metadata = {

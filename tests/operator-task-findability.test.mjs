@@ -646,7 +646,7 @@ test("work route accepts only the dismissed view and preserves preview isolation
   const reads = [];
   let state = "available";
   const pageLoader = loader({ extra: {
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => ({ state, dashboard: {}, viewer: { authUserId: "admin-one" } }) },
+    "@/lib/platform/page-data": { getOperatorAccessContext: async () => ({ state, dashboard: {}, viewer: { authUserId: "admin-one" } }) },
     "@/lib/platform/ops-operating-repository": { getOpsWorkQueue: async (id, options) => { reads.push({ id, options }); return { ...preview.PREVIEW_OPS_WORK_QUEUE, view: options.view }; } },
   } });
   const Page = pageLoader("app/ops/work/page.tsx").default;
@@ -667,7 +667,7 @@ test("work route validates filters and creation-date sorting before repository r
   const reads=[];
   let state="available";
   const pageLoader=loader({extra:{
-    "@/lib/platform/page-data":{getOperatorPageContext:async()=>({state,dashboard:{},viewer:{authUserId:"admin-one"}})},
+    "@/lib/platform/page-data":{getOperatorAccessContext:async()=>({state,dashboard:{},viewer:{authUserId:"admin-one"}})},
     "@/lib/platform/ops-operating-repository":{getOpsWorkQueue:async(actor,options)=>{reads.push({actor,options});return {...preview.PREVIEW_OPS_WORK_QUEUE,...options};}},
   }});
   const Page=pageLoader("app/ops/work/page.tsx").default;

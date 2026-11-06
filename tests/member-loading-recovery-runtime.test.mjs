@@ -77,7 +77,7 @@ function pageFixture(data, { state = "authenticated", products = [], viewer = st
     }) },
     "@/lib/membership/preview": { PREVIEW_MEMBER_HOME: {} },
     "@/lib/membership/repository": {
-      getMemberHome: async () => data,
+      getMemberProfileHome: async () => data,
       getMemberTimeline: async () => { calls.timelines += 1; throw new Error("Profile must not prefetch Timeline"); },
     },
     "@/lib/shopify": { getProducts: async () => { calls.products += 1; return products; } },
@@ -103,11 +103,9 @@ test("profile loads its own snapshot without eagerly fetching a separate Timelin
   const result = await f.Page();
   assert.equal(result.type, "member-home");
   assert.equal(result.props.timeline, undefined);
-  assert.deepEqual(f.calls.reads, ["member-home", "member-welcome"]);
-  assert.deepEqual(f.calls.welcome, ["member-auth-id"]);
-  assert.deepEqual(result.props.welcome, {
-    ownerId: "member-auth-id", dismissedAt: null, calendarViewedAt: null, hasJournalEntry: false,
-  });
+  assert.deepEqual(f.calls.reads, ["member-home"]);
+  assert.deepEqual(f.calls.welcome, []);
+  assert.equal(result.props.welcome, null);
   assert.equal(f.calls.timelines, 0);
 });
 
@@ -131,43 +129,25 @@ test("members without Shopify-linked artifacts render without requesting the sto
     const result = await f.Page();
     assert.equal(result.type, "member-home");
     assert.equal(f.calls.products, 0);
-    assert.deepEqual(f.calls.resolutions, [[]], "artifact resolution still runs with an empty catalogue");
+    assert.deepEqual(f.calls.resolutions, [], "profile does not render or enrich artifacts");
     assert.deepEqual(result.props.member, member);
     assert.equal(result.props.member.access, member.access);
     assert.equal(f.calls.timelines, 0, "limited access must not load a private timeline");
   }
 });
 
-test("either a featured or archived Shopify binding requests the catalogue and preserves member access", async () => {
-  const product = {
-    shopifyProductGid: "gid://shopify/Product/123",
-    id: "the-first-coin",
-    name: "The First Coin",
-    image: { url: "https://cdn.shopify.com/coin.jpg", alt: "First Coin" },
-  };
+test("even linked legacy artifacts do not request or enrich unused storefront content", async () => {
   for (const featured of [true, false]) {
     const artifact = linkedArtifact();
     const member = homeFixture({ artifact: featured ? artifact : null, artifacts: featured ? [] : [artifact] });
     const before = JSON.stringify(member);
-    const f = pageFixture(member, { products: [product] });
+    const f = pageFixture(member);
     const result = await f.Page();
-    assert.equal(f.calls.products, 1);
-    const resolved = featured ? result.props.member.artifact : result.props.member.artifacts[0];
-    assert.equal(resolved.product.href, "/store/the-first-coin");
-    assert.equal(result.props.member.access, member.access);
-    assert.equal(result.props.member.nextAction, member.nextAction);
-    assert.equal(JSON.stringify(member), before, "catalogue enrichment must not mutate the member snapshot");
+    assert.equal(f.calls.products, 0);
+    assert.deepEqual(f.calls.resolutions, []);
+    assert.equal(result.props.member, member);
+    assert.equal(JSON.stringify(member), before);
   }
-});
-
-test("an unavailable catalogue preserves linked artifacts and the accessible member profile", async () => {
-  const artifact = linkedArtifact();
-  const member = homeFixture({ artifact, artifacts: [artifact] });
-  const f = pageFixture(member);
-  const result = await f.Page();
-  assert.equal(f.calls.products, 1);
-  assert.equal(result.type, "member-home");
-  assert.deepEqual(result.props.member, member);
 });
 
 test("signed-out, denied, and unavailable member states never request Shopify", async () => {

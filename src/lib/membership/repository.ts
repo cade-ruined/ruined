@@ -40,6 +40,7 @@ import type {
   MemberExperienceSummary,
   MemberExperiencesSnapshot,
   MemberHomeSnapshot,
+  MemberProfileHomeSnapshot,
   MemberIdentity,
   MemberLearningResourceDetail,
   MemberLearningResourceSummary,
@@ -3135,6 +3136,47 @@ export async function getMemberRecord(
       attendedExperiences: Number(row?.attended_count ?? 0),
       creditedExperiences: Number(row?.credited_count ?? 0),
       artifacts: Number(row?.artifact_count ?? 0),
+    },
+  };
+}
+
+export async function getMemberProfileHome(
+  authUserId: string,
+): Promise<MemberProfileHomeSnapshot | null> {
+  const identity = await requireMemberIdentity(authUserId);
+  const access = requireMemberCapability(identity, "home.read");
+  const sql = getApplicationDatabase();
+  // These reads share the identity validated for this request. The full legacy
+  // dashboard below remains available to consumers that actually need it.
+  const [profile, memberRows, badges] = await Promise.all([
+    getMemberProfile(authUserId, sql, identity),
+    sql<Array<{ member_since: Date | string | null; member_number: number | null }>>`
+      select membership_activated_at as member_since, member_number
+      from ruined_members
+      where id = ${identity.memberId}::uuid
+      limit 1
+    `,
+    getMemberBadges(identity.memberId),
+  ]);
+  if (!profile) return null;
+  return {
+    access,
+    avatarUrl: profile.directory.avatarUrl,
+    badges,
+    displayName: profile.directory.displayName,
+    identity,
+    memberNumber: memberRows[0]?.member_number ?? null,
+    memberSince: toIso(memberRows[0]?.member_since),
+    profile: {
+      bio: profile.directory.bio,
+      buildingNow: profile.directory.buildingNow,
+      directoryStatus: profile.preferences.directoryStatus,
+      displayName: profile.directory.displayName,
+      fullName: profile.directory.fullName,
+      location: profile.directory.location,
+      memberTag: profile.directory.memberTag,
+      preferredName: profile.directory.preferredName?.trim() || null,
+      timezone: profile.directory.timezone,
     },
   };
 }

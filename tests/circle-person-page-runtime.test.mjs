@@ -49,11 +49,11 @@ function fixture({ session = "authenticated", denied = false, missingMembership 
   const context = load("src/lib/membership/page-context.ts", {
     "next/headers": {},
     "next/navigation": navigation,
-    "./registration-repository": { getMemberRegistrationDestination: async actor => {
+    "./page-reads": { getMemberRegistrationDestination: async actor => {
       assert.equal(actor, viewer.authUserId); calls.push("registration"); return null;
     } },
     "@/lib/membership/preview-scenarios": {},
-    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: session, viewer }) },
+    "@/lib/auth/page-session": { resolveCurrentPlatformSession: async () => ({ status: session, viewer }) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
     "@/lib/membership/repository": { MembershipAccessDeniedError },
     "@/lib/platform/experience-member-access": {},

@@ -245,7 +245,7 @@ test("operations registration page is admin-only, and preview never reads live r
     "next/navigation": { redirect: href => { throw Object.assign(Error("redirect"), { href }); } },
     "@/components/platform/OperatorPageFrame": () => null, "@/components/platform/OperatorRegistrations": View,
     "@/components/platform/PlatformUnavailable": Unavailable,
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => current },
+    "@/lib/platform/page-data": { getOperatorAccessContext: async () => current },
     "@/lib/membership/registration-repository": { getOpsMemberRegistrations: async id => { reads.push(id); return [row()]; } },
   })).default;
   assert.equal(nodes(await Page()).find(node => node.type === View).props.preview, false); assert.deepEqual(reads, [actor]);

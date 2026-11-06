@@ -32,9 +32,9 @@ function contextFixture({ destination = "/my/registered", eligible = false, elig
   const calls = [];
   const api = load("src/lib/membership/page-context.ts", {
     "next/headers": {}, "next/navigation": { redirect },
-    "./registration-repository": { getMemberRegistrationDestination: async id => { assert.equal(id, viewer.authUserId); calls.push("registration"); return destination; } },
+    "./page-reads": { getMemberRegistrationDestination: async id => { assert.equal(id, viewer.authUserId); calls.push("registration"); return destination; } },
     "@/lib/membership/preview-scenarios": {},
-    "@/lib/auth/session": { resolveCurrentPlatformSession: async () => ({ status: session, viewer }) },
+    "@/lib/auth/page-session": { resolveCurrentPlatformSession: async () => ({ status: session, viewer }) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "connected" }) },
     "@/lib/membership/repository": { MembershipAccessDeniedError },
     "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async id => {

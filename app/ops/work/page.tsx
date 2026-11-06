@@ -4,17 +4,17 @@ import { redirect } from "next/navigation";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import OperatorWorkQueue from "@/components/platform/OperatorWorkQueue";
 import { getOpsWorkQueue } from "@/lib/platform/ops-operating-repository";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 import { PREVIEW_OPS_WORK_QUEUE } from "@/lib/platform/ops-preview";
 
 export const metadata: Metadata = { title: "Operator work" };
 export const dynamic = "force-dynamic";
 
 export default async function OperationsWorkPage({ searchParams }: { searchParams?: Promise<{ view?: string | string[]; filter?: string | string[]; sort?: string | string[] }> }) {
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
 
   const params = await searchParams;
   const view = params?.view === "dismissed" ? "dismissed" : "active";

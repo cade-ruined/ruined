@@ -32,7 +32,7 @@ function fixture(options = {}) {
     "@/components/platform/OperatorExperienceRecord": { __esModule: true, default: Record },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: Unavailable },
     "@/components/platform/operatorStyles": { OPERATOR_BUTTON_CLASS: "operator-button" },
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => context },
+    "@/lib/platform/page-data": { getOperatorAccessContext: async () => context },
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError },
     "@/lib/platform/ops-experience-preview": { getPreviewOpsExperienceRecord: () => experience, PREVIEW_OPS_EXPERIENCE_DIRECTORY: directory },
     "@/lib/platform/ops-experience-repository": {
@@ -102,7 +102,7 @@ test("access loss remains denied and missing sign-in redirects before any Experi
   const signedOut = fixture({ context: { state: "signed_out", dashboard: null, viewer: null } });
   await assert.rejects(signedOut.run, (error) => error.kind === "redirect" && error.path === "/ops/access");
   assert.deepEqual(signedOut.calls, []);
-  for (const context of [{ state: "denied" }, { dashboard: null }, { viewer: null }]) {
+  for (const context of [{ state: "denied" }, { state: "unavailable" }, { viewer: null }]) {
     const f = fixture({ context });
     assert.equal((await f.run()).type, f.Unavailable);
     assert.deepEqual(f.calls, []);

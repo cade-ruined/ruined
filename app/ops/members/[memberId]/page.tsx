@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PREVIEW_OPERATOR_DASHBOARD } from "@/lib/platform/model";
 import { notFound, redirect } from "next/navigation";
 
 import { getOwnMemberCardPublicScope } from "@/lib/membership/public-card-repository";
@@ -9,7 +10,7 @@ import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import type { OpsMemberRecord } from "@/lib/platform/ops-model";
 import { getOpsMemberOperatingRecord } from "@/lib/platform/ops-operating-repository";
 import { getOpsMemberProfileSupport } from "@/lib/platform/ops-profile-repository";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 import {
   getPreviewOpsMemberProfileSupport,
   getPreviewOpsMemberRecord,
@@ -28,15 +29,15 @@ export default async function OperationsMemberRecordPage({
 }) {
   const { memberId } = await params;
   const { returnTo } = await searchParams ?? {};
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") {
     return <PlatformUnavailable reason="operator_access" />;
   }
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
 
   if (context.state === "preview") {
-    if (!context.dashboard.members.some((member) => member.memberId === memberId)) notFound();
+    if (!PREVIEW_OPERATOR_DASHBOARD.members.some((member) => member.memberId === memberId)) notFound();
     return (
       <OperatorMemberRecord
         profileSupport={getPreviewOpsMemberProfileSupport(memberId)}

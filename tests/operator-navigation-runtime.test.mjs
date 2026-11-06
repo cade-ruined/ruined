@@ -346,7 +346,7 @@ function eventPageDependencies(state) {
     "@/components/platform/OperatorCommunityEvents": communityComponents,
     "@/components/platform/OperatorExperienceDirectory": memberEventComponents,
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: () => React.createElement("p", null, "Unavailable") },
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => ({ state, role: "ops_admin", dashboard: {}, viewer: { authUserId: "local-fixture" } }) },
+    "@/lib/platform/page-data": { getOperatorAccessContext: async () => ({ state, role: "ops_admin", dashboard: {}, viewer: { authUserId: "local-fixture" } }) },
     "@/lib/platform/ops-experience-preview": { PREVIEW_OPS_EXPERIENCE_DIRECTORY: eventDirectory },
     "@/lib/platform/ops-experience-repository": { getOpsExperienceManagementDirectory: async () => eventDirectory },
     "@/lib/events/community-event-model": { legacyCommunityEventRecords: () => [publicEvent] },
