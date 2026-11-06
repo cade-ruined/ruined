@@ -454,6 +454,7 @@ test("commercial enrollment uses the real schema, current registered people, saf
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText)(name => name === "@/lib/database/server" ? { getApplicationDatabase: () => wrap(db) }
       : name === "@/lib/platform/config" ? { getPlatformConfiguration: () => ({ stripePaymentSetupReady: false }) }
+      : name === "./complimentary-onboarding-repository" ? { reconcileComplimentaryRegistrationOnboarding: async () => false }
       : {}, registrationModule, registrationModule.exports, { env: {} });
     await assert.rejects(registrationModule.exports.completeMemberRegistration(registrant.auth), { name: "MemberRegistrationError", status: 409 });
     assert.equal((await db.query("select registered_at from member_registration_access where member_id=$1", [registrant.member])).rows[0].registered_at, null);

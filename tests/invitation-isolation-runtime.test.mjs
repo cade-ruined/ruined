@@ -149,6 +149,8 @@ async function fixture(t) {
   };
   const basic = { "server-only": {}, "node:crypto": crypto };
   const registration = await load("src/lib/membership/registration-repository.ts", {
+    // Onboarding reconciliation is covered with real guards in complimentary-registration-onboarding.test.mjs.
+    "./complimentary-onboarding-repository": { reconcileComplimentaryRegistrationOnboarding: async () => false },
     "./registration-routing": await load("src/lib/membership/registration-routing.ts"),
     ...basic,
     "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },

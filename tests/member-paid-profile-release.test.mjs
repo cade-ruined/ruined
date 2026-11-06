@@ -74,6 +74,8 @@ async function fixture(t) {
   const repo=load("src/lib/membership/registration-repository.ts",{
     "@/lib/database/server":{getApplicationDatabase:()=>sql},
     "@/lib/platform/config":{getPlatformConfiguration:()=>({stripeActivationReady:true})},
+    // Onboarding reconciliation is covered with real guards in complimentary-registration-onboarding.test.mjs.
+    "./complimentary-onboarding-repository": { reconcileComplimentaryRegistrationOnboarding: async () => false },
     "./registration-routing":load("src/lib/membership/registration-routing.ts"),
   });
   async function member({paid=true,legacy=false,legal=true,complete=true,admin=false}={}) {
