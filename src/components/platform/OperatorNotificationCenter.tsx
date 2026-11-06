@@ -51,6 +51,7 @@ function statusClass(status: OpsNotificationDeliveryStatus): string {
 
 type NotificationDraft = {
   actionLabel: string; actionUrl: string; body: string; notificationType: string;
+  showOnNextVisit: boolean;
   targetId: string; targetType: string; title: string;
 };
 
@@ -115,6 +116,7 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
         actionUrl: String(input.get("actionUrl") ?? ""),
         body: String(input.get("body") ?? ""),
         notificationType: String(input.get("notificationType") ?? "announcement"),
+        showOnNextVisit: input.get("showOnNextVisit") === "on",
         targetId,
         targetType,
         title: String(input.get("title") ?? ""),
@@ -246,6 +248,10 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
           <span className={OPERATOR_LABEL_TEXT_CLASS}>Member-app link · optional</span>
           <input className={OPERATOR_FIELD_CLASS} name="actionUrl" placeholder="/my/circle" />
         </label>
+        <label className="flex items-start gap-3 border border-[var(--operator-line)] p-4 sm:col-span-2">
+          <input className="mt-1 size-5 shrink-0 accent-[var(--operator-ink)]" name="showOnNextVisit" type="checkbox" />
+          <span><span className="block text-sm font-semibold">Show once when members return</span><span className="mt-1 block text-xs leading-relaxed text-[color:var(--operator-muted)]">Also open this as an announcement on their next visit. Members can close it; the notification stays in Updates.</span></span>
+        </label>
         <div className="flex flex-wrap items-center justify-between gap-4 sm:col-span-2">
           <p className="text-sm text-[color:var(--operator-muted)]">Review the exact message and audience next. Nothing is sent yet.</p>
           <button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={submitting} type="submit">Review notification</button>
@@ -257,6 +263,7 @@ export default function OperatorNotificationCenter({ data, preview = false }: { 
         <h3 className="ui-heading mt-3 break-words text-xl font-semibold">{review.draft.title}</h3>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">{review.draft.body}</p>
         {review.draft.actionUrl ? <p className="mt-3 break-all text-xs">{review.draft.actionLabel || "Open"} · {review.draft.actionUrl}</p> : null}
+        <p className="mt-3 text-sm"><strong>{review.draft.showOnNextVisit ? "Announcement on next visit" : "Updates only"}</strong><br />{review.draft.showOnNextVisit ? "This opens when each member returns. Once they close it or follow its link, it won’t appear again. It stays in Updates." : "This appears in Updates without opening a popup."}</p>
         <p className="mt-3 text-sm text-[color:var(--operator-muted)]">This sends immediately to the selected audience. It cannot be retracted here.</p>
         <div className="mt-4 flex flex-wrap gap-4"><button className={OPERATOR_PRIMARY_ACTION_CLASS} disabled={preview || submitting} onClick={sendNotification} type="button">{submitting ? "Sending" : "Send notification"}</button><button className={OPERATOR_BUTTON_CLASS} disabled={submitting} onClick={() => setReview(null)} type="button">Back to editing</button></div>
       </section> : null}

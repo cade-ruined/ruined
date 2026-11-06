@@ -233,12 +233,26 @@ test("notification deep links open compose, preserve exact review, and guard pen
   assert.ok(f.dialog(), "a pending request cannot unmount its composer");
   await f.click("Sending");
   assert.equal(f.calls.length, 1);
-  assert.deepEqual(JSON.parse(f.calls[0].body), { actionLabel: message.actionLabel, actionUrl: message.actionUrl, body: message.body, notificationType: "reminder", targetId: "member-one", targetType: "member", title: message.title });
+  assert.deepEqual(JSON.parse(f.calls[0].body), { actionLabel: message.actionLabel, actionUrl: message.actionUrl, body: message.body, notificationType: "reminder", showOnNextVisit: false, targetId: "member-one", targetType: "member", title: message.title });
   settle(Response.json({ dispatch: { recipientCount: 1 } }));
   await first;
   assert.equal(f.dialog(), undefined);
   assert.equal(f.locations.at(-1), "#notification-history");
   assert.match(text(f.draw()), /No email or text message was sent/);
+});
+
+test("notification popup is optional, explicitly reviewed, and preserved in the send payload", async () => {
+  const f = fixture("OperatorNotificationCenter", { data }, { hash: "#write-notification" });
+  const checkbox = nodes(f.draw()).find(node => node.type === "input" && node.props.name === "showOnNextVisit");
+  assert.equal(checkbox.props.type, "checkbox");
+  assert.equal(checkbox.props.defaultChecked, undefined);
+  assert.equal(checkbox.props.checked, undefined);
+  assert.match(text(f.dialog()), /Show once when members return/);
+  await f.submit({ ...message, showOnNextVisit: "on" });
+  assert.match(text(f.dialog()), /Announcement on next visit/);
+  assert.match(text(f.dialog()), /Once they close it or follow its link/);
+  await f.click("Send notification");
+  assert.equal(JSON.parse(f.calls[0].body).showOnNextVisit, true);
 });
 
 test("notification history search does not mutate delivery records or submit anything", () => {

@@ -14,6 +14,7 @@ type NotificationBody = {
   actionUrl?: unknown;
   body?: unknown;
   notificationType?: unknown;
+  showOnNextVisit?: unknown;
   targetId?: unknown;
   targetType?: unknown;
   title?: unknown;
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
       body: typeof body?.body === "string" ? body.body : "",
       notificationType: typeof body?.notificationType === "string" ? body.notificationType : "",
       requestKey: request.headers.get("idempotency-key") ?? "",
+      showOnNextVisit: body?.showOnNextVisit,
       targetId: typeof body?.targetId === "string" ? body.targetId : null,
       targetType: typeof body?.targetType === "string" ? body.targetType : "",
       title: typeof body?.title === "string" ? body.title : "",

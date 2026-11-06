@@ -24,6 +24,25 @@ test("group personalization retains design markup and supplies a per-person unsu
   assert.equal(elements(result.html,"a")[0].attrs.find(a=>a.name==="href").value,url);
   assert.ok(result.text.includes(url));
 });
+test("group personalization preserves nested responsive CSS without mistaking its closing braces for placeholders",()=>{
+  const styles='<style>@media screen and (max-width:600px){.email-body{padding-left:24px!important;padding-right:24px!important}.email-outer{padding:0!important}}@supports (color:var(--ink)){.email-body{color:var(--ink)}}</style>';
+  const result=personalize(message({html:'<!doctype html><html><head>'+styles+'</head><body><p>Hello {{{contact.first_name}}}</p>'+footer+'</body></html>'}),recipient,url);
+  assert.ok(result.html.includes(styles),"responsive CSS must remain byte-for-byte unchanged");
+  assert.ok(result.html.includes("<p>Hello Avery</p>"));
+  assert.equal(elements(result.html,"a")[0].attrs.find(a=>a.name==="href").value,url);
+});
+test("the CSS brace exemption still rejects unresolved copy and interpolation in layout or active code",()=>{
+  for(const html of [
+    '<p>Incomplete }}</p>'+footer,
+    '<p title="Incomplete }}">Copy</p>'+footer,
+    '<a href="https://example.test/}}">Link</a>'+footer,
+    '<div style="color:{{missing}}">Copy</div>'+footer,
+    '<style>.email-body{color:{{missing}}}</style>'+footer,
+    '<style>.email-body{color:{{{contact.first_name}}}}</style>'+footer,
+    '<script>if(true){if(true){}}</script>'+footer,
+    '<!-- incomplete }} -->'+footer,
+  ]) assert.throws(()=>personalize(message({html}),recipient,url),/unresolved placeholders|unsupported layout or active code/);
+});
 test("group personalization escapes recipient names even in unquoted attributes",()=>{
   const evil={email:"avery@example.test",name:'Avery x=1 onmouseover=alert(1) ` <tag> " &'};
   const result=personalize(message({html:'<p title={{{contact.last_name}}}>{{{contact.last_name}}}</p>'+footer}),evil,url);

@@ -437,6 +437,16 @@ export const PREVIEW_MEMBER_UPDATES: MemberUpdatesSnapshot = {
   access,
   items: [
     {
+      actionLabel: "Open Library",
+      body: "Watch Foundations 01, our first call, now in the Library. Revisit the conversation, then return to The Work whenever you’re ready.",
+      href: "/my/library",
+      id: "preview-library-launch",
+      kind: "notification",
+      publishedAt: "2026-11-06T18:00:00.000Z",
+      readAt: null,
+      title: "The Library is live",
+    },
+    {
       body: "The next member room opens in September. Your Circle will receive the working notes first.",
       href: "/my/experiences",
       id: "preview-update-announcement",

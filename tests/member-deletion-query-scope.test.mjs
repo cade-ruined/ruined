@@ -69,6 +69,7 @@ async function fixture(t) {
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError: RepositoryError },
     "@/lib/platform/artifact-invariants": {}, "@/lib/platform/ops-notification-model": {},
+    "@/lib/membership/notification-inbox-model": await load("src/lib/membership/notification-inbox-model.ts"),
     "@/lib/membership/agreement-receipt": {},
   };
   return { pg, queries, dependencies };

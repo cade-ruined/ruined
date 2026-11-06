@@ -147,6 +147,7 @@ test("held navigation offers Calendar and Registration only, without exposing pr
     const Shell = load("src/components/membership/MemberJourneyShell.tsx", {
       "next/image": Image, "next/link": Link, "next/navigation": { usePathname: () => pathname },
       "@/components/platform/MemberNavigationFab": () => React.createElement("span", null, "PRIVATE MENU"),
+      "@/components/membership/MemberNotificationCenter": () => assert.fail("Held navigation must not render member updates"),
       "@/components/membership/MemberIcon": Stub, "@/components/membership/InstallRuined": Stub,
       "@/lib/membership/navigation": load("src/lib/membership/navigation.ts"),
       "@/lib/site": { publicWebsiteHref: path => `https://theruinedproject.com${path}` },

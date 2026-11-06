@@ -25,10 +25,13 @@ export default function MemberSessionContinuity({ children, celebration, enabled
   useEffect(() => {
     if (!enabled) return;
     recovered.current = false;
+    let previousStatus: MemberSessionStatus = initiallyUnavailable ? "reconnecting" : "connected";
     const connection = startMemberSessionMonitor({
       ownerId,
       initialStatus: initiallyUnavailable ? "reconnecting" : "connected",
       onStatus(next) {
+        const restored = previousStatus !== "connected" && next === "connected";
+        previousStatus = next;
         setStatus(next);
         if (next === "signed_out") {
           setCodeAccepted(false);
@@ -37,6 +40,7 @@ export default function MemberSessionContinuity({ children, celebration, enabled
         if (next === "connected") {
           setCodeAccepted(false);
           dialog.current?.close();
+          if (restored) window.dispatchEvent(new Event("ruined:member-session-restored"));
           // Only a page that could not initially authenticate needs new server content.
           // An existing member's forms stay mounted during all ordinary renewals.
           if (!ownerId && initiallyUnavailable && !recovered.current) {

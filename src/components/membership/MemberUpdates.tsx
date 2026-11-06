@@ -2,14 +2,26 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { MemberUpdateItem, MemberUpdatesSnapshot } from "@/lib/membership/model";
+import { safeMemberNotificationHref } from "@/lib/membership/notification-inbox-model";
 
 import styles from "./MemberUpdates.module.css";
 
 function isUnread(item: MemberUpdateItem) {
   return item.kind === "notification" && !item.readAt;
+}
+
+function withReadNotification(updates: MemberUpdatesSnapshot, id: string) {
+  if (!updates.items.some((item) => item.id === id && isUnread(item))) return updates;
+  return {
+    ...updates,
+    items: updates.items.map((item) => item.kind === "notification" && item.id === id
+      ? { ...item, readAt: new Date().toISOString() }
+      : item),
+    unreadCount: Math.max(0, updates.unreadCount - 1),
+  };
 }
 
 function formatDate(value: string) {
@@ -29,44 +41,61 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const requestPending = useRef(false);
+  const pendingReads = useRef(new Set<string>());
   const unreadFilter = useRef<HTMLButtonElement>(null);
   const unreadItems = updates.items.filter(isUnread);
   const visibleItems = filter === "unread" ? unreadItems : updates.items;
 
-  async function markRead(id: string) {
+  useEffect(() => {
+    if (writable) return;
+    try {
+      if (window.sessionStorage.getItem("ruined-preview-library-announcement") === "open") {
+        setUpdates((current) => withReadNotification(current, "preview-library-launch"));
+      }
+    } catch { /* The local preview also works when browser storage is unavailable. */ }
+  }, [writable]);
+
+  async function markRead(id: string, fromLink = false) {
     const item = updates.items.find((update) => update.id === id && isUnread(update));
-    if (!writable || requestPending.current || !item) return;
-    requestPending.current = true;
-    setPendingId(id);
-    setError(null);
-    setFeedback("");
+    if (!writable || !item || pendingReads.current.has(id) || (!fromLink && requestPending.current)) return;
+    pendingReads.current.add(id);
+    if (!fromLink) {
+      requestPending.current = true;
+      setPendingId(id);
+      setError(null);
+      setFeedback("");
+    }
 
     try {
       const response = await fetch("/api/my/updates/read", {
         body: JSON.stringify({ notificationId: id }),
         headers: { "content-type": "application/json" },
+        keepalive: true,
         method: "POST",
       });
       const payload = (await response.json()) as { error?: unknown; ok?: unknown } | null;
       if (!response.ok || payload?.ok !== true) {
         throw new Error(typeof payload?.error === "string" ? payload.error : "We couldn’t mark this update as read. Please try again.");
       }
-      if (filter === "unread") unreadFilter.current?.focus();
-      setUpdates((current) => {
-        const items = current.items.map((update) => update.kind === "notification" && update.id === id
-          ? { ...update, readAt: new Date().toISOString() }
-          : update);
-        return { ...current, items, unreadCount: items.filter(isUnread).length };
-      });
-      setFeedback(`“${item.title}” marked as read.`);
-      router.refresh();
+      if (!fromLink && filter === "unread") unreadFilter.current?.focus();
+      setUpdates((current) => withReadNotification(current, id));
+      window.dispatchEvent(new Event("ruined:member-updates"));
+      if (!fromLink) {
+        setFeedback(`“${item.title}” marked as read.`);
+        router.refresh();
+      }
     } catch (requestError) {
-      setError(requestError instanceof Error && !(requestError instanceof SyntaxError) && !(requestError instanceof TypeError)
-        ? requestError.message
-        : "We couldn’t mark this update as read. Please try again.");
+      if (!fromLink) {
+        setError(requestError instanceof Error && !(requestError instanceof SyntaxError) && !(requestError instanceof TypeError)
+          ? requestError.message
+          : "We couldn’t mark this update as read. Please try again.");
+      }
     } finally {
-      requestPending.current = false;
-      setPendingId(null);
+      pendingReads.current.delete(id);
+      if (!fromLink) {
+        requestPending.current = false;
+        setPendingId(null);
+      }
     }
   }
 
@@ -76,8 +105,8 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
         <p className={styles.note}>From Ruined</p>
         <h1 className={styles.title}>Updates</h1>
         <p className={styles.summary}>
-          {unreadItems.length
-            ? `${unreadItems.length} unread ${unreadItems.length === 1 ? "update" : "updates"}.`
+          {updates.unreadCount
+            ? `${updates.unreadCount} unread ${updates.unreadCount === 1 ? "update" : "updates"}.`
             : updates.items.length ? "You’re all caught up." : "Your membership notices will appear here."}
         </p>
       </header>
@@ -87,10 +116,11 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
           All <span className={styles.count}>{updates.items.length}</span>
         </button>
         <button aria-controls="member-updates-list" aria-pressed={filter === "unread"} className={styles.filter} onClick={() => setFilter("unread")} ref={unreadFilter} type="button">
-          Unread <span className={styles.count}>{unreadItems.length}</span>
+          Unread <span className={styles.count}>{updates.unreadCount}</span>
         </button>
       </div>
 
+      {updates.items.length >= 100 ? <p className={styles.readOnly}>Showing your latest 100 updates.</p> : null}
       {!writable && unreadItems.length ? <p className={styles.readOnly}>Read status can’t be changed in this view.</p> : null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       <p aria-atomic="true" className={styles.srOnly} role="status">{feedback}</p>
@@ -103,6 +133,8 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
           <ol className={styles.list}>
             {visibleItems.map((item) => {
               const unread = isUnread(item);
+              const href = safeMemberNotificationHref(item.href);
+              const actionLabel = item.actionLabel?.trim() || "View details";
               return (
                 <li className={`${styles.card} ${unread ? styles.unread : ""}`} key={`${item.kind}-${item.id}`}>
                   <article aria-labelledby={`update-${item.kind}-${item.id}`}>
@@ -115,9 +147,9 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
                     </div>
                     <h2 className={styles.cardTitle} id={`update-${item.kind}-${item.id}`}>{item.title}</h2>
                     <p className={styles.body}>{item.body}</p>
-                    {item.href || unread ? (
+                    {href || unread ? (
                       <div className={styles.actions}>
-                        {item.href ? <Link aria-label={`View details: ${item.title}`} className={styles.details} href={item.href}>View details <span aria-hidden="true">↗</span></Link> : null}
+                        {href ? <Link aria-label={`${actionLabel}: ${item.title}`} className={styles.details} href={href} onClick={() => { void markRead(item.id, true); }}>{actionLabel} <span aria-hidden="true">↗</span></Link> : null}
                         {unread ? (
                           <button
                             aria-label={pendingId === item.id ? `Marking as read: ${item.title}` : `Mark as read: ${item.title}`}
@@ -138,9 +170,13 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
           </ol>
         ) : (
           <div className={styles.empty}>
-            <h2 className={styles.emptyTitle}>{filter === "unread" && updates.items.length ? "All caught up." : "No updates yet."}</h2>
-            <p className={styles.emptyBody}>{filter === "unread" && updates.items.length
-              ? "There are no unread notices. Your announcements and previous updates are still here."
+            <h2 className={styles.emptyTitle}>{filter === "unread" && updates.unreadCount
+              ? "No unread updates in this view."
+              : filter === "unread" && updates.items.length ? "All caught up." : "No updates yet."}</h2>
+            <p className={styles.emptyBody}>{filter === "unread" && updates.unreadCount
+              ? "Older unread notices aren’t in the latest 100 updates shown here."
+              : filter === "unread" && updates.items.length
+                ? "There are no unread notices. Your announcements and previous updates are still here."
               : "Announcements and personal notices will appear here when there’s something to share."}</p>
             {filter === "unread" && updates.items.length ? <button className={styles.details} onClick={() => setFilter("all")} type="button">View all updates <span aria-hidden="true">→</span></button> : null}
           </div>

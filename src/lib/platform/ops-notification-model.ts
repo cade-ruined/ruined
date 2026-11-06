@@ -11,6 +11,11 @@ export type OpsNotificationDeliveryStatus =
 
 const REQUEST_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{15,199}$/;
 
+export function normalizeOpsNotificationShowOnNextVisit(value: unknown): boolean | null {
+  if (value === undefined) return false;
+  return typeof value === "boolean" ? value : null;
+}
+
 export function normalizeOpsNotificationRequestKey(value: string): string | null {
   const normalized = value.trim();
   return REQUEST_KEY_PATTERN.test(normalized) ? normalized : null;
