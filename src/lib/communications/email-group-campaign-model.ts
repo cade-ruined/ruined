@@ -8,6 +8,24 @@ export type EmailGroupCampaignMessage={from:string;replyTo:string[];subject:stri
 export const EMAIL_GROUP_CAMPAIGN_LIMIT=1000;
 export const emailGroupPurposeLabel=(purpose:EmailGroupCampaignPurpose)=>purpose==="general_updates" ? "general group emails" : "membership group emails";
 export const escapeEmailGroupHtml=(value:string)=>value.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
+function hasUnresolvedHtmlPlaceholders(html:string):boolean {
+  if (html.includes("{{")) return true;
+  const closingPairs=[...html.matchAll(/\}\}/g)];
+  if (!closingPairs.length) return false;
+  const styleText:Array<{start:number;end:number}>=[];
+  function visit(node:DefaultTreeAdapterTypes.Node) {
+    if ("tagName" in node && node.tagName==="style") {
+      // Nested media/support rules legitimately end with adjacent CSS braces.
+      // Only raw stylesheet text is exempt; visible text, attributes, comments,
+      // and active-code contexts retain the unresolved-marker check.
+      for (const child of node.childNodes) if (child.nodeName==="#text" && child.sourceCodeLocation) {
+        styleText.push({start:child.sourceCodeLocation.startOffset,end:child.sourceCodeLocation.endOffset});
+      }
+    } else if ("childNodes" in node) node.childNodes.forEach(visit);
+  }
+  visit(parse(html,{sourceCodeLocationInfo:true}));
+  return closingPairs.some(pair=>!styleText.some(span=>pair.index>=span.start && pair.index+pair[0].length<=span.end));
+}
 export function personalizeEmailGroupMessage(message:EmailGroupCampaignMessage,recipient:EmailGroupCampaignRecipient,unsubscribeUrl:string):EmailGroupCampaignMessage {
   const url=new URL(unsubscribeUrl);
   if (url.protocol!=="https:" || url.username || url.password || !isAdminEmailAddress(recipient.email)) throw new AdminEmailError(400,"The recipient or unsubscribe link is invalid.");
@@ -62,7 +80,7 @@ export function personalizeEmailGroupMessage(message:EmailGroupCampaignMessage,r
     const escaped=escapeEmailGroupHtml(valueFor(key));
     return placement.attribute ? escaped.replace(/[\u0009-\u0020=`]/g,char=>`&#${char.charCodeAt(0)};`) : escaped;
   });
-  if (/\{\{|\}\}/.test(html)) throw new AdminEmailError(400,"This design still contains unresolved placeholders.");
+  if (hasUnresolvedHtmlPlaceholders(html)) throw new AdminEmailError(400,"This design still contains unresolved placeholders.");
   if (!unsubscribeLink) throw new AdminEmailError(400,"This campaign needs a working unsubscribe link.");
   let text=expand(message.text);
   if (!text.includes(unsubscribeUrl)) text+=`\n\nUnsubscribe: ${unsubscribeUrl}`;
