@@ -10,7 +10,7 @@ import type {
 
 import styles from "./member-academy.module.css";
 
-const ALL_LESSONS = "all";
+const ALL_RESOURCES = "all";
 
 function lessonAction(resource: MemberLearningResourceSummary) {
   switch (resource.resourceType) {
@@ -22,7 +22,7 @@ function lessonAction(resource: MemberLearningResourceSummary) {
   }
 }
 
-function LessonArtwork({
+function ResourceArtwork({
   prominent = false,
   resource,
 }: {
@@ -37,7 +37,7 @@ function LessonArtwork({
       }`}
       style={resource.thumbnailUrl ? { backgroundImage: `url(${JSON.stringify(resource.thumbnailUrl)})` } : undefined}
     >
-      {!resource.thumbnailUrl ? <span>{resource.collectionName ?? "Ruined Academy"}</span> : null}
+      {!resource.thumbnailUrl ? <span>{resource.collectionName ?? "Ruined Library"}</span> : null}
       <span className={styles.artworkAction}>
         {resource.resourceType === "video" ? <span className={styles.playMark}>▶</span> : null}
         {resource.durationLabel ?? lessonAction(resource)}
@@ -46,13 +46,13 @@ function LessonArtwork({
   );
 }
 
-function AcademyVideoCard({ resource }: { resource: MemberLearningResourceSummary }) {
+function LibraryResourceCard({ resource }: { resource: MemberLearningResourceSummary }) {
   return (
-    <Link className={styles.lessonCard} data-academy-resource-card href={resource.href}>
-      <LessonArtwork resource={resource} />
+    <Link className={styles.lessonCard} data-library-resource-card href={resource.href}>
+      <ResourceArtwork resource={resource} />
       <div className={styles.lessonCardCopy}>
         <p className={styles.cardMeta}>
-          {resource.collectionName ?? "Academy"}
+          {resource.collectionName ?? "Library"}
           {resource.presenter ? ` · ${resource.presenter}` : ""}
         </p>
         <h3>{resource.title}</h3>
@@ -62,24 +62,24 @@ function AcademyVideoCard({ resource }: { resource: MemberLearningResourceSummar
   );
 }
 
-function FeaturedLesson({ resource }: { resource: MemberLearningResourceSummary }) {
+function FeaturedResource({ resource }: { resource: MemberLearningResourceSummary }) {
   return (
-    <section aria-labelledby="academy-featured-title" className={styles.featured}>
+    <section aria-labelledby="library-featured-title" className={styles.featured}>
       <Link className={styles.featuredArtworkLink} href={resource.href}>
-        <LessonArtwork prominent resource={resource} />
+        <ResourceArtwork prominent resource={resource} />
         <span className="sr-only">{lessonAction(resource)} {resource.title}</span>
       </Link>
       <div className={styles.featuredCopy}>
-        <p className={styles.kicker}>Featured lesson</p>
-        <h2 id="academy-featured-title">{resource.title}</h2>
+        <p className={styles.kicker}>{resource.resourceType === "video" ? "Featured recording" : "Featured resource"}</p>
+        <h2 id="library-featured-title">{resource.title}</h2>
         {resource.summary ? <p>{resource.summary}</p> : null}
         <div className={styles.featuredMeta}>
-          <span>{resource.collectionName ?? "Academy"}</span>
+          <span>{resource.collectionName ?? "Library"}</span>
           {resource.presenter ? <span>{resource.presenter}</span> : null}
           {resource.durationLabel ? <span>{resource.durationLabel}</span> : null}
         </div>
         <Link className={styles.primaryAction} href={resource.href}>
-          {lessonAction(resource)} lesson <span aria-hidden>→</span>
+          {resource.resourceType === "video" ? "Watch recording" : `${lessonAction(resource)} resource`} <span aria-hidden>→</span>
         </Link>
       </div>
     </section>
@@ -87,7 +87,7 @@ function FeaturedLesson({ resource }: { resource: MemberLearningResourceSummary 
 }
 
 export default function MemberLearningLibrary({ learning }: { learning: MemberLearningSnapshot }) {
-  const [activeCollection, setActiveCollection] = useState(ALL_LESSONS);
+  const [activeCollection, setActiveCollection] = useState(ALL_RESOURCES);
   const [query, setQuery] = useState("");
   const allResources = useMemo(
     () => [
@@ -101,31 +101,33 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
     allResources.find((resource) => resource.resourceType === "video") ??
     allResources[0] ??
     null;
+  const additionalResources = learning.uncollected.filter((resource) => resource.id !== featured?.id);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filtering = activeCollection !== ALL_LESSONS || normalizedQuery.length > 0;
+  const filtering = activeCollection !== ALL_RESOURCES || normalizedQuery.length > 0;
   const filteredResources = allResources.filter((resource) => {
-    const belongsToCollection = activeCollection === ALL_LESSONS || resource.collectionName === activeCollection;
+    const belongsToCollection = activeCollection === ALL_RESOURCES || resource.collectionName === activeCollection;
     const searchable = `${resource.title} ${resource.summary ?? ""} ${resource.collectionName ?? ""} ${resource.presenter ?? ""}`.toLocaleLowerCase();
     return belongsToCollection && (!normalizedQuery || searchable.includes(normalizedQuery));
   });
 
   return (
-    <main className={`member-journey-page ${styles.academy}`} data-member-academy>
+    <main className={`member-journey-page ${styles.academy}`} data-member-library>
       <header className={styles.academyHeader}>
         <div>
-          <p className={styles.handNote}>use what moves the work</p>
-          <h1>Academy</h1>
+          <p className={styles.handNote}>come back to what matters</p>
+          <h1>Library</h1>
+          <p className={styles.introduction}>Recordings and material to return to, in your own time.</p>
         </div>
         <label className={styles.search}>
-          <span className="sr-only">Search Academy</span>
+          <span className="sr-only">Search Library</span>
           <svg aria-hidden viewBox="0 0 24 24">
             <circle cx="10.5" cy="10.5" r="6.5" />
             <path d="m15.5 15.5 5 5" />
           </svg>
           <input
-            aria-label="Search Academy"
+            aria-label="Search Library"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search lessons"
+            placeholder="Search the library"
             type="search"
             value={query}
           />
@@ -134,10 +136,10 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
 
       {allResources.length ? (
         <>
-          <nav aria-label="Academy categories" className={styles.categoryRail}>
+          <nav aria-label="Library categories" className={styles.categoryRail}>
             <button
-              aria-pressed={activeCollection === ALL_LESSONS}
-              onClick={() => setActiveCollection(ALL_LESSONS)}
+              aria-pressed={activeCollection === ALL_RESOURCES}
+              onClick={() => setActiveCollection(ALL_RESOURCES)}
               type="button"
             >
               All
@@ -154,21 +156,21 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
             ))}
           </nav>
 
-          {!filtering && featured ? <FeaturedLesson resource={featured} /> : null}
+          {!filtering && featured ? <FeaturedResource resource={featured} /> : null}
 
           {filtering ? (
-            <section aria-labelledby="academy-results-title" className={styles.librarySection}>
+            <section aria-labelledby="library-results-title" className={styles.librarySection}>
               <div className={styles.sectionHeading}>
                 <div>
                   <p className={styles.kicker}>Library</p>
-                  <h2 id="academy-results-title">
-                    {filteredResources.length === 1 ? "1 lesson" : `${filteredResources.length} lessons`}
+                  <h2 aria-live="polite" id="library-results-title">
+                    {filteredResources.length === 1 ? "1 resource" : `${filteredResources.length} resources`}
                   </h2>
                 </div>
                 <button
                   className={styles.clearButton}
                   onClick={() => {
-                    setActiveCollection(ALL_LESSONS);
+                    setActiveCollection(ALL_RESOURCES);
                     setQuery("");
                   }}
                   type="button"
@@ -178,11 +180,11 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
               </div>
               {filteredResources.length ? (
                 <div className={styles.lessonGrid}>
-                  {filteredResources.map((resource) => <AcademyVideoCard key={resource.id} resource={resource} />)}
+                  {filteredResources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
                 </div>
               ) : (
                 <p aria-live="polite" className={styles.noResults} role="status">
-                  No lessons match that search.
+                  Nothing matches yet. Try another word or clear your filters.
                 </p>
               )}
             </section>
@@ -193,37 +195,35 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
                 if (!resources.length) return null;
                 return (
                   <section
-                    aria-labelledby={`academy-collection-${collection.id}`}
+                    aria-labelledby={`library-collection-${collection.id}`}
                     className={styles.librarySection}
                     id={collection.slug}
                     key={collection.id}
                   >
                     <div className={styles.sectionHeading}>
                       <div>
-                        <p className={styles.kicker}>Series</p>
-                        <h2 id={`academy-collection-${collection.id}`}>{collection.name}</h2>
+                        <p className={styles.kicker}>Collection</p>
+                        <h2 id={`library-collection-${collection.id}`}>{collection.name}</h2>
                       </div>
                       {collection.description ? <p>{collection.description}</p> : null}
                     </div>
                     <div className={styles.lessonGrid}>
-                      {resources.map((resource) => <AcademyVideoCard key={resource.id} resource={resource} />)}
+                      {resources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
                     </div>
                   </section>
                 );
               })}
 
-              {learning.uncollected.length ? (
-                <section aria-labelledby="academy-more-title" className={styles.librarySection}>
+              {additionalResources.length ? (
+                <section aria-labelledby="library-more-title" className={styles.librarySection}>
                   <div className={styles.sectionHeading}>
                     <div>
                       <p className={styles.kicker}>Library</p>
-                      <h2 id="academy-more-title">More lessons</h2>
+                      <h2 id="library-more-title">More to explore</h2>
                     </div>
                   </div>
                   <div className={styles.lessonGrid}>
-                    {learning.uncollected
-                      .filter((resource) => resource.id !== featured?.id)
-                      .map((resource) => <AcademyVideoCard key={resource.id} resource={resource} />)}
+                    {additionalResources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
                   </div>
                 </section>
               ) : null}
@@ -232,9 +232,10 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
         </>
       ) : (
         <section className={styles.emptyLibrary}>
-          <p className={styles.kicker}>Academy</p>
-          <h2>The library is still quiet.</h2>
-          <p>New lessons will appear here when they are published for your Circle, Block, or membership.</p>
+          <p className={styles.kicker}>Library</p>
+          <h2>Nothing here yet.</h2>
+          <p>Your available recordings and resources will appear here. You can find your current exercises in The Work.</p>
+          <Link className={styles.primaryAction} href="/my/practice">Open The Work <span aria-hidden>→</span></Link>
         </section>
       )}
     </main>

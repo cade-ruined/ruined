@@ -58,7 +58,7 @@ test("Academy writes reauthorize an active admin, append versions, and audit cha
   assert.match(repository, /platform_user\.status = 'active'[\s\S]*role_grant\.role_slug = 'ops_admin'[\s\S]*role_grant\.revoked_at is null/);
   assert.match(repository, /for update of platform_user, role_grant/);
   assert.match(repository, /insert into learning_resource_versions/g);
-  assert.match(repository, /coalesce\(max\(version\), 0\) \+ 1 as next_version/);
+  assert.match(repository, /Number\(latest\?\.version \?\? 0\) \+ 1/);
   assert.match(repository, /academyDraft/);
   assert.match(repository, /insert into operator_audit_events/);
   assert.match(repository, /Number\(resource\.revision\) !== revision/);

@@ -2750,6 +2750,7 @@ export async function getMemberLearning(
       and collection.status = 'published'
     cross join membership_scope scope
     where resource.status = 'published'
+      and (resource.collection_id is null or collection.id is not null)
       and exists (
         select 1
         from learning_resource_targets target
@@ -2775,7 +2776,7 @@ export async function getMemberLearning(
       collectionName: row.collection_name,
       durationLabel: media.durationLabel,
       featured: media.featured,
-      href: `/my/learn/${row.slug}`,
+      href: `/my/library/${row.slug}`,
       id: row.id,
       presenter: media.presenter,
       publishedAt: toIso(row.published_at)!,
@@ -2880,6 +2881,7 @@ export async function getMemberLearningResource(
     cross join membership_scope scope
     where resource.slug = ${slug}
       and resource.status = 'published'
+      and (resource.collection_id is null or collection.id is not null)
       and ((${fullLearningAccess} and exists (
         select 1
         from learning_resource_targets target

@@ -19,6 +19,7 @@ const ONBOARDING_CAPABILITIES = [
   "circle.read",
   "foundations.summary",
   "foundations.write",
+  "learn.read",
   "updates.read",
 ] as const satisfies readonly MemberCapability[];
 
@@ -27,7 +28,6 @@ const FULL_CAPABILITIES = [
   "artifacts.write",
   "experiences.member",
   "foundations.revisit",
-  "learn.read",
 ] as const satisfies readonly MemberCapability[];
 
 const LIMITED_CAPABILITIES = [
