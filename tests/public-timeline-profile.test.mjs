@@ -183,6 +183,7 @@ const Link = ({ children, ...props }) => React.createElement("a", props, childre
 const css = new Proxy({}, { get: (_, key) => key });
 const TimelineStoryContent = load("src/components/membership/TimelineStoryContent.tsx", { "./TimelineStoryContent.module.css": css }).default;
 const dependencies = { "next/image": Image, "next/link": Link, "@/lib/membership/member-number": load("src/lib/membership/member-number.ts"),
+  "@/lib/site": load("src/lib/site.ts"),
   "@/lib/membership/member-read-client": { fetchMemberRead: async () => { throw new Error("A static profile render must not fetch"); } },
   "./TimelineStoryContent": TimelineStoryContent,
   "./MemberBadges": ({ badges }) => React.createElement("div", { "data-public-badges": true }, badges.map(badge => React.createElement("span", { key: badge.key }, badge.label))),
