@@ -72,7 +72,9 @@ test("the first recording is featured once without a duplicate or empty shelf", 
     const f = fixture(libraryPath, { learning: snapshot });
     assert.equal(f.all().filter(node => node.type === "h2").length, 1);
     assert.equal(text(f.find(node => node.type === "h2")), "Foundations 01");
-    assert.equal(f.all().filter(node => node.props?.["data-library-resource-card"]).length, 0);
+    assert.equal(f.all().filter(node => node.props?.["data-library-resource-card"]).length, 1);
+    assert.equal(f.find(node => node.props?.["data-single"] === "true").type, "section");
+    assert.doesNotMatch(f.text(), /Recordings and material to return to, in your own time/);
     assert.doesNotMatch(f.text(), /More to explore|Nothing here yet/);
     assert.equal(f.find(node => node.type === "a" && text(node).includes("Watch recording")).props.href, recording.href);
   }
@@ -89,7 +91,7 @@ test("Library search, collection selection, no results, and clearing keep the re
   assert.match(f.find(node => node.props?.role === "status").props.children, /Nothing matches/);
   f.find(node => node.type === "button" && text(node) === "Clear").props.onClick(); f.draw();
   assert.equal(search().props.value, "");
-  assert.match(f.text(), /Featured recording/);
+  assert.match(f.text(), /Featured/);
 });
 
 test("an empty Library links to existing Work and invents no future content", () => {

@@ -22,67 +22,34 @@ function lessonAction(resource: MemberLearningResourceSummary) {
   }
 }
 
-function ResourceArtwork({
-  prominent = false,
-  resource,
-}: {
-  prominent?: boolean;
-  resource: MemberLearningResourceSummary;
-}) {
-  return (
-    <div
-      aria-hidden="true"
-      className={`${styles.artwork} ${prominent ? styles.artworkFeatured : ""} ${
-        resource.thumbnailUrl ? styles.artworkImage : styles.artworkPlaceholder
-      }`}
-      style={resource.thumbnailUrl ? { backgroundImage: `url(${JSON.stringify(resource.thumbnailUrl)})` } : undefined}
-    >
-      {!resource.thumbnailUrl ? <span>{resource.collectionName ?? "Ruined Library"}</span> : null}
-      <span className={styles.artworkAction}>
-        {resource.resourceType === "video" ? <span className={styles.playMark}>▶</span> : null}
-        {resource.durationLabel ?? lessonAction(resource)}
-      </span>
-    </div>
-  );
-}
-
 function LibraryResourceCard({ resource }: { resource: MemberLearningResourceSummary }) {
   return (
-    <Link className={styles.lessonCard} data-library-resource-card href={resource.href}>
-      <ResourceArtwork resource={resource} />
+    <Link
+      aria-label={`${lessonAction(resource)} ${resource.title}${resource.durationLabel ? `, ${resource.durationLabel}` : ""}`}
+      className={styles.lessonCard}
+      data-library-resource-card
+      href={resource.href}
+    >
+      <div
+        aria-hidden="true"
+        className={`${styles.artwork} ${resource.thumbnailUrl ? "" : styles.artworkPlaceholder}`}
+        style={resource.thumbnailUrl ? { backgroundImage: `url(${JSON.stringify(resource.thumbnailUrl)})` } : undefined}
+      />
+      <div className={styles.cardMeta}>
+        <span>{resource.collectionName ?? "Library"}</span>
+        {resource.durationLabel ? <span>{resource.durationLabel}</span> : null}
+      </div>
       <div className={styles.lessonCardCopy}>
-        <p className={styles.cardMeta}>
-          {resource.collectionName ?? "Library"}
-          {resource.presenter ? ` · ${resource.presenter}` : ""}
-        </p>
-        <h3>{resource.title}</h3>
+        {resource.featured ? <p className={styles.featuredLabel}>Featured</p> : null}
+        <h2>{resource.title}</h2>
+        {resource.presenter ? <p className={styles.presenter}>With {resource.presenter}</p> : null}
         {resource.summary ? <p className={styles.cardSummary}>{resource.summary}</p> : null}
+        <span className={styles.cardAction}>
+          <span>{resource.resourceType === "video" ? "Watch recording" : `${lessonAction(resource)} resource`}</span>
+          <span aria-hidden="true" className={styles.playMark}>{resource.resourceType === "video" ? "▶" : "↗"}</span>
+        </span>
       </div>
     </Link>
-  );
-}
-
-function FeaturedResource({ resource }: { resource: MemberLearningResourceSummary }) {
-  return (
-    <section aria-labelledby="library-featured-title" className={styles.featured}>
-      <Link className={styles.featuredArtworkLink} href={resource.href}>
-        <ResourceArtwork prominent resource={resource} />
-        <span className="sr-only">{lessonAction(resource)} {resource.title}</span>
-      </Link>
-      <div className={styles.featuredCopy}>
-        <p className={styles.kicker}>{resource.resourceType === "video" ? "Featured recording" : "Featured resource"}</p>
-        <h2 id="library-featured-title">{resource.title}</h2>
-        {resource.summary ? <p>{resource.summary}</p> : null}
-        <div className={styles.featuredMeta}>
-          <span>{resource.collectionName ?? "Library"}</span>
-          {resource.presenter ? <span>{resource.presenter}</span> : null}
-          {resource.durationLabel ? <span>{resource.durationLabel}</span> : null}
-        </div>
-        <Link className={styles.primaryAction} href={resource.href}>
-          {resource.resourceType === "video" ? "Watch recording" : `${lessonAction(resource)} resource`} <span aria-hidden>→</span>
-        </Link>
-      </div>
-    </section>
   );
 }
 
@@ -96,15 +63,10 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
     ],
     [learning],
   );
-  const featured =
-    allResources.find((resource) => resource.featured) ??
-    allResources.find((resource) => resource.resourceType === "video") ??
-    allResources[0] ??
-    null;
-  const additionalResources = learning.uncollected.filter((resource) => resource.id !== featured?.id);
+  const orderedResources = [...allResources].sort((a, b) => Number(b.featured) - Number(a.featured));
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filtering = activeCollection !== ALL_RESOURCES || normalizedQuery.length > 0;
-  const filteredResources = allResources.filter((resource) => {
+  const filteredResources = orderedResources.filter((resource) => {
     const belongsToCollection = activeCollection === ALL_RESOURCES || resource.collectionName === activeCollection;
     const searchable = `${resource.title} ${resource.summary ?? ""} ${resource.collectionName ?? ""} ${resource.presenter ?? ""}`.toLocaleLowerCase();
     return belongsToCollection && (!normalizedQuery || searchable.includes(normalizedQuery));
@@ -116,7 +78,6 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
         <div>
           <p className={styles.handNote}>come back to what matters</p>
           <h1>Library</h1>
-          <p className={styles.introduction}>Recordings and material to return to, in your own time.</p>
         </div>
         <label className={styles.search}>
           <span className="sr-only">Search Library</span>
@@ -156,8 +117,6 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
             ))}
           </nav>
 
-          {!filtering && featured ? <FeaturedResource resource={featured} /> : null}
-
           {filtering ? (
             <section aria-labelledby="library-results-title" className={styles.librarySection}>
               <div className={styles.sectionHeading}>
@@ -179,7 +138,7 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
                 </button>
               </div>
               {filteredResources.length ? (
-                <div className={styles.lessonGrid}>
+                <div className={styles.lessonGrid} data-single={filteredResources.length === 1 ? "true" : undefined}>
                   {filteredResources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
                 </div>
               ) : (
@@ -189,45 +148,9 @@ export default function MemberLearningLibrary({ learning }: { learning: MemberLe
               )}
             </section>
           ) : (
-            <div className={styles.collectionStack}>
-              {learning.collections.map((collection) => {
-                const resources = collection.resources.filter((resource) => resource.id !== featured?.id);
-                if (!resources.length) return null;
-                return (
-                  <section
-                    aria-labelledby={`library-collection-${collection.id}`}
-                    className={styles.librarySection}
-                    id={collection.slug}
-                    key={collection.id}
-                  >
-                    <div className={styles.sectionHeading}>
-                      <div>
-                        <p className={styles.kicker}>Collection</p>
-                        <h2 id={`library-collection-${collection.id}`}>{collection.name}</h2>
-                      </div>
-                      {collection.description ? <p>{collection.description}</p> : null}
-                    </div>
-                    <div className={styles.lessonGrid}>
-                      {resources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
-                    </div>
-                  </section>
-                );
-              })}
-
-              {additionalResources.length ? (
-                <section aria-labelledby="library-more-title" className={styles.librarySection}>
-                  <div className={styles.sectionHeading}>
-                    <div>
-                      <p className={styles.kicker}>Library</p>
-                      <h2 id="library-more-title">More to explore</h2>
-                    </div>
-                  </div>
-                  <div className={styles.lessonGrid}>
-                    {additionalResources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
-                  </div>
-                </section>
-              ) : null}
-            </div>
+            <section aria-label="Available recordings and resources" className={styles.lessonGrid} data-single={orderedResources.length === 1 ? "true" : undefined}>
+              {orderedResources.map((resource) => <LibraryResourceCard key={resource.id} resource={resource} />)}
+            </section>
           )}
         </>
       ) : (
