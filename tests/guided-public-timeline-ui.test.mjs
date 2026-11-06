@@ -24,7 +24,7 @@ const snapshot = (entries = [], extras = {}) => ({ entries, writable: true, medi
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function fixture({ initialJournal = snapshot(), preview = false, ownerId = "owner-a", recoveryDraft = null, fetchOverride, initialEntryId, startNew = false } = {}) {
+function fixture({ initialJournal = snapshot(), preview = false, ownerId = "owner-a", recoveryDraft = null, fetchOverride, initialEntryId, startNew = false, practice = false, initialWorkDraft } = {}) {
   const slots = [], effects = [], requests = [], guardStates = [], navigations = [], uploads = new Map();
   let cursor = 0, newId = 0, cleared = 0;
   const saved = new Map(initialJournal.entries.map(e => [e.id, structuredClone(e)]));
@@ -36,6 +36,7 @@ function fixture({ initialJournal = snapshot(), preview = false, ownerId = "owne
   const fetch = async (url, init = {}) => {
     const request = { url, method: init.method ?? "GET", value: typeof init.body === "string" ? JSON.parse(init.body) : null, body: init.body, signal: init.signal, owner: new Headers(init.headers).get("x-ruined-session-owner") }; requests.push(request);
     if (fetchOverride) { const custom = await fetchOverride(request, saved); if (custom) return custom; }
+    if (url === "/api/my/practice/timeline-draft") return json({ cleared: true });
     if (url === "/api/my/timeline") return json({ timeline: { access: { capabilities: [] }, completedAt: null } });
     if (url === "/api/my/journal/media") { const id = `bbbbbbbb-bbbb-4bbb-8bbb-${String(uploads.size + 1).padStart(12, "0")}`; uploads.set(id, { id, ...request.value, url: `/api/my/journal/media/${id}` }); return json({ id, signedUrl: `https://upload.example.test/${id}` }); }
     if (request.method === "PUT") return json({});
@@ -71,7 +72,7 @@ function fixture({ initialJournal = snapshot(), preview = false, ownerId = "owne
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, property) => property }) };
     throw Error(`Unexpected guided Timeline dependency ${name}`);
   }, loaded, loaded.exports, { requestAnimationFrame(callback) { callback(); }, dispatchEvent() {}, location: { origin: "https://members.example.test", assign: url => navigations.push(url) } }, { activeElement: null }, class {}, fetch, { randomUUID: () => `aaaaaaaa-aaaa-4aaa-8aaa-${String(++newId).padStart(12, "0")}` });
-  const props = { initialJournal, preview, ownerId, initialEntryId, startNew };
+  const props = { initialJournal, preview, ownerId, initialEntryId, startNew, practice, initialWorkDraft };
   const render = () => { cursor = 0; const tree = loaded.exports.default(props); effects.splice(0).forEach(effect => effect()); return tree; };
   const change = (id, value) => control(render(), id).props.onChange({ target: { value } });
   const attach = files => control(render(), "timeline-attachments").props.onChange({ target: { files, value: "" } });
@@ -164,7 +165,7 @@ test("one composer collects a public story and optional reflections without an i
 test("private drafts remain private and require a separate explicit publication", async () => {
   const ui = fixture(); await fillStory(ui); await ui.click("Save private draft");
   assert.equal(ui.writes()[0].value.visibility, "private");
-  assert.match(text(ui.render()), /Saved privately in your Journal/);
+  assert.match(text(ui.render()), /Saved as a private Timeline draft/);
   assert.equal(button(ui.render(), "Post").props.disabled, false);
   await ui.submit();
   assert.equal(ui.writes()[1].method, "PATCH");
@@ -560,4 +561,224 @@ test("media checkpoint metadata is copied without mutating or exposing another a
   assert.equal(recovered.files[0], file); assert.equal(recovered.keptMedia[0].url, "/saved.jpg"); assert.equal(recovered.uploadIds[0][1], "uploaded");
   recovered.keptMedia.pop(); assert.equal(first.read("public-timeline").draft.publicTimelineMedia.keptMedia.length, 1);
   assert.equal(first.read(), null); assert.equal(second.read("public-timeline"), null);
+});
+
+
+const importedWork = (overrides = {}) => ({
+  draft: { id: null, year: 2011, month: 3, title: "A new start", details: "The work I began from the email.", ...responses },
+  revision: "37", entryId: "cccccccc-cccc-4ccc-8ccc-111111111111", newerSavedVersion: false, ...overrides,
+});
+
+test("Foundations opens the same six prompts immediately and posts an explicit public reflection snapshot", async () => {
+  const ui = fixture({ practice: true, startNew: true });
+  const tree = ui.render();
+  assert.ok(nodes(tree).some(node => node.type === "summary" && node.props["aria-label"] === "When was this?"));
+  assert.ok(control(tree, "timeline-year"));
+  assert.ok(control(tree, "timeline-details"));
+  const reflectionSection = nodes(tree).find(node => node.type === "section" && node.props["aria-label"] === "Foundations reflection questions");
+  assert.ok(reflectionSection);
+  assert.equal(nodes(reflectionSection).filter(node => node.type === "textarea").length, 4);
+  assert.equal(nodes(reflectionSection).some(node => node.type === "details"), false);
+  assert.equal(disclosure(tree, "Go deeper"), undefined, "the missing last question cannot be hidden behind an optional disclosure");
+  for (const label of ["What happened?", "What did I make it mean?", "What did I start believing?", "How does it show up now?", "What can I see now?"]) assert.ok(text(tree).includes(label));
+  assert.ok(button(tree, "Save draft"));
+  assert.ok(button(tree, "Post to Timeline"));
+  assert.equal(ui.writes().length, 0);
+  await fillStory(ui); await ui.submit();
+  assert.equal(ui.writes().length, 1);
+  assert.equal(ui.writes()[0].value.visibility, "public");
+  assert.deepEqual(ui.writes()[0].value.timelineReflection, responses);
+  assert.match(text(ui.render()), /Published to your Timeline/);
+  ui.unmount();
+});
+
+test("Foundations Save draft persists all questions privately before a separate public post", async () => {
+  const ui = fixture({ practice: true });
+  await fillStory(ui); await ui.click("Save draft");
+  assert.equal(ui.writes().length, 1);
+  assert.equal(ui.writes()[0].value.visibility, "private");
+  assert.deepEqual(ui.writes()[0].value.timelineReflection, responses);
+  assert.match(text(ui.render()), /Only you can see it/);
+  assert.equal([...ui.saved.values()][0].visibility, "private");
+  assert.equal(button(ui.render(), "Drafts").props["aria-pressed"], true);
+  assert.ok(button(ui.render(), "Post to Timeline"));
+  await ui.submit();
+  assert.equal(ui.writes()[1].method, "PATCH");
+  assert.equal(ui.writes()[1].value.visibility, "public");
+  assert.equal(ui.saved.size, 1);
+  ui.unmount();
+});
+
+test("an imported Work draft keeps its content and deterministic ID, clearing the source only after the canonical save", async () => {
+  const source = importedWork();
+  const ui = fixture({ practice: true, startNew: true, initialWorkDraft: source });
+  assert.ok(control(ui.render(), "timeline-event"), "the imported title must be visible for review, especially when it was the only What happened answer");
+  assert.equal(control(ui.render(), "timeline-event").props.value, source.draft.title);
+  assert.equal(control(ui.render(), "timeline-year").props.value, "2011");
+  assert.equal(control(ui.render(), "timeline-month").props.value, "3");
+  assert.equal(control(ui.render(), "timeline-details").props.value, source.draft.details);
+  for (const [field, value] of Object.entries(responses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
+  assert.equal(ui.writes().length, 0);
+  await ui.click("Save draft");
+  assert.deepEqual(ui.writes().map(request => request.url), ["/api/my/journal", "/api/my/practice/timeline-draft"]);
+  const saved = ui.writes()[0];
+  assert.equal(saved.value.id, source.entryId);
+  assert.equal(saved.value.title, source.draft.title);
+  assert.equal(saved.value.eventDay, null);
+  assert.equal(saved.value.visibility, "private");
+  assert.deepEqual(saved.value.timelineReflection, responses);
+  assert.deepEqual(ui.writes()[1].value, { expectedPracticeRevision: source.revision, entryId: source.entryId });
+  assert.equal(ui.writes()[1].owner, "owner-a");
+  assert.equal(ui.saved.size, 1);
+  await ui.submit();
+  assert.equal(ui.writes()[2].url, `/api/my/journal/${source.entryId}`);
+  assert.equal(ui.writes()[2].value.visibility, "public");
+  assert.equal(ui.requests.filter(request => request.url === "/api/my/practice/timeline-draft").length, 1);
+  ui.unmount();
+});
+
+test("an imported Work draft does not clear or claim success when its canonical save fails", async () => {
+  const source = importedWork();
+  const ui = fixture({ practice: true, startNew: true, initialWorkDraft: source, fetchOverride(request) {
+    if (request.url === "/api/my/journal" && request.method === "POST") return json({ error: "Please try the save again." }, 400);
+  } });
+  await ui.click("Save draft");
+  assert.equal(ui.writes().length, 1);
+  assert.equal(ui.saved.size, 0);
+  assert.equal(ui.requests.some(request => request.url === "/api/my/practice/timeline-draft"), false);
+  assert.equal(control(ui.render(), "timeline-perspective").props.value, responses.perspective);
+  assert.equal(control(ui.render(), "timeline-details").props.value, source.draft.details);
+  assert.match(text(ui.render()), /Please try the save again/);
+  assert.doesNotMatch(text(ui.render()), /Timeline entry is saved/);
+  ui.unmount();
+});
+
+test("a Work cleanup conflict leaves the newer Work draft alone and preserves the successful Timeline post", async () => {
+  const source = importedWork();
+  const ui = fixture({ practice: true, startNew: true, initialWorkDraft: source, fetchOverride(request) {
+    if (request.url === "/api/my/practice/timeline-draft") {
+      assert.equal(request.value.expectedPracticeRevision, "37");
+      return json({ error: "Your Work draft changed in another tab." }, 409);
+    }
+  } });
+  await ui.submit();
+  assert.equal(ui.saved.size, 1);
+  assert.equal(ui.saved.get(source.entryId).visibility, "public");
+  assert.equal(ui.saved.get(source.entryId).body, source.draft.details);
+  assert.match(text(ui.render()), /Timeline entry is saved.*original Work draft is still available/s);
+  assert.equal(ui.requests.filter(request => request.url === "/api/my/practice/timeline-draft").length, 1);
+  ui.unmount();
+});
+
+test("reviewing an existing private Work entry adds the missing perspective without changing its ID or media", async () => {
+  const media = [{ id: "22222222-2222-4222-8222-222222222222", url: "/existing.jpg", mimeType: "image/jpeg", size: 20 }];
+  const old = entry({ kind: "images", media, legacyTimelineReflection: { ...responses, perspective: null } });
+  const ui = fixture({ practice: true, initialJournal: snapshot([old]), initialEntryId: old.id });
+  assert.equal(control(ui.render(), "timeline-perspective").props.value, "");
+  assert.match(text(ui.render()), /Your earlier entry is still private/);
+  assert.equal(ui.writes().length, 0);
+  ui.change("timeline-perspective", "I can see how much I have changed.");
+  await ui.submit();
+  assert.equal(ui.writes().length, 1);
+  assert.equal(ui.writes()[0].url, `/api/my/journal/${old.id}`);
+  assert.equal(ui.writes()[0].method, "PATCH");
+  assert.equal(ui.writes()[0].value.expectedVersion, old.version);
+  assert.equal(ui.writes()[0].value.visibility, "public");
+  assert.equal(ui.writes()[0].value.timelineReflection.perspective, "I can see how much I have changed.");
+  assert.deepEqual(ui.writes()[0].value.mediaIds, [media[0].id]);
+  assert.equal(ui.writes()[0].value.eventDay, 12);
+  assert.equal(ui.saved.size, 1);
+  ui.unmount();
+});
+
+test("a newer saved version appears first and an older Work draft requires explicit review", async () => {
+  const latest = entry({ visibility: "public", body: "Newer public writing.", timelineReflection: { ...responses, perspective: "A newer perspective." }, version: "9" });
+  const source = importedWork({ entryId: latest.id, newerSavedVersion: true, draft: { id: latest.id, year: 2008, month: 6, title: "Older unfinished work", details: "Earlier writing.", ...responses } });
+  const ui = fixture({ practice: true, initialJournal: snapshot([latest]), initialEntryId: latest.id, initialWorkDraft: source });
+  assert.equal(control(ui.render(), "timeline-details").props.value, latest.body);
+  assert.equal(control(ui.render(), "timeline-perspective").props.value, "A newer perspective.");
+  assert.match(text(ui.render()), /A newer version is already saved/);
+  assert.equal(ui.writes().length, 0);
+  await ui.click("Review unfinished draft");
+  assert.equal(control(ui.render(), "timeline-details").props.value, "Earlier writing.");
+  assert.equal(control(ui.render(), "timeline-perspective").props.value, responses.perspective);
+  assert.equal(ui.writes().length, 0, "reviewing old work is not consent to replace the newer post");
+  assert.match(text(ui.render()), /Saving will replace the displayed saved version/);
+  await ui.submit();
+  assert.equal(ui.writes()[0].method, "PATCH");
+  assert.equal(ui.writes()[0].value.expectedVersion, "9");
+  assert.equal(ui.writes()[0].value.body, "Earlier writing.");
+  assert.deepEqual(ui.writes()[1].value, { expectedPracticeRevision: source.revision, entryId: latest.id });
+  ui.unmount();
+});
+
+
+for (const newerSavedVersion of [false, true]) {
+  test(`legacy Work draft preserves omitted month, belief and perspective during ${newerSavedVersion ? "explicit older-draft review" : "initial recovery"}`, async () => {
+    const current = entry({ legacyTimelineReflection: responses });
+    const draft = { id: current.id, year: 2008, title: "A retained moment", details: "An updated description", meaning: "New meaning", presentImpact: "A new effect" };
+    const source = importedWork({ entryId: current.id, newerSavedVersion, draft });
+    const ui = fixture({ practice: true, initialJournal: snapshot([current]), initialEntryId: current.id, initialWorkDraft: source });
+    if (newerSavedVersion) await ui.click("Review unfinished draft");
+    assert.equal(control(ui.render(), "timeline-month").props.value, "6");
+    assert.equal(control(ui.render(), "timeline-belief").props.value, responses.belief);
+    assert.equal(control(ui.render(), "timeline-perspective").props.value, responses.perspective);
+    await ui.click("Save draft");
+    const write = ui.writes()[0];
+    assert.equal(write.method, "PATCH");
+    assert.equal(write.value.eventMonth, 6);
+    assert.equal(write.value.eventDay, 12);
+    assert.equal(write.value.timelineReflection.belief, responses.belief);
+    assert.equal(write.value.timelineReflection.perspective, responses.perspective);
+    assert.equal(write.value.timelineReflection.meaning, "New meaning");
+    assert.equal(write.value.visibility, "private");
+    ui.unmount();
+  });
+}
+
+test("explicitly cleared Work optional answers stay cleared instead of reviving old reflections", async () => {
+  const current = entry({ legacyTimelineReflection: responses });
+  const draft = { id: current.id, year: 2008, month: null, title: current.title, details: current.body, meaning: responses.meaning, presentImpact: responses.presentImpact, belief: null, perspective: "" };
+  const ui = fixture({ practice: true, initialJournal: snapshot([current]), initialEntryId: current.id, initialWorkDraft: importedWork({ entryId: current.id, draft }) });
+  assert.equal(control(ui.render(), "timeline-month").props.value, "");
+  assert.equal(control(ui.render(), "timeline-belief").props.value, "");
+  assert.equal(control(ui.render(), "timeline-perspective").props.value, "");
+  await ui.click("Save draft");
+  const write = ui.writes()[0].value;
+  assert.equal(write.eventMonth, null);
+  assert.equal(write.eventDay, null);
+  assert.equal(write.timelineReflection.belief, null);
+  assert.equal(write.timelineReflection.perspective, null);
+  ui.unmount();
+});
+
+
+test("a new Work draft with no optional month stays year-only after recovery", async () => {
+  const source = importedWork({ draft: { id: null, year: 2011, title: "A remembered year", details: "No month was recorded.", meaning: responses.meaning, presentImpact: responses.presentImpact } });
+  const ui = fixture({ practice: true, startNew: true, initialWorkDraft: source });
+  assert.equal(control(ui.render(), "timeline-month").props.value, "");
+  await ui.click("Save draft");
+  assert.equal(ui.writes()[0].value.eventYear, 2011);
+  assert.equal(ui.writes()[0].value.eventMonth, null);
+  assert.equal(ui.writes()[0].value.eventDay, null);
+  ui.unmount();
+});
+
+test("opening another post clears an older Work draft review so it cannot overwrite the wrong story", async () => {
+  const first = entry({ visibility: "public", body: "Saved first post.", timelineReflection: responses });
+  const other = entry({ id: "33333333-3333-4333-8333-333333333333", visibility: "public", title: "Another public story", body: "Unrelated saved words.", timelineReflection: { ...responses, perspective: "Another perspective." } });
+  const source = importedWork({ entryId: first.id, newerSavedVersion: true, draft: { id: first.id, year: 2008, title: "Older unfinished first post", details: "Old draft words.", ...responses } });
+  const ui = fixture({ practice: true, initialJournal: snapshot([first, other]), initialEntryId: first.id, initialWorkDraft: source });
+  assert.ok(button(ui.render(), "Review unfinished draft"));
+  await ui.click(`Edit ${other.title}`);
+  assert.equal(button(ui.render(), "Review unfinished draft"), undefined);
+  assert.equal(control(ui.render(), "timeline-details").props.value, other.body);
+  assert.equal(control(ui.render(), "timeline-perspective").props.value, "Another perspective.");
+  assert.equal(ui.writes().length, 0);
+  ui.change("timeline-details", "An intentional change to the other story.");
+  await ui.submit();
+  assert.equal(ui.writes()[0].url, `/api/my/journal/${other.id}`);
+  assert.equal(ui.writes().some(request => request.url === "/api/my/practice/timeline-draft"), false);
+  assert.equal(ui.saved.get(first.id).body, first.body);
+  ui.unmount();
 });

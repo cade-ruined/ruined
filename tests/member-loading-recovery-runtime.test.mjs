@@ -225,6 +225,7 @@ function guidedTimelineFixture({ state = "authenticated", capabilities = ["profi
     "next/navigation": { redirect: href => { throw Error(`redirect:${href}`); } },
     "./MemberAccessNotice": component("member-access-notice"),
     "./GuidedTimeline": component("guided-timeline"),
+    "@/lib/practice/timeline-draft-handoff": { getPracticeTimelineResume: async () => null },
     "@/components/platform/PlatformUnavailable": component("platform-unavailable"),
     "@/lib/auth/support-return": loadModule("src/lib/auth/support-return.ts"),
     "@/lib/membership/access-policy": {

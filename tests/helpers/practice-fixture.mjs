@@ -1,10 +1,11 @@
 import { readFile } from 'node:fs/promises';
+import * as crypto from 'node:crypto';
 import { timelineFixture, timelineIds } from './canonical-journal-fixture.mjs';
 
 export const ids = timelineIds;
 const source = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
 
-export async function practiceFixture(t, { beforeMigration, launched = true } = {}) {
+export async function practiceFixture(t, { beforeMigration, launched = true, publicTimelineMigration = true } = {}) {
   const f = await timelineFixture(t);
   await f.db.exec(`
     alter table ruined_members add column if not exists deleted_at timestamptz;
@@ -21,11 +22,19 @@ export async function practiceFixture(t, { beforeMigration, launched = true } = 
   `);
   if (beforeMigration) await beforeMigration(f);
   await f.db.exec(await source('db/migrations/20261104180000_member_practice.sql'));
+  if (publicTimelineMigration) await f.db.exec(await source('db/migrations/20261106010000_practice_public_timeline.sql'));
   const releaseSchedule = (await f.db.query('select course,release_at from member_practice_releases order by course')).rows;
   // The release contract is inspected above; mutation scenarios stay deterministic after December.
   await f.db.query("update member_practice_releases set release_at=statement_timestamp()+interval '1 day' where course='time'");
   const model = await f.loadTypescript('src/lib/practice/model.ts');
   const access = await f.loadTypescript('src/lib/membership/access-policy.ts');
+  const journal = await f.loadTypescript('src/lib/membership/journal-repository.ts', {
+    'server-only': {}, 'node:crypto': crypto, '@/lib/database/server': { getApplicationDatabase: () => f.sql },
+    '@/lib/membership/repository': f.repository, '@/lib/membership/access-policy': access,
+    './journal-model': await f.loadTypescript('src/lib/membership/journal-model.ts'),
+    './journal-storage': { journalStorageConfigured: () => false },
+    './public-card-repository': { getOwnMemberProfilePublicScope: async () => ({ token: 'test-profile' }) },
+  });
   const badgeModel = await f.loadTypescript('src/lib/membership/badge-model.ts', {
     './member-number': await f.loadTypescript('src/lib/membership/member-number.ts'),
   });
@@ -39,7 +48,7 @@ export async function practiceFixture(t, { beforeMigration, launched = true } = 
     '@/lib/membership/repository': f.repository, './model': model,
   });
   const open = course => f.db.query("update member_practice_releases set release_at = statement_timestamp() - interval '1 minute' where course=$1", [course]);
-  return { ...f, model, practice, open, releaseSchedule,
+  return { ...f, model, practice, journal, open, releaseSchedule,
     get: (auth = ids.auth) => practice.getMemberPracticeSnapshot(auth),
     save: (action, fields, revision, extra = {}) => practice.saveMemberPractice(ids.auth, { action, ownerId: ids.auth, expectedRevision: revision, fields, ...extra }),
   };

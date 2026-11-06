@@ -145,6 +145,7 @@ const migrations = [
   "../db/migrations/20261104210000_member_directory_archives.sql",
   "../db/migrations/20261105090000_member_journal_drafts.sql",
   "../db/migrations/20261105235000_active_complimentary_foundations_exception.sql",
+  "../db/migrations/20261106010000_practice_public_timeline.sql",
 ];
 
 function migrationBody(migration, migrationName) {

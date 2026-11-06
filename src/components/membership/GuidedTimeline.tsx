@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { PracticeTimelineDraft } from "@/lib/practice/model";
 import type { MemberTimelineEntry } from "@/lib/membership/model";
 import { JOURNAL_BODY_LENGTH, JOURNAL_MAX_IMAGES, JOURNAL_MEDIA_ACCEPT, journalFilePolicy, type JournalEntry, type JournalSnapshot } from "@/lib/membership/journal-model";
 import Image from "next/image";
@@ -18,9 +19,9 @@ const REFLECTIONS = [
   { field: "presentImpact", label: "How does it show up now?", short: "Now", chapter: "The echo in my life", hint: "Where do you notice that story in your choices, relationships, or habits today?", placeholder: "I notice it when…" },
   { field: "perspective", label: "What can I see now?", short: "Perspective", chapter: "What I can see from here", hint: "With some distance, what feels clearer, different, or still unresolved?", placeholder: "Looking back from here…" },
 ] as const;
-function formFor(entry?: MemberTimelineEntry): TimelineFormValue {
+function formFor(entry?: MemberTimelineEntry & { journal?: JournalEntry }): TimelineFormValue {
   const now = new Date();
-  return entry ? { year: String(entry.year), month: entry.month ? String(entry.month) : "", title: entry.title, details: entry.details ?? "", meaning: entry.meaning ?? "", belief: entry.belief ?? "", presentImpact: entry.presentImpact ?? "", perspective: entry.perspective ?? "" } : { ...EMPTY, year: String(now.getFullYear()), month: String(now.getMonth() + 1) };
+  return entry ? { year: entry.journal && entry.journal.eventYear === null ? "" : String(entry.year), month: entry.month ? String(entry.month) : "", title: entry.title, details: entry.details ?? "", meaning: entry.meaning ?? "", belief: entry.belief ?? "", presentImpact: entry.presentImpact ?? "", perspective: entry.perspective ?? "" } : { ...EMPTY, year: String(now.getFullYear()), month: String(now.getMonth() + 1) };
 }
 function Arrow({ back = false }: { back?: boolean }) {
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" style={back ? { transform: "rotate(180deg)" } : undefined}><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -72,13 +73,19 @@ class StoryRequestError extends Error {
 }
 
 
-export default function GuidedTimeline({ initialJournal, preview = false, ownerId, initialEntryId, startNew = false }: {
-  initialJournal: JournalSnapshot; preview?: boolean; ownerId?: string; initialEntryId?: string; startNew?: boolean;
+export type PracticeComposerDraft = { draft: PracticeTimelineDraft; revision: string; entryId: string; newerSavedVersion: boolean };
+function practiceForm(draft: PracticeTimelineDraft, source?: StoryEntry): TimelineFormValue {
+  const original = formFor(source);
+  return { ...EMPTY, ...draft, year: draft.year ? String(draft.year) : "", month: draft.month === undefined ? (source ? original.month : "") : draft.month ? String(draft.month) : "", belief: draft.belief === undefined ? original.belief : draft.belief ?? "", perspective: draft.perspective === undefined ? original.perspective : draft.perspective ?? "" };
+}
+
+export default function GuidedTimeline({ initialJournal, preview = false, ownerId, initialEntryId, startNew = false, practice = false, initialWorkDraft }: {
+  initialJournal: JournalSnapshot; preview?: boolean; ownerId?: string; initialEntryId?: string; startNew?: boolean; practice?: boolean; initialWorkDraft?: PracticeComposerDraft;
 }) {
   const router = useRouter();
   const [timeline, setTimeline] = useState<StoryState>(() => storyState(initialJournal));
   const writable = initialJournal.writable;
-  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
+  const [draftId, setDraftId] = useState(() => initialWorkDraft?.entryId ?? crypto.randomUUID());
   const attemptId = useRef<string | null>(null);
   const sending = useRef(false);
   const active = useRef(true);
@@ -87,16 +94,22 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
   const initialEntry = !startNew && initialEntryId ? timeline.entries.find(entry => entry.id === initialEntryId) : undefined;
   const [missingRequested, setMissingRequested] = useState(!startNew && Boolean(initialEntryId) && !initialEntry);
   const [editingId, setEditingId] = useState<string | null>(initialEntry?.id ?? null);
-  const [form, setForm] = useState(() => formFor(initialEntry));
+  const workDraftSource = useRef(initialWorkDraft && !initialWorkDraft.newerSavedVersion ? initialWorkDraft : null);
+  const [olderWorkDraft, setOlderWorkDraft] = useState(initialWorkDraft?.newerSavedVersion ? initialWorkDraft : null);
+  const [form, setForm] = useState(() => workDraftSource.current ? practiceForm(workDraftSource.current.draft, initialEntry) : formFor(initialEntry));
   const [baseline, setBaseline] = useState(() => formFor(initialEntry));
-  const [media, setMedia] = useState(() => mediaFor(initialEntry));
+  const [media, setMedia] = useState(() => {
+    const value = mediaFor(initialEntry);
+    if (workDraftSource.current && (!initialEntry || initialEntry.journal.eventYear !== workDraftSource.current.draft.year || (workDraftSource.current.draft.month !== undefined && initialEntry.journal.eventMonth !== workDraftSource.current.draft.month))) value.eventDay = null;
+    return value;
+  });
   const [fileUrls, setFileUrls] = useState<string[]>([]);
   const [mediaReady, setMediaReady] = useState(preview || initialJournal.mediaReady);
   const [uploading, setUploading] = useState(false);
   const uploadController = useRef<AbortController | null>(null);
   const previewUrls = useRef<string[]>([]);
-  const [reflectionsOpen, setReflectionsOpen] = useState(() => hasReflections(formFor(initialEntry)));
-  const [titleOpen, setTitleOpen] = useState(Boolean(initialEntry?.title));
+  const [reflectionsOpen, setReflectionsOpen] = useState(() => practice || hasReflections(formFor(initialEntry)));
+  const [titleOpen, setTitleOpen] = useState(Boolean(workDraftSource.current?.draft.title || initialEntry?.title));
   const [dateOpen, setDateOpen] = useState(false);
   const [feedFilter, setFeedFilter] = useState<"posts" | "drafts">("posts");
   const [search, setSearch] = useState("");
@@ -159,7 +172,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
   function resetEditor(entry?: StoryEntry) {
     const value = formFor(entry);
     setEditingId(entry?.id ?? null); setForm(value); setBaseline(value); setMedia(mediaFor(entry));
-    setReflectionsOpen(hasReflections(value)); setTitleOpen(Boolean(entry?.title)); setDateOpen(false);
+    setReflectionsOpen(practice || hasReflections(value)); setTitleOpen(Boolean(entry?.title)); setDateOpen(false);
   }
   function ask(action: Confirmation) {
     trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -172,11 +185,13 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       formElement.current?.scrollIntoView({ block: "center" });
       return;
     }
+    workDraftSource.current = null; setOlderWorkDraft(null);
     clearDraft(); setMissingRequested(false); setDraftId(crypto.randomUUID()); attemptId.current = null; setMissingAfterReview(false);
     resetEditor(entry); setError(""); setStatus("");
     focusComposer();
   }
   function discard() {
+    workDraftSource.current = null;
     clearDraft(); resetEditor(selected);
     setNeedsReview(false); setReviewLoaded(false); setUncertain(false); attemptId.current = null; setMissingAfterReview(false); setDraftId(crypto.randomUUID()); setError(""); setStatus("Draft discarded. Your saved moments are unchanged.");
     focusComposer();
@@ -214,6 +229,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
   }
   function restore() {
     if (!recoveryDraft) return;
+    workDraftSource.current = null; setOlderWorkDraft(null);
     const restored = timeline.entries.find(entry => entry.id === recoveryDraft.editingEntryId);
     const hadSavedEntry = recoveryDraft.publicTimelineMedia?.editingExisting ?? Boolean(
       recoveryDraft.baseline.title || recoveryDraft.baseline.details || hasReflections(recoveryDraft.baseline) || recoveryDraft.publicTimelineMedia?.keptMedia.length,
@@ -223,7 +239,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
     attemptId.current = recoveryDraft.wasPending ? recoveryDraft.editingEntryId : null;
     const restoredForm = { ...EMPTY, ...recoveryDraft.form };
     setForm(restoredForm); setBaseline({ ...EMPTY, ...recoveryDraft.baseline });
-    setReflectionsOpen(hasReflections(restoredForm)); setTitleOpen(Boolean(restoredForm.title));
+    setReflectionsOpen(practice || hasReflections(restoredForm)); setTitleOpen(Boolean(restoredForm.title));
     setMedia(recoveryDraft.publicTimelineMedia ? copyPublicTimelineMedia(recoveryDraft.publicTimelineMedia) : mediaFor(restored));
     setNeedsReview(existingOutsidePage || recoveryDraft.wasPending || recoveryDraft.revision !== timeline.revision);
     setUncertain(recoveryDraft.wasPending); focusComposer(); dismissRecovery(); setStatus(recoveryDraft.wasPending ? "Your unfinished story is restored. Check the latest saved story before continuing." : "Your unfinished story is restored. Nothing new has been published.");
@@ -311,9 +327,11 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       });
       if (!result.entry || result.entry.id !== entryId) throw new Error("The save response could not be matched. Check the latest saved story before trying again.");
       if (!active.current) return;
+      const workDraftCleared = await clearImportedWork(result.entry.id);
       const saved = install(result.entry); clearDraft(); resetEditor(visibility === "private" ? saved : undefined); setDraftId(crypto.randomUUID()); setFeedFilter(visibility === "public" ? "posts" : "drafts");
       attemptId.current = null; setNeedsReview(false); setUncertain(false);
-      setStatus(preview ? "Saved in this preview only. Nothing was published to an account." : visibility === "public" ? "Published to your Timeline. This story is visible on your public profile." : "Saved privately in your Journal. This story is not on your public Timeline.");
+      setStatus(preview ? "Saved in this preview only. Nothing was published to an account." : visibility === "public" ? "Published to your Timeline. This story is visible on your public profile." : "Saved as a private Timeline draft. Only you can see it.");
+      if (!workDraftCleared) setStatus("Your Timeline entry is saved. The original Work draft is still available for recovery.");
       if (!preview) window.dispatchEvent(new CustomEvent("ruined:member-progress"));
     } catch (caught) {
       if (!active.current) return;
@@ -344,9 +362,9 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       if (target && !timelineFormIsDirty(form, formFor(target)) && matchingMedia(media, target)
         && (!uncertain || (media.attemptedVisibility !== null && target.journal.visibility === media.attemptedVisibility))) {
         clearDraft(); setEditingId(target.id); setForm(formFor(target)); setBaseline(formFor(target));
-        setMedia(mediaFor(target)); setReflectionsOpen(hasReflections(formFor(target))); setTitleOpen(Boolean(target.title));
+        setMedia(mediaFor(target)); setReflectionsOpen(practice || hasReflections(formFor(target))); setTitleOpen(Boolean(target.title));
         setNeedsReview(false); setReviewLoaded(false); setUncertain(false); attemptId.current = null;
-        setStatus(isPublished(target) ? "Your story is published on your Timeline." : "Your private draft is saved in Journal.");
+        setStatus(isPublished(target) ? "Your story is published on your Timeline." : "Your private Timeline draft is saved.");
       } else if (!dirty && !needsReview) {
         if (target) { resetEditor(target); focusComposer(); }
         setStatus("Your latest saved stories are loaded.");
@@ -379,18 +397,42 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
     setBaseline(formFor(selected)); setNeedsReview(false); setReviewLoaded(false); setUncertain(false);
     setError(""); setStatus("Draft kept. Review it, then choose whether to publish or save privately.");
   }
+  function downloadWorkDraft() {
+    if (!olderWorkDraft) return;
+    const blob = new Blob([JSON.stringify({ source: "Unfinished Foundations Timeline entry", ...olderWorkDraft.draft }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.href = url; link.download = "ruined-foundations-draft.json"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function reviewOlderWorkDraft() {
+    if (!olderWorkDraft || selected?.id !== olderWorkDraft.entryId || dirty || pending || recoveryDraft) return;
+    workDraftSource.current = olderWorkDraft;
+    if (selected?.journal.eventYear !== olderWorkDraft.draft.year || (olderWorkDraft.draft.month !== undefined && selected?.journal.eventMonth !== olderWorkDraft.draft.month)) setMedia(current => ({ ...current, eventDay: null }));
+    setForm(practiceForm(olderWorkDraft.draft, selected)); setOlderWorkDraft(null); setReflectionsOpen(true); setTitleOpen(true);
+    setStatus("Your unfinished Work draft is loaded for review. Saving will replace the displayed saved version with these answers.");
+    focusComposer();
+  }
+  async function clearImportedWork(entryId: string) {
+    const source = workDraftSource.current;
+    if (preview || !source || source.entryId !== entryId) return true;
+    try {
+      await request("/api/my/practice/timeline-draft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedPracticeRevision: source.revision, entryId }), signal: AbortSignal.timeout(5000) });
+      workDraftSource.current = null; return true;
+    } catch { return false; }
+  }
   function downloadDraft() {
     const blob = new Blob([JSON.stringify({ title: "Ruined Timeline", unfinishedMoment: { id: editingId ?? draftId, ...form } }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a");
     link.href = url; link.download = "ruined-timeline-draft.json"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  return <article className={styles.experience}>
+  return <article className={styles.experience} data-practice={practice || undefined}>
     <header className={styles.header}>
-      <div><Link className={styles.back} href="/my#timeline"><Arrow back /> My profile</Link><h1>Timeline</h1></div>
+      <div><Link className={styles.back} href={practice ? "/my/practice?course=f1" : "/my#timeline"}><Arrow back />{practice ? "Foundations 1" : "My profile"}</Link><h1>Timeline</h1></div>
       <div className={styles.headerActions}>{initialJournal.publicUrl ? <Link href={initialJournal.publicUrl} target="_blank" rel="noreferrer">View profile ↗</Link> : null}<details className={styles.options}><summary aria-label="Timeline options">···</summary><div><button onClick={downloadDraft}>Download draft</button><button disabled={pending} onClick={() => void loadLatest()}>Load latest moments</button></div></details></div>
     </header>
     <Link className={styles.graphicsLink} href="/my#graphics">Timeline graphics <Arrow /></Link>
+    {practice ? <aside className={styles.practiceIntro}><strong>Foundations 1 · Your story, one moment at a time.</strong><p>Work through all six questions below. Choose what you’re ready to share. <b>Post to Timeline</b> makes your entry public; <b>Save draft</b> keeps it private.</p>{initialEntry?.journal.legacyTimelineReflection ? <p>Your earlier entry is still private. Review your answers—including what you can see now—before publishing.</p> : null}</aside> : null}
+    {olderWorkDraft ? <aside className={styles.recovery}><div><h2>A newer version is already saved.</h2><p>It’s shown below. Your older unfinished Work draft is also safe.</p></div><button disabled={selected?.id !== olderWorkDraft.entryId || dirty || pending || Boolean(recoveryDraft)} onClick={reviewOlderWorkDraft}>Review unfinished draft</button><button onClick={downloadWorkDraft}>Download unfinished draft</button></aside> : null}
     {preview ? <p className={styles.previewNote}>Try posting here. This preview isn’t saved to an account.</p> : null}
     {recoveryDraft ? <aside className={styles.recovery}><div><h2>Pick up where you left off.</h2><p>Your unfinished post is here.</p></div><button onClick={restore}>Restore draft</button><button onClick={dismissRecovery}>Discard recovered draft</button></aside> : null}
     {missingRequested ? <section className={styles.unavailable} aria-label="Timeline moment unavailable"><h2>This moment isn’t available.</h2><p>It may have been removed. Your other posts are below.</p>{allowEdit ? <button type="button" onClick={() => open()}>Start a new post <Arrow /></button> : null}</section> : null}
@@ -398,7 +440,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       <div className={styles.composerTop}>
         <strong>{selected ? "Edit post" : "Create a post"}</strong>
         <details className={styles.dateControl} open={dateOpen} onToggle={event => setDateOpen(event.currentTarget.open)}>
-          <summary aria-label="When was this?">{dateLabel}<span aria-hidden="true">⌄</span></summary>
+          <summary aria-label="When was this?">{practice ? "When was this? · " : ""}{dateLabel}<span aria-hidden="true">⌄</span></summary>
           <div className={styles.datePanel}><span className={styles.dateHeading}>When was this?</span><p>An approximate date is fine.</p><div className={styles.date}>
             <label htmlFor="timeline-year">Year<input id="timeline-year" inputMode="numeric" maxLength={4} required disabled={frozen} value={form.year} onChange={event => { if (frozen) return; setMedia(current => ({ ...current, eventDay: null })); change("year", event.target.value); }} placeholder="e.g. 2019" /></label>
             <label htmlFor="timeline-month">Month<select id="timeline-month" disabled={frozen} value={form.month} onChange={event => { if (frozen) return; setMedia(current => ({ ...current, eventDay: null })); change("month", event.target.value); }}><option value="">Year only</option>{TIMELINE_MONTHS.map((month, index) => <option value={index + 1} key={month}>{month}</option>)}</select></label>
@@ -421,13 +463,16 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
         {media.keptMedia.length + media.files.length ? <span className={styles.mediaHint}>{media.kind === "video" ? "One video · up to 50 MB" : "Up to 8 photos · 8 MB each"}</span> : null}
       </div>
       {!mediaReady ? <p className={styles.mediaHint}>Attachments are temporarily unavailable. You can still write and post.</p> : null}
-      <details className={styles.deeper} open={reflectionsOpen} onToggle={event => setReflectionsOpen(event.currentTarget.open)}>
+      {practice ? <section className={styles.practiceReflections} aria-label="Foundations reflection questions"><div className={styles.reflectionFields}>
+          <p>These answers become part of your public post when you publish.</p>
+          {REFLECTIONS.map(item => <label key={item.field} htmlFor={`timeline-${item.field}`}><span>{item.label}</span><textarea id={`timeline-${item.field}`} rows={3} maxLength={4000} disabled={frozen} value={form[item.field] ?? ""} onChange={event => change(item.field, event.target.value)} placeholder={item.placeholder} /></label>)}
+        </div></section> : <details className={styles.deeper} open={reflectionsOpen} onToggle={event => setReflectionsOpen(event.currentTarget.open)}>
         <summary><span>Go deeper <small>optional</small></span><span className={styles.disclosureMark} aria-hidden="true">+</span></summary>
         <div className={styles.reflectionFields}>
-          <p>These answers become part of your public post.</p>
+          <p>These answers become part of your public post when you publish.</p>
           {REFLECTIONS.map(item => <label key={item.field} htmlFor={`timeline-${item.field}`}><span>{item.label}</span><textarea id={`timeline-${item.field}`} rows={3} maxLength={4000} disabled={frozen} value={form[item.field] ?? ""} onChange={event => change(item.field, event.target.value)} placeholder={item.placeholder} /></label>)}
         </div>
-      </details>
+      </details>}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {needsReview ? <aside className={styles.review}><h2>Review before saving.</h2>{!reviewLoaded ? <button disabled={pending} type="button" onClick={() => void loadLatest()}>Load latest saved story</button> : <>
         {selected && !missingAfterReview ? <><p>Currently saved: <strong>{selected.title}</strong> · {formatTimelineDate(selected)}</p><p className={styles.savedText}>{selected.details || "No context added."}</p>{REFLECTIONS.map(item => <p className={styles.savedText} key={item.field}>{item.short}: {selected[item.field] || "Not added."}</p>)}<button type="button" onClick={keepDraft}>Keep my draft for this story</button></> : <><p>{uncertain && !editingId ? "No saved story was found for this attempt. Your draft can be retried with the same identifier." : "This story is no longer available. Your writing is still here."}</p><button type="button" onClick={keepDraft}>{editingId ? "Keep draft as a new story" : "Keep draft and retry"}</button></>}
@@ -435,8 +480,9 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       <div className={styles.saveRow}>
         <span className={styles.publicLabel}><PublicIcon /> Public<span className={styles.audienceDescription}> · on your profile</span></span>
         <div className={styles.saveActions}>
+          {practice && !isPublished(selected) ? <button type="button" disabled={frozen || !hasContent || (!dirty && Boolean(selected))} onClick={() => void save("private")}><Lock /> Save draft</button> : null}
           <details className={styles.options}><summary aria-label="Post options">···</summary><div><button type="button" disabled={frozen || !hasContent || (!dirty && Boolean(selected) && !isPublished(selected))} onClick={() => void save("private")}><Lock />{isPublished(selected) ? "Move to Journal" : "Save private draft"}</button>{dirty || needsReview ? <button type="button" disabled={pending || (uncertain && !reviewLoaded)} onClick={() => ask({ kind: "discard" })}>Discard draft</button> : null}</div></details>
-          <button className={styles.save} type="submit" disabled={frozen || !hasContent || (!dirty && isPublished(selected))}>{pending ? "Saving…" : isPublished(selected) ? "Save changes" : "Post"}</button>
+          <button className={styles.save} type="submit" disabled={frozen || !hasContent || (!dirty && isPublished(selected))}>{pending ? "Saving…" : isPublished(selected) ? "Save changes" : practice ? "Post to Timeline" : "Post"}</button>
         </div>
       </div>
       {uploading ? <div className={styles.uploadStatus}><span role="status">Uploading attachments…</span><button type="button" onClick={() => uploadController.current?.abort()}>Cancel upload</button></div> : null}
