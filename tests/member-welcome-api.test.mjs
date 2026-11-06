@@ -4,7 +4,7 @@ import { badgeId as id, loadBadgeModule as load } from './helpers/badge-collecti
 
 const model = await load('src/lib/membership/welcome-model.ts');
 const snapshot = { ownerId: id(1), dismissedAt: null, calendarViewedAt: null, hasJournalEntry: true };
-async function fixture({ mode = 'connected', auth = 'authenticated', trusted = true } = {}) {
+async function fixture({ mode = 'connected', auth = 'authenticated', trusted = true, upcoming = [] } = {}) {
   const calls = []; let failure;
   const run = async (...args) => { calls.push(args); if (failure) throw failure; return snapshot; };
   const api = await load('app/api/my/welcome/route.ts', {
@@ -14,6 +14,8 @@ async function fixture({ mode = 'connected', auth = 'authenticated', trusted = t
     '@/lib/supabase/server': { createSupabaseServerClient: async () => ({}) },
     '@/lib/platform/config': { getPlatformConfiguration: () => ({ mode }) },
     '@/lib/membership/welcome-model': model,
+    '@/lib/database/server': { withFreshApplicationDatabaseRead: async (stage, read) => { calls.push(['read', stage]); return read(); } },
+    '@/lib/membership/repository': { getMemberExperiences: async ownerId => { calls.push(['experiences', ownerId]); if (failure) throw failure; return { upcoming }; } },
     '@/lib/membership/welcome-repository': {
       getMemberWelcome: (...args) => run('get', ...args), updateMemberWelcome: (...args) => run('update', ...args),
     },
@@ -28,11 +30,11 @@ const valid = { action: 'dismiss', ownerId: id(1) };
 
 test('welcome API verifies the live user, returns private owner-only progress and prevents stale-session reads', async () => {
   const f = await fixture(); const response = await f.api.GET(request('GET'));
-  assert.deepEqual(await response.json(), snapshot);
+  assert.deepEqual(await response.json(), { ...snapshot, hasUpcomingCall: false });
   assert.match(response.headers.get('cache-control'), /private, no-store/);
   assert.equal(response.headers.get('vary'), 'Cookie');
   assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow');
-  assert.deepEqual(f.calls, [['session', { verifyCurrentUser: true }], ['get', id(1)]]);
+  assert.deepEqual(f.calls, [['session', { verifyCurrentUser: true }], ['read', 'member-welcome'], ['get', id(1)], ['experiences', id(1)]]);
   f.calls.length = 0;
   assert.equal((await f.api.GET(request('GET', undefined, { 'x-ruined-session-owner': id(2) }))).status, 409);
   assert.equal(f.calls.some(call => call[0] === 'get'), false);
@@ -78,4 +80,34 @@ test('welcome rejects malformed, extra, member-id and oversized input without ch
   assert.equal(f.calls.some(call => call[0] !== 'session'), false);
   f.fail(new model.MemberWelcomeError(403, 'Your member welcome is unavailable.'));
   assert.equal((await f.api.POST(request('POST', valid))).status, 403);
+});
+
+
+test('welcome projects only a future registered joining link from the authorized Calendar', async () => {
+  const call = { startsAt: '2100-01-01T12:00:00Z', meetingUrl: 'https://private.example/call', registrationState: 'registered' };
+  for (const [upcoming, expected] of [
+    [[call], true], [[], false], [[{ ...call, meetingUrl: null }], false],
+    [[{ ...call, registrationState: 'waitlisted' }], false],
+    [[{ ...call, startsAt: '2000-01-01T12:00:00Z' }], false],
+    [[{ ...call, startsAt: 'invalid' }], false],
+  ]) {
+    const f = await fixture({ upcoming });
+    const response = await f.api.GET(request('GET'));
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.hasUpcomingCall, expected);
+    assert.deepEqual(Object.keys(data).sort(), [...Object.keys(snapshot), 'hasUpcomingCall'].sort());
+    assert.doesNotMatch(JSON.stringify(data), /private.example|2100|registered/);
+  }
+});
+
+test('an unavailable optional Calendar returns a recoverable welcome response without weakening auth gates', async () => {
+  const f = await fixture();
+  f.fail(new Error('database unavailable'));
+  const response = await f.api.GET(request('GET'));
+  assert.equal(response.status, 503);
+  assert.doesNotMatch(JSON.stringify(await response.json()), /database unavailable|ownerId/);
+  const changed = await fixture();
+  assert.equal((await changed.api.GET(request('GET', undefined, { 'x-ruined-session-owner': id(2) }))).status, 409);
+  assert.deepEqual(changed.calls, [['session', { verifyCurrentUser: true }]]);
 });

@@ -54,23 +54,25 @@ function contexts(session, { data = { private: "member snapshot" }, failure = nu
   const reads = [], logs = [];
   const read = async (id) => { reads.push(id); if (failure) throw failure; return data; };
   const platform = load("src/lib/platform/page-data.ts", {
-    "@/lib/auth/session": session,
+    "@/lib/auth/page-session": session,
     "@/lib/platform/config": configuration,
     "@/lib/platform/model": {},
     "@/lib/platform/repository": {
       getMemberPlatformSnapshot: read,
       getOperatorDashboard: async (id) => { const snapshot = await read(id); return snapshot && { dashboard: snapshot, role: "ops_admin" }; },
+      },
+    "@/lib/platform/page-reads": {
       getOperatorRole: async (id) => { await read(id); return data ? "ops_admin" : null; },
     },
   }, logs);
   const membership = load("src/lib/membership/page-context.ts", {
     "next/headers": { cookies: () => { throw Error("Connected mode must not read a preview scenario"); } },
-    "@/lib/auth/session": session,
+    "@/lib/auth/page-session": session,
     "@/lib/platform/config": configuration,
     "@/lib/membership/preview-scenarios": {},
     "@/lib/membership/repository": { MembershipAccessDeniedError },
     "@/lib/platform/experience-member-access": { hasEligibleExplicitExperienceInvitations: async () => false },
-    "./registration-repository": existingMemberRegistration,
+    "./page-reads": existingMemberRegistration,
     "next/navigation": { redirect },
   }, logs);
   return { reads, logs, getters: [

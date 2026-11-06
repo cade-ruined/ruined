@@ -4,6 +4,8 @@ export type MemberWelcomeSnapshot = {
   dismissedAt: string | null;
   calendarViewedAt: string | null;
   hasJournalEntry: boolean;
+  /** Optional Calendar guidance, resolved outside the profile's critical path. */
+  hasUpcomingCall?: boolean;
 };
 
 export type MemberWelcomeAction = "dismiss" | "resume" | "calendar_viewed";

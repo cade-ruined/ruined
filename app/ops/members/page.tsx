@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PREVIEW_OPERATOR_DASHBOARD } from "@/lib/platform/model";
 import { redirect } from "next/navigation";
 
 import OperatorDirectInvitations from "@/components/platform/OperatorDirectInvitations";
@@ -10,7 +11,7 @@ import OperatorPeopleWorkspace from "@/components/platform/OperatorPeopleWorkspa
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { normalizeOperatorMemberArchive, normalizeOperatorMemberSort, sortOperatorMembers } from "@/lib/platform/operator-member-directory";
 import type { OperatorMemberSummary } from "@/lib/platform/model";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 import { getPendingMemberInvitations, type PendingMemberInvitationPage } from "@/lib/platform/ops-member-invitation-repository";
 import {
   getOperatorMemberDirectoryPage,
@@ -97,10 +98,10 @@ export default async function OperationsMembersPage({
   searchParams: Promise<Record<string, SearchValue>>;
 }) {
   const params = await searchParams;
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
 
   const input = {
     filter: firstSearchValue(params.filter),
@@ -110,7 +111,7 @@ export default async function OperationsMembersPage({
   };
   let directory: OperatorMemberDirectoryPage | null = null;
   if (context.state === "preview") {
-    directory = previewDirectory(context.dashboard.members, input);
+    directory = previewDirectory(PREVIEW_OPERATOR_DASHBOARD.members, input);
   } else if (context.viewer) {
     try {
       directory = await getOperatorMemberDirectoryPage(context.viewer.authUserId, input);

@@ -4,13 +4,11 @@ import { redirect } from "next/navigation";
 import MemberHome from "@/components/platform/MemberHome";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { withFreshApplicationDatabaseRead } from "@/lib/database/server";
-import { resolveMemberHomeArtifactProducts } from "@/lib/membership/artifact-products";
-import { getMemberWelcome } from "@/lib/membership/welcome-repository";
 import type { MemberWelcomeSnapshot } from "@/lib/membership/welcome-model";
 import { getMembershipPageContext } from "@/lib/membership/page-context";
 import { PREVIEW_MEMBER_HOME } from "@/lib/membership/preview";
-import { getMemberHome } from "@/lib/membership/repository";
-import { getProducts } from "@/lib/shopify";
+import { getMemberProfileHome } from "@/lib/membership/repository";
+import type { MemberProfileHomeSnapshot } from "@/lib/membership/model";
 
 export const metadata: Metadata = {
   title: "Your Profile | Ruined",
@@ -19,9 +17,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MyRuinedPage() {
-  const context = await getMembershipPageContext(
+  const context = await getMembershipPageContext<MemberProfileHomeSnapshot>(
     PREVIEW_MEMBER_HOME,
-    (authUserId) => withFreshApplicationDatabaseRead("member-home", () => getMemberHome(authUserId)),
+    (authUserId) => withFreshApplicationDatabaseRead("member-home", () => getMemberProfileHome(authUserId)),
     "home",
   );
   if (context.state === "signed_out") redirect("/my/access");
@@ -35,23 +33,12 @@ export default async function MyRuinedPage() {
   }
   if (!context.data) return <PlatformUnavailable accessHref="/my/access" />;
 
-  // Getting started is optional. Its state must never keep someone from their profile.
-  let welcome: MemberWelcomeSnapshot | null = context.state === "preview" ? {
+  // Live getting-started progress loads independently in MemberWelcome. It must
+  // never delay the profile, badges, or private Journal.
+  const welcome: MemberWelcomeSnapshot | null = context.state === "preview" ? {
     ownerId: context.data.identity.authUserId, dismissedAt: null, calendarViewedAt: null, hasJournalEntry: false,
+    hasUpcomingCall: (context.data as typeof PREVIEW_MEMBER_HOME).upcomingExperiences.some(event => Boolean(event.meetingUrl)
+      && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now()),
   } : null;
-  if (context.state === "authenticated" && context.viewer) {
-    try {
-      welcome = await withFreshApplicationDatabaseRead("member-welcome",
-        () => getMemberWelcome(context.viewer!.authUserId));
-    } catch {
-      console.warn("Member welcome progress is temporarily unavailable");
-    }
-  }
-
-  // Product imagery is optional; profiles without a linked Artifact need no shop request.
-  const hasArtifactProducts = Boolean(context.data.artifact?.product)
-    || context.data.artifacts.some((artifact) => Boolean(artifact.product));
-  const products = hasArtifactProducts ? await getProducts() : [];
-  const member = resolveMemberHomeArtifactProducts(context.data, products);
-  return <MemberHome member={member} preview={context.state === "preview"} welcome={welcome} />;
+  return <MemberHome member={context.data} preview={context.state === "preview"} welcome={welcome} loadedAt={Date.now()} />;
 }

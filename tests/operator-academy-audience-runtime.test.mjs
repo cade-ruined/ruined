@@ -163,7 +163,7 @@ test("every Academy preview link resolves its exact lesson and unknown previews 
     "next/navigation": { notFound() { throw Error("not-found"); }, redirect() { throw Error("unexpected redirect"); } },
     "@/components/platform/OperatorAcademyEditor": { __esModule: true, default: Editor },
     "@/components/platform/PlatformUnavailable": { __esModule: true, default: () => null },
-    "@/lib/platform/page-data": { getOperatorPageContext: async () => ({ state: "preview", role: "ops_admin", dashboard: {}, viewer: null }) },
+    "@/lib/platform/page-data": { getOperatorAccessContext: async () => ({ state: "preview", role: "ops_admin", dashboard: {}, viewer: null }) },
     "@/lib/platform/ops-academy-preview": academy,
     "@/lib/platform/ops-academy-repository": { getOpsAcademyEditor() { reads++; throw Error("Preview must not read live data"); } },
   }).default;

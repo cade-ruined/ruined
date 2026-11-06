@@ -109,7 +109,7 @@ test('progress events refetch private server evidence instead of trusting event 
   const pending = deferred();
   let reads = 0;
   const ui = fixture({ fetch: async () => ++reads === 1 ? response(initial) : pending.promise });
-  ui.draw(); ui.dispatch('ruined:member-progress', { hasJournalEntry: true, calendarViewedAt: 'forged' });
+  ui.draw(); ui.dispatch('ruined:member-progress', { hasJournalEntry: true, calendarViewedAt: 'forged' }); ui.advance();
   assert.match(text(ui.draw()), /0 of 3 complete/);
   assert.equal(gets(ui).length, 2); assert.equal(gets(ui)[1].cache, 'no-store');
   assert.equal(gets(ui)[1].headers['x-ruined-session-owner'], ownerId);
@@ -167,7 +167,7 @@ test('account changes and unmounts abort old reads and writes before they can al
 test('a newer progress refresh aborts stale reads so completion cannot go backwards', async () => {
   const first = deferred(); let requests = 0;
   const ui = fixture({ fetch: async () => ++requests === 1 ? first.promise : response({ ...initial, hasJournalEntry: true }) });
-  ui.draw(); ui.dispatch('focus'); ui.dispatch('ruined:member-progress');
+  ui.draw(); ui.dispatch('focus'); ui.dispatch('ruined:member-progress'); ui.advance();
   assert.equal(gets(ui)[0].signal.aborted, true); await ui.settle(); assert.match(text(ui.draw()), /1 of 3 complete/);
   first.resolve(response(initial)); await ui.settle(); assert.match(text(ui.draw()), /1 of 3 complete/); ui.unmount();
 });
@@ -181,4 +181,27 @@ test('an older progress read cannot reopen a successfully dismissed welcome', as
   staleRead.resolve(response(initial)); await ui.settle();
   assert.doesNotMatch(text(ui.draw()), /of 3 complete/);
   ui.button('Getting started'); ui.unmount();
+});
+
+
+test('optional welcome resolves Calendar wording after the profile renders and retains it through dismissal', async () => {
+  const ui = fixture({ props: { initialWelcome: null }, fetch: async (_url, request) => response(request.method === 'POST'
+    ? { ...initial, dismissedAt: JSON.parse(request.body).action === 'dismiss' ? '2026-11-06T12:00:00Z' : null }
+    : { ...initial, hasUpcomingCall: true }) });
+  assert.match(text(ui.draw()), /Your guide is below/);
+  await ui.settle();
+  assert.match(text(ui.draw()), /Find your next call/);
+  ui.click('Do this later'); await ui.settle();
+  ui.click('Getting started'); await ui.settle();
+  assert.match(text(ui.draw()), /Find your next call/);
+  ui.unmount();
+});
+
+test('welcome focus and progress bursts make one fresh read and pending work is cancelled on unmount', async () => {
+  const ui = fixture(); ui.draw(); await ui.settle();
+  ui.dispatch('focus'); ui.dispatch('ruined:member-progress'); ui.dispatch('focus');
+  ui.advance(249); assert.equal(gets(ui).length, 1);
+  ui.advance(1); await ui.settle(); assert.equal(gets(ui).length, 2);
+  ui.dispatch('focus'); ui.unmount(); ui.advance();
+  assert.equal(gets(ui).length, 2);
 });

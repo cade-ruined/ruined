@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import OpsOverview from "@/components/platform/OpsOverview";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
-import { getCurrentPlatformViewer } from "@/lib/auth/session";
+import { getCurrentPlatformViewer } from "@/lib/auth/page-session";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 import {
   getOpsOverviewData,

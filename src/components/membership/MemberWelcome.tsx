@@ -20,6 +20,7 @@ function validSnapshot(value: unknown, ownerId: string): value is MemberWelcomeS
   if (!value || typeof value !== "object") return false;
   const row = value as MemberWelcomeSnapshot;
   return row.ownerId === ownerId && typeof row.hasJournalEntry === "boolean"
+    && (row.hasUpcomingCall === undefined || typeof row.hasUpcomingCall === "boolean")
     && (row.dismissedAt === null || typeof row.dismissedAt === "string")
     && (row.calendarViewedAt === null || typeof row.calendarViewedAt === "string");
 }
@@ -35,12 +36,14 @@ export default function MemberWelcome({ ownerId, initialWelcome, profileReady, h
   const state = snapshot?.ownerId === ownerId ? snapshot : null;
   const dismissed = Boolean(state?.dismissedAt);
   const completed = Number(profileReady) + Number(Boolean(state?.hasJournalEntry)) + Number(Boolean(state?.calendarViewedAt));
+  const upcomingCall = state?.hasUpcomingCall ?? hasUpcomingCall;
 
   useEffect(() => {
     setSnapshot(initialWelcome);
     setError("");
     setPending(false);
     let active = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     function update(event?: Event) {
       if (preview) {
         const detail = (event as CustomEvent<{ preview?: boolean; hasJournalEntry?: boolean }> | undefined)?.detail;
@@ -57,10 +60,15 @@ export default function MemberWelcome({ ownerId, initialWelcome, profileReady, h
         .then(async response => { if (!response.ok) return; const data: unknown = await response.json(); if (active && !signal.aborted && validSnapshot(data, ownerId)) setSnapshot(data); })
         .catch(() => { /* Optional guidance must never interrupt the profile. */ });
     }
+    function scheduleUpdate(event: Event) {
+      if (preview) { update(event); return; }
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => { refreshTimer = undefined; update(); }, 250);
+    }
     update();
-    window.addEventListener("ruined:member-progress", update);
-    window.addEventListener("focus", update);
-    return () => { active = false; refreshRequest.current?.abort(); request.current?.abort(); saving.current = false; window.removeEventListener("ruined:member-progress", update); window.removeEventListener("focus", update); };
+    window.addEventListener("ruined:member-progress", scheduleUpdate);
+    window.addEventListener("focus", scheduleUpdate);
+    return () => { active = false; clearTimeout(refreshTimer); refreshRequest.current?.abort(); request.current?.abort(); saving.current = false; window.removeEventListener("ruined:member-progress", scheduleUpdate); window.removeEventListener("focus", scheduleUpdate); };
   }, [ownerId, preview, initialWelcome]);
 
   async function save(action: MemberWelcomeAction) {
@@ -85,7 +93,7 @@ export default function MemberWelcome({ ownerId, initialWelcome, profileReady, h
       const data: unknown = await response.json();
       if (controller.signal.aborted) return;
       if (!response.ok || !validSnapshot(data, ownerId)) throw new Error("save");
-      setSnapshot(data);
+      setSnapshot({ ...data, hasUpcomingCall: data.hasUpcomingCall ?? state.hasUpcomingCall });
     } catch {
       if (!controller.signal.aborted) setError("Couldn’t save this change. Try again; your profile is still ready to use.");
     } finally { if (!controller.signal.aborted) { saving.current = false; setPending(false); } }
@@ -102,7 +110,7 @@ export default function MemberWelcome({ ownerId, initialWelcome, profileReady, h
       <ul className={styles.steps}>
         <li data-complete={profileReady || undefined}><span className={styles.check} aria-label={profileReady ? "Complete" : "Not complete"}>{profileReady ? "✓" : ""}</span><Image className={styles.badgeArt} src={badgeArtwork({key:"make-it-yours"}).src} alt="Make It Yours badge" width={84} height={84} sizes="(max-width: 600px) 60px, 84px"/><div><h3>Make it yours</h3><p>A photo, a few words about you, and your @tag.</p><span className={styles.reward}>Badge: Make It Yours</span></div><Link href="/my/profile">{profileReady ? "Edit profile" : "Set up profile"}<span aria-hidden="true"> ↗</span></Link></li>
         <li data-complete={state.hasJournalEntry || undefined}><span className={styles.check} aria-label={state.hasJournalEntry ? "Complete" : "Not complete"}>{state.hasJournalEntry ? "✓" : ""}</span><Image className={styles.badgeArt} src={badgeArtwork({key:"first-words"}).src} alt="First Words badge" width={84} height={84} sizes="(max-width: 600px) 60px, 84px"/><div><h3>A few words, just for you</h3><p>Your Journal is private. Start with what brought you here.</p><span className={styles.reward}>Badge: First Words · private by default</span></div><button type="button" onClick={onWritePrivate}>{state.hasJournalEntry ? "Write again" : "Write privately"}<span aria-hidden="true"> ↗</span></button></li>
-        <li data-complete={Boolean(state.calendarViewedAt) || undefined}><span className={styles.check} aria-label={state.calendarViewedAt ? "Complete" : "Not complete"}>{state.calendarViewedAt ? "✓" : ""}</span><Image className={styles.badgeArt} src={badgeArtwork({key:"in-the-room"}).src} alt="In the Room badge" width={84} height={84} sizes="(max-width: 600px) 60px, 84px"/><div><h3>{hasUpcomingCall ? "Find your next call" : "Explore your calendar"}</h3><p>{hasUpcomingCall ? "Your scheduled calls and joining links live in Calendar." : "This is where your calls and joining links will appear."}</p><span className={styles.reward}>Badge: In the Room · earned by attending your first Foundations or Membership call.</span></div><Link href="/my/experiences">Open Calendar<span aria-hidden="true"> ↗</span></Link></li>
+        <li data-complete={Boolean(state.calendarViewedAt) || undefined}><span className={styles.check} aria-label={state.calendarViewedAt ? "Complete" : "Not complete"}>{state.calendarViewedAt ? "✓" : ""}</span><Image className={styles.badgeArt} src={badgeArtwork({key:"in-the-room"}).src} alt="In the Room badge" width={84} height={84} sizes="(max-width: 600px) 60px, 84px"/><div><h3>{upcomingCall ? "Find your next call" : "Explore your calendar"}</h3><p>{upcomingCall ? "Your scheduled calls and joining links live in Calendar." : "This is where your calls and joining links will appear."}</p><span className={styles.reward}>Badge: In the Room · earned by attending your first Foundations or Membership call.</span></div><Link href="/my/experiences">Open Calendar<span aria-hidden="true"> ↗</span></Link></li>
       </ul>
     </> : <div className={styles.collapsed}><h2 id={headingId}>Make yourself at home.</h2>{state ? <button type="button" onClick={() => void save("resume")} disabled={pending}>Getting started <span aria-hidden="true">↗</span></button> : <span>Your guide is below.</span>}</div>}
     <details className={styles.guide}><summary>A quick look around <span aria-hidden="true">+</span></summary><div>

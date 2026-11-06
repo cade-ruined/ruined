@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import OperatorExperienceDirectory from "@/components/platform/OperatorExperienceDirectory";
 import PlatformUnavailable from "@/components/platform/PlatformUnavailable";
 import { getOpsExperienceManagementDirectory } from "@/lib/platform/ops-experience-repository";
-import { getOperatorPageContext } from "@/lib/platform/page-data";
+import { getOperatorAccessContext } from "@/lib/platform/page-data";
 import { PREVIEW_OPS_EXPERIENCE_DIRECTORY } from "@/lib/platform/ops-experience-preview";
 import OperatorEventAudienceTabs from "@/components/platform/OperatorEventAudienceTabs";
 import OperatorCommunityEvents from "@/components/platform/OperatorCommunityEvents";
@@ -19,10 +19,10 @@ export default async function OperationsExperiencesPage({ searchParams }: { sear
   // A Circle shortcut always stays in member Experiences, even if an old audience query remains.
   const requestedCircleId = search.circleId === undefined ? undefined : typeof search.circleId === "string" ? search.circleId : "";
   const view = requestedCircleId === undefined && search.view === "community" ? "community" : "members";
-  const context = await getOperatorPageContext();
+  const context = await getOperatorAccessContext();
   if (context.state === "signed_out") redirect("/ops/access");
   if (context.state === "denied") return <PlatformUnavailable reason="operator_access" />;
-  if (!context.dashboard) return <PlatformUnavailable accessHref="/ops/access" />;
+  if (context.state === "unavailable") return <PlatformUnavailable accessHref="/ops/access" />;
   const tabs = <OperatorEventAudienceTabs selected={view} canManagePublic={context.role === "ops_admin"} />;
   if (view === "community") {
     if (context.role !== "ops_admin") return <PlatformUnavailable reason="operator_access" />;

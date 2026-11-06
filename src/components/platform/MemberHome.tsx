@@ -13,29 +13,42 @@ import type { MemberWelcomeSnapshot } from "@/lib/membership/welcome-model";
 import { useMemberPortrait } from "@/components/membership/MemberPortraitState";
 import { memberCan } from "@/lib/membership/access-policy";
 import { memberTier } from "@/lib/membership/member-number";
-import type { MemberHomeSnapshot } from "@/lib/membership/model";
+import type { MemberProfileHomeSnapshot } from "@/lib/membership/model";
 import styles from "./MemberProfile.module.css";
 
 const tabs=["timeline","journal"] as const;
 type JournalMode="all"|"timeline";
 type Tab=typeof tabs[number];
-export default function MemberHome({member,preview=false,welcome=null}:{member:MemberHomeSnapshot;preview?:boolean;welcome?:MemberWelcomeSnapshot|null}) {
+export default function MemberHome({member,preview=false,welcome=null,loadedAt}:{member:MemberProfileHomeSnapshot;preview?:boolean;welcome?:MemberWelcomeSnapshot|null;loadedAt?:number}) {
   const router=useRouter();
   const {avatarUrl}=useMemberPortrait(member.avatarUrl);
+  const freshnessCheckedOwner=useRef<string|null>(null);
   useEffect(()=>{
     if(preview)return;
-    // Refresh cached profile props without remounting the Journal or its draft.
-    function refresh(){if(!document.hidden)router.refresh();}
-    refresh();
+    // The server just loaded these props. Refresh only after a real return or
+    // progress change, coalescing focus/visibility events without remounting drafts.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function refresh(){
+      if(document.hidden)return;
+      clearTimeout(timer);
+      timer=setTimeout(()=>{timer=undefined;if(!document.hidden)router.refresh();},250);
+    }
+    // Client back-navigation may restore an older server render without a
+    // browser focus event. Revalidate that case, not a freshly loaded page.
+    if(freshnessCheckedOwner.current!==member.identity.authUserId){
+      freshnessCheckedOwner.current=member.identity.authUserId;
+      if(loadedAt !== undefined && Date.now()-loadedAt>30_000)refresh();
+    }
     window.addEventListener("focus",refresh);
     window.addEventListener("ruined:member-progress",refresh);
     document.addEventListener("visibilitychange",refresh);
     return()=>{
+      clearTimeout(timer);
       window.removeEventListener("focus",refresh);
       window.removeEventListener("ruined:member-progress",refresh);
       document.removeEventListener("visibilitychange",refresh);
     };
-  },[member.identity.authUserId,preview,router]);
+  },[member.identity.authUserId,preview,router,loadedAt]);
   const [privateComposeRequest,setPrivateComposeRequest]=useState(0);
   const [tab,setTab]=useState<Tab>("timeline");const [journalMode,setJournalMode]=useState<JournalMode>("timeline");const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);const id=useId();
   useEffect(()=>{
@@ -82,7 +95,7 @@ export default function MemberHome({member,preview=false,welcome=null}:{member:M
 
     {memberCan(member.access,"foundations.write") || memberCan(member.access,"foundations.revisit") ? <MemberPracticeCard key={`practice-${member.identity.authUserId}`} ownerId={member.identity.authUserId} preview={preview}/> : null}
 
-    {member.access.mode === "full" || member.access.mode === "onboarding" ? <MemberWelcome key={`welcome-${member.identity.authUserId}`} ownerId={member.identity.authUserId} initialWelcome={welcome} preview={preview} profileReady={Boolean(avatarUrl && member.profile.bio?.trim() && member.profile.memberTag?.trim())} hasUpcomingCall={member.upcomingExperiences.some(event=>Boolean(event.meetingUrl) && event.registrationState === "registered" && Date.parse(event.startsAt) > Date.now())} onWritePrivate={()=>{select("journal");setPrivateComposeRequest(value=>value+1);}}/> : null}
+    {member.access.mode === "full" || member.access.mode === "onboarding" ? <MemberWelcome key={`welcome-${member.identity.authUserId}`} ownerId={member.identity.authUserId} initialWelcome={welcome} preview={preview} profileReady={Boolean(avatarUrl && member.profile.bio?.trim() && member.profile.memberTag?.trim())} onWritePrivate={()=>{select("journal");setPrivateComposeRequest(value=>value+1);}}/> : null}
 
     <InstallRuined variant="profile"/>
 

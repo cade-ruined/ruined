@@ -245,6 +245,11 @@ export type MemberHomeSnapshot = {
   upcomingExperiences: MemberExperienceSummary[];
 };
 
+/** Only the content rendered by the member's profile home. */
+export type MemberProfileHomeSnapshot = Pick<MemberHomeSnapshot,
+  "access" | "avatarUrl" | "badges" | "displayName" | "identity" | "memberNumber" | "memberSince" | "profile"
+>;
+
 export type MemberDirectoryPreferences = {
   avatarVisible: boolean;
   bioVisible: boolean;

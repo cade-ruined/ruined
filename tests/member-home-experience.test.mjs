@@ -180,7 +180,10 @@ test("profile badge uses the permanent number and leaves unassigned members unnu
 function interactiveProfile(hash = "#journal", props = {}) {
   const slots = [], listeners = new Map(), historyState = { nextRouter: "retained" };
   const Journal = JournalStub;
-  let refreshes=0;
+  let refreshes=0, clock=0, nextTimer=0;
+  const timers=new Map();
+  const setTimer=(fn,delay)=>{const id=++nextTimer;timers.set(id,{fn,at:clock+delay});return id;};
+  const clearTimer=id=>timers.delete(id);
   const router={refresh(){refreshes++;}};
   const document={hidden:false,listeners:new Map(),addEventListener(name,fn){this.listeners.set(name,fn);},removeEventListener(name,fn){if(this.listeners.get(name)===fn)this.listeners.delete(name);}};
   let cursor = 0, queued = [], changed = false, tree, focused = null;
@@ -207,7 +210,7 @@ function interactiveProfile(hash = "#journal", props = {}) {
     },
   };
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", "window", "document", compiled)(name => {
+  new Function("require", "module", "exports", "window", "document", "setTimeout", "clearTimeout", compiled)(name => {
     if (name === "react") return hooks;
     if (name === "next/navigation") return {useRouter:()=>router};
     if (name === "react/jsx-runtime") return require(name);
@@ -222,7 +225,7 @@ function interactiveProfile(hash = "#journal", props = {}) {
     if (name === "next/link" || name === "next/image") return { __esModule: true, default: name };
     if (name.endsWith(".module.css")) return { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) };
     throw Error(`Unexpected profile dependency ${name}`);
-  }, loaded, loaded.exports, window, document);
+  }, loaded, loaded.exports, window, document, setTimer, clearTimer);
   const childNodes = node => { const children = []; React.Children.forEach(node.props.children, child => children.push(child)); return children; };
   // Keep the raw component element for ownership checks and inspect its rendered layout.
   const nodes = node => React.isValidElement(node)
@@ -251,6 +254,7 @@ function interactiveProfile(hash = "#journal", props = {}) {
   const tabs = () => nodes(render()).filter(node => node.props.role === "tab");
   return { window, render, tabs, nodes,
     refreshes:()=>refreshes,
+    advance(ms=250){clock+=ms;for(const [id,timer] of timers){if(timer.at<=clock){timers.delete(id);timer.fn();}}},
     update(next){Object.assign(props,next);return render();},
     dispatch(event){listeners.get(event)?.();return render();},
     setHidden(hidden){document.hidden=hidden;document.listeners.get("visibilitychange")?.();return render();},
@@ -381,25 +385,49 @@ test("profile orders identity, bio, actions, then earned badges and the collecti
 });
 
 
-test("profile refreshes stale saved details on arrival, progress and tab return without resetting Journal state",()=>{
+test("profile uses fresh arrival props and coalesces return/progress refreshes without resetting Journal state",()=>{
   const member=memberFixture(),ui=interactiveProfile("#timeline",{member});
   const initial=ui.journal(),path=ui.journalPath();
-  assert.equal(ui.refreshes(),1);
+  ui.advance();assert.equal(ui.refreshes(),0,"arrival must not immediately request the same server profile again");
   ui.welcome().props.onWritePrivate();
   assert.equal(ui.journal().props.privateComposeRequest,1);
-  ui.dispatch("ruined:member-progress");assert.equal(ui.refreshes(),2);
+  ui.dispatch("ruined:member-progress");ui.dispatch("focus");ui.setHidden(false);
+  ui.advance(249);assert.equal(ui.refreshes(),0);ui.advance(1);assert.equal(ui.refreshes(),1);
   const saved={...member,avatarUrl:"/portrait.webp",profile:{...member.profile,bio:"My introduction.",memberTag:"alex"}};
-  ui.update({member:saved});assert.equal(ui.welcome().props.profileReady,true);
-  assert.equal(ui.refreshes(),2,"fresh server props do not cause another refresh loop");
+  ui.update({member:saved});assert.equal(ui.welcome().props.profileReady,true);ui.advance();
+  assert.equal(ui.refreshes(),1,"fresh server props do not cause another refresh loop");
   assert.equal(ui.journal().type,initial.type);assert.equal(ui.journal().key,initial.key);assert.deepEqual(ui.journalPath(),path);
   assert.equal(ui.journal().props.privateComposeRequest,1);assert.equal(ui.journal().props.initialMode,"all");
-  ui.setHidden(true);ui.dispatch("focus");assert.equal(ui.refreshes(),2);
-  ui.setHidden(false);assert.equal(ui.refreshes(),3);
-  ui.dispatch("focus");assert.equal(ui.refreshes(),4);
-  ui.unmount();ui.dispatch("focus");assert.equal(ui.refreshes(),4);
+  ui.setHidden(true);ui.dispatch("focus");ui.dispatch("ruined:member-progress");ui.advance();assert.equal(ui.refreshes(),1);
+  ui.setHidden(false);ui.dispatch("focus");ui.advance();assert.equal(ui.refreshes(),2);
+  ui.dispatch("focus");ui.setHidden(true);ui.advance();assert.equal(ui.refreshes(),2,"hiding before the timer fires must not start a background request");
+  ui.setHidden(false);ui.unmount();ui.advance();assert.equal(ui.refreshes(),2,"unmount cancels pending refreshes");
 });
 
 test("profile previews do not request live account refreshes",()=>{
   const ui=interactiveProfile("",{preview:true});ui.render();ui.dispatch("ruined:member-progress");ui.dispatch("focus");ui.setHidden(false);
-  assert.equal(ui.refreshes(),0);ui.unmount();
+  ui.advance();assert.equal(ui.refreshes(),0);ui.unmount();
+});
+
+
+test("cached back-navigation refreshes only an old render and keeps the same private draft owner",()=>{
+  const member=memberFixture(),ui=interactiveProfile("#journal",{member,loadedAt:Date.now()-60_000});
+  const first=ui.journal(),path=ui.journalPath();
+  ui.advance();assert.equal(ui.refreshes(),1);
+  ui.update({loadedAt:Date.now()});ui.advance();assert.equal(ui.refreshes(),1);
+  assert.equal(ui.journal().type,first.type);assert.equal(ui.journal().key,first.key);
+  assert.deepEqual(ui.journalPath(),path);assert.equal(ui.journal().props.initialMode,"all");
+  ui.unmount();
+});
+
+test("a client clock ahead of the server cannot cause repeated stale-mount refreshes",()=>{
+  const serverClock=Date.now()-120_000;
+  const ui=interactiveProfile("#journal",{loadedAt:serverClock});
+  ui.render();ui.advance();assert.equal(ui.refreshes(),1);
+  for(let request=1;request<=3;request++){
+    ui.update({loadedAt:serverClock+request*1000});ui.advance();
+    assert.equal(ui.refreshes(),1,"a new server timestamp must not recursively refresh this mounted owner");
+  }
+  ui.dispatch("ruined:member-progress");ui.advance();assert.equal(ui.refreshes(),2);
+  ui.unmount();
 });
