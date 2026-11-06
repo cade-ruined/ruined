@@ -28,6 +28,8 @@ const { operatorMemberJourney } = load("src/lib/membership/operator-registration
 const repository = load("src/lib/membership/registration-repository.ts", {
   "@/lib/database/server": { getApplicationDatabase() { throw new Error("A network database is forbidden."); } },
   "@/lib/platform/config": { getPlatformConfiguration: () => ({ stripeActivationReady: true, stripeCheckoutReady: true }) },
+  // Onboarding reconciliation is covered with real guards in complimentary-registration-onboarding.test.mjs.
+  "./complimentary-onboarding-repository": { reconcileComplimentaryRegistrationOnboarding: async () => false },
   "./registration-routing": load("src/lib/membership/registration-routing.ts"),
 });
 

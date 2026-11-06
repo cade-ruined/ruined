@@ -68,6 +68,8 @@ async function fixture(t) {
     "server-only": {},
     "@/lib/database/server": { getApplicationDatabase: () => sqlFor(db) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({}) },
+    // Onboarding reconciliation is covered with real guards in complimentary-registration-onboarding.test.mjs.
+    "./complimentary-onboarding-repository": { reconcileComplimentaryRegistrationOnboarding: async () => false },
     "./registration-routing": { memberRegistrationDestination() { throw Error("Unrelated route read"); } },
   };
   new Function("require", "module", "exports", code)(name => {

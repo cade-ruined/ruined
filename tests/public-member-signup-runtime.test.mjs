@@ -48,6 +48,8 @@ async function fixture(t) {
   };
   const identity = await load("src/lib/identity/repository.ts", { "server-only": {}, "node:crypto": crypto });
   const registration = await load("src/lib/membership/registration-repository.ts", {
+    // Onboarding reconciliation is covered with real guards in complimentary-registration-onboarding.test.mjs.
+    "./complimentary-onboarding-repository": { reconcileComplimentaryRegistrationOnboarding: async () => false },
     "./registration-routing": await load("src/lib/membership/registration-routing.ts"),
     "server-only": {}, "@/lib/database/server": { getApplicationDatabase: () => wrap(db) },
     "@/lib/platform/config": { getPlatformConfiguration: () => ({ membershipRegistrationOnly: false }) },
