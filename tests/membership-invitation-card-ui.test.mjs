@@ -116,6 +116,11 @@ test("card text remains name-only for legacy detail payloads while invitations p
     assert.match(html, /Alex Morgan/);
     assert.doesNotMatch(html, /PRIVATE|legacy_tag|private\.example|private-portrait|Member since|Based in|Currently building|Along the way/);
     if (variant === "invitation") assert.match(html, /This is for Taylor Reed/);
+    else {
+      assert.match(html, /This is for you\./);
+      assert.match(html, /You’re allowed to become someone new\./);
+      assert.doesNotMatch(html, /Taylor Reed|A personal invitation|Valid until|48 hours|Accept below|Leave your details/);
+    }
   }
 });
 
