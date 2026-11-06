@@ -111,6 +111,7 @@ test("notifications open a focused composer from history, require an audience, a
   assert.equal(requests[0].url, "/api/ops/notifications");
   assert.deepEqual(JSON.parse(requests[0].body), {
     actionLabel: "Open Circle", actionUrl: "/my/circle", body: draft.body,
+    showOnNextVisit: false,
     notificationType: "reminder", targetId: "member-one", targetType: "member", title: draft.title,
   });
   assert.match(text(f.draw()), /No email or text message was sent/);
