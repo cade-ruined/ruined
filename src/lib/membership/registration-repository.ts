@@ -6,6 +6,7 @@ import { getPlatformConfiguration } from "@/lib/platform/config";
 import type { MemberRegistrationSnapshot, OpsMemberRegistration, OpsRegistrationInvitation, RegistrationFoundingPricing, RegistrationInitialPayment } from "./registration-model";
 import type { OperatorRegistrationProgress } from "./operator-registration-progress";
 import { memberRegistrationDestination } from "./registration-routing";
+import { reconcileComplimentaryRegistrationOnboarding } from "./complimentary-onboarding-repository";
 
 export class MemberRegistrationError extends Error {
   constructor(readonly status: number, message: string) {
@@ -130,6 +131,7 @@ export async function reconcileMemberRegistration(tx: TransactionSql, memberId: 
     on conflict(member_id,kind) do nothing`;
   await releasePaidMemberProfile(tx, memberId);
   await releaseComplimentaryMemberProfile(tx, memberId);
+  await reconcileComplimentaryRegistrationOnboarding(tx, memberId);
 }
 
 export type PaidMemberProfileRelease = {
@@ -311,6 +313,27 @@ export async function reconcileSelectedPaidMemberProfileReleases(actor: string,
 async function lockRegistrationMember(tx: TransactionSql, memberId: string) {
   await tx`select private.ruined_lock_member_complimentary_funding(${memberId}::uuid)`;
   await tx`select id from ruined_members where id=${memberId}::uuid for update`;
+}
+
+/** Repair only the selected completed complimentary registrations. The database
+ * rechecks current funding, identity and member-authored terms under locks. */
+export async function reconcileSelectedComplimentaryMemberOnboardings(
+  actor: string,
+  memberIds: string[],
+): Promise<Array<{ memberId: string; reconciled: boolean }>> {
+  const ids = selectedMemberIds(memberIds);
+  return getApplicationDatabase().begin(async tx => {
+    await tx`set local lock_timeout='3s'`;
+    await tx`set local statement_timeout='20s'`;
+    await requireAdministrator(tx, actor);
+    for (const id of ids) await tx`select private.ruined_lock_member_complimentary_funding(${id}::uuid)`;
+    for (const id of ids) await tx`select id from ruined_members where id=${id}::uuid for update`;
+    const results: Array<{ memberId: string; reconciled: boolean }> = [];
+    for (const memberId of ids) {
+      results.push({ memberId, reconciled: await reconcileComplimentaryRegistrationOnboarding(tx, memberId, actor) });
+    }
+    return results;
+  });
 }
 
 export async function completeMemberRegistration(authUserId: string): Promise<MemberRegistrationSnapshot | null> {
