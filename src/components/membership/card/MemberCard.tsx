@@ -24,6 +24,8 @@ const restingPose: CardPose = { x: 0, y: 0, tiltX: 0, tiltY: 0, roll: 0, lifted:
 export default function MemberCard({ card, compact = false, archive = false, embedded = false, variant = "member", invitationExpiresAt = null, invitationRecipientName = null, invitationSource = "member", onDownload, onArchiveShadow }: { card: PublicMemberCard; compact?: boolean; archive?: boolean; embedded?: boolean; variant?: CardVariant; invitationExpiresAt?: string | null; invitationRecipientName?: string | null; invitationSource?: "member" | "ruined_direct"; onDownload?: () => void; onArchiveShadow?: (shadow: ArchiveShadow | null) => void }) {
   const direct = variant === "invitation" && invitationSource === "ruined_direct";
   const identity = direct ? "The Ruined Project" : publicMemberCardIdentity(card);
+  const inscription = `${variant === "invitation" && invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new.`;
+  const deadline = variant === "invitation" ? memberInvitationDeadline(invitationExpiresAt) : null;
   const id = useId(), stage = useRef<HTMLDivElement>(null), handle = useRef<HTMLDivElement>(null), flatCanvas = useRef<HTMLCanvasElement>(null);
   const [artworkResult, setArtworkResult] = useState<{ card: PublicMemberCard; variant: CardVariant; invitationExpiresAt: string | null; invitationRecipientName: string | null; invitationSource: "member" | "ruined_direct"; artwork: CardArtwork } | null>(null), [pose, setPose] = useState(restingPose);
   const artwork = artworkResult?.card === card && artworkResult.variant === variant && artworkResult.invitationExpiresAt === invitationExpiresAt && artworkResult.invitationRecipientName === invitationRecipientName && artworkResult.invitationSource === invitationSource ? artworkResult.artwork : null;
@@ -45,7 +47,7 @@ export default function MemberCard({ card, compact = false, archive = false, emb
       if (cancelled) return;
       setArtworkResult({ card, variant, invitationExpiresAt, invitationRecipientName, invitationSource, artwork: value });
       const fonts = document.fonts;
-      const hasFonts = () => cardArtworkFontRequests(variant).every(font => fonts.check(font));
+      const hasFonts = () => cardArtworkFontRequests().every(font => fonts.check(font));
       if (fonts && !hasFonts()) {
         await fonts.ready;
         if (cancelled || !hasFonts()) return;
@@ -140,9 +142,9 @@ export default function MemberCard({ card, compact = false, archive = false, emb
       {!pose.reduced && !failed ? <button className={styles.flatToggle} type="button" onClick={() => setFlat(value => !value)} aria-pressed={flat}>{embedded ? flat ? "Resume motion" : "Pause motion" : flat ? "3D view" : "Still view"}</button> : null}
     </div>
     <p className={embedded ? styles.visuallyHidden : styles.status} role="status">{status}</p>
-    {embedded ? <p className={styles.visuallyHidden}>{invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new. {memberInvitationDeadline(invitationExpiresAt) ? `Valid until ${memberInvitationDeadline(invitationExpiresAt)}.` : direct ? "Valid for 48 hours once created." : ""}</p> : null}
+    {embedded ? <p className={styles.visuallyHidden}>{inscription} {deadline ? `Valid until ${deadline}.` : direct ? "Valid for 48 hours once created." : ""}</p> : null}
     {!embedded ? <details className={styles.details}><summary>{variant === "invitation" ? "Read invitation" : "Read card details"}<span aria-hidden="true">+</span></summary><div>
-      <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${identity}` : card.name}</p>{variant === "invitation" ? <><p>{invitationRecipientName ? `This is for ${invitationRecipientName}.` : "This is for you."} You’re allowed to become someone new.</p>{memberInvitationDeadline(invitationExpiresAt) ? <p>Valid until <time dateTime={invitationExpiresAt!}>{memberInvitationDeadline(invitationExpiresAt)}</time>.</p> : direct ? <p>Valid for 48 hours once created.</p> : null}<p>{direct ? "Ruined Direct. Accept below, verify your email, then complete your profile, agreement, and payment." : "A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining."}</p></> : null}
+      <p className={styles.detailName}>{variant === "invitation" ? `An invitation from ${identity}` : card.name}</p><p>{inscription}</p>{variant === "invitation" ? <>{deadline ? <p>Valid until <time dateTime={invitationExpiresAt!}>{deadline}</time>.</p> : direct ? <p>Valid for 48 hours once created.</p> : null}<p>{direct ? "Ruined Direct. Accept below, verify your email, then complete your profile, agreement, and payment." : "A personal invitation to Ruined. Leave your details below and we’ll be in touch about joining."}</p></> : null}
     </div></details> : null}
   </section>;
 }
