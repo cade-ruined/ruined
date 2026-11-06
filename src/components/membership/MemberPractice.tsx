@@ -19,7 +19,7 @@ const timeFields = (value: PracticeTimeFields): PracticeTimeFields => ({ action:
 const draftsFor = (value: PracticeSnapshot): Drafts => ({ timeline: value.timelineDraft ?? blankTimeline(), letter: { body: value.letter.body }, time: timeFields(value.time) });
 const signature = (value: unknown) => JSON.stringify(value);
 const workFor = (course: PracticeCourse): Work => course === "f1" ? "timeline" : course === "f4" ? "letter" : "time";
-const hasTimelineDraft = (draft: PracticeTimelineDraft) => Boolean(draft.id || draft.year || draft.title.trim() || draft.details.trim() || draft.meaning.trim() || draft.presentImpact.trim());
+const hasTimelineDraft = (draft: PracticeTimelineDraft) => Boolean(draft.id || draft.year || draft.title.trim() || draft.details.trim() || draft.meaning.trim() || draft.presentImpact.trim() || draft.belief?.trim() || draft.perspective?.trim());
 const entryDraft = (entry: MemberTimelineEntry): PracticeTimelineDraft => ({ id: entry.id, year: entry.year, month: entry.month ?? null, title: entry.title, details: entry.details ?? "", meaning: entry.meaning ?? "", presentImpact: entry.presentImpact ?? "", belief: entry.belief, perspective: entry.perspective });
 const foundationIds: PracticeCourse[] = ["f1", "f2", "f3", "f4"];
 const courseTitle = (course: PracticeCourse) => course === "time" ? "TIME / December" : `Foundations ${course.slice(1)}`;
@@ -278,7 +278,7 @@ export default function MemberPractice({ initial, connected, initialArea = "foun
     window.location.assign(`/my/practice/deck/${course}`);
   }
 
-  function beginWork() {
+  async function beginWork() {
     if (!snapshot.releases[course] || course === "f2" || course === "f3") return;
     setMessage("");
     if (!writable) {
@@ -286,32 +286,44 @@ export default function MemberPractice({ initial, connected, initialArea = "foun
       setView("read");
       return;
     }
-    setStep(course === "f1" ? !drafts.timeline.year ? 0 : !drafts.timeline.title.trim() ? 1 : !drafts.timeline.meaning.trim() ? 2 : !drafts.timeline.presentImpact.trim() ? 3 : 0
-      : course === "time" ? !drafts.time.action.trim() ? 0 : !drafts.time.category ? 1 : !drafts.time.minutes ? 2 : !drafts.time.sourceCategory ? 3 : !drafts.time.sourceMinutes ? 4 : 5 : 0);
+    if (course === "f1") { await openTimeline(); return; }
+    setStep(course === "time" ? !drafts.time.action.trim() ? 0 : !drafts.time.category ? 1 : !drafts.time.minutes ? 2 : !drafts.time.sourceCategory ? 3 : !drafts.time.sourceMinutes ? 4 : 5 : 0);
     setView("work");
+  }
+
+  async function openTimeline(entryId?: string, resumeDraft = true) {
+    if (!writable || blockedRef.current || navigationPendingRef.current || !snapshotRef.current.releases.f1) return;
+    navigationPendingRef.current = true;
+    setFinishing(true);
+    try {
+      for (const kind of ["timeline", "letter", "time"] as Work[]) if (!await flush(kind)) return;
+      const draft = draftsRef.current.timeline;
+      const resume = resumeDraft && hasTimelineDraft(draft) && (!entryId || draft.id === entryId);
+      const targetId = entryId ?? (resume ? draft.id : null);
+      const destination = targetId ? `/my/timeline?moment=${encodeURIComponent(targetId)}&practice=f1` : "/my/timeline/new?practice=f1";
+      // The shared composer reviews this owner-only saved draft. It stays private
+      // and intact until the member explicitly saves or publishes from there.
+      if (mountedRef.current) window.location.assign(`${destination}${resume ? "&resume=1" : ""}`);
+    } catch (error) {
+      if (mountedRef.current) setMessage(error instanceof Error ? error.message : "Your draft could not be opened. Please try again.");
+    } finally {
+      navigationPendingRef.current = false;
+      setFinishing(false);
+    }
   }
 
   function editEntry(entry: MemberTimelineEntry) {
     if (!writable) { setReadEntry(entryDraft(entry)); setView("read"); return; }
-    if (hasTimelineDraft(draftsRef.current.timeline) && draftsRef.current.timeline.id !== entry.id) {
-      setMessage("Finish your current entry before opening another. It’s saved in Foundations 1.");
-      return;
-    }
-    updateDraft("timeline", entryDraft(entry));
-    setYearInput(String(entry.year));
-    setStep(0);
-    setView("work");
+    void openTimeline(entry.id);
   }
 
   async function finish() {
-    if (primaryDisabled) return;
+    if (primaryDisabled || work === "timeline") return;
     setFinishing(true);
     try {
       if (!await flush(work)) return;
       const base = { ownerId: initial.ownerId, expectedRevision: snapshotRef.current.revision };
-      const request: PracticeAction = work === "timeline"
-        ? { ...base, action: "keep_timeline_entry", expectedTimelineRevision: snapshotRef.current.timeline.revision, fields: draftsRef.current.timeline }
-        : work === "letter" ? { ...base, action: "keep_letter", fields: draftsRef.current.letter }
+      const request: PracticeAction = work === "letter" ? { ...base, action: "keep_letter", fields: draftsRef.current.letter }
           : { ...base, action: "keep_time", fields: draftsRef.current.time };
       const operation = send(request);
       const pending = operation.then(Boolean);
@@ -404,7 +416,7 @@ export default function MemberPractice({ initial, connected, initialArea = "foun
 
   function downloadDraft() {
     const value = draftsRef.current[work];
-    const text = work === "timeline" ? [draftsRef.current.timeline.year, draftsRef.current.timeline.title, draftsRef.current.timeline.details, draftsRef.current.timeline.meaning, draftsRef.current.timeline.presentImpact].filter(Boolean).join("\n\n")
+    const text = work === "timeline" ? [draftsRef.current.timeline.year, draftsRef.current.timeline.title, draftsRef.current.timeline.details, draftsRef.current.timeline.meaning, draftsRef.current.timeline.belief, draftsRef.current.timeline.presentImpact, draftsRef.current.timeline.perspective].filter(Boolean).join("\n\n")
       : work === "letter" ? draftsRef.current.letter.body : `${draftsRef.current.time.action}\n\n${duration(draftsRef.current.time.minutes)} for ${categoryLabel(draftsRef.current.time.category)}\nFrom ${categoryLabel(draftsRef.current.time.sourceCategory)} (${duration(draftsRef.current.time.sourceMinutes)} currently)`;
     if (!value) return;
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
@@ -413,7 +425,6 @@ export default function MemberPractice({ initial, connected, initialArea = "foun
   }
 
   const badgeFor = (id: PracticeCourse) => id === "f1" ? snapshot.badges.f1 : id === "f4" ? snapshot.badges.f4 : id === "time" ? snapshot.badges.time : null;
-  const entryComplete = (entry: MemberTimelineEntry) => snapshot.timeline.completeEntryIds?.includes(entry.id) === true;
   const resourceLinks = <div className={styles.resources} aria-label="Supporting resources"><button type="button" className={styles.textButton} onClick={() => void openDeck()}>View deck ↗</button>{course === "f1" || course === "time" ? <button type="button" className={styles.textButton} onClick={() => void navigate("recap")}>Call recap ↗</button> : null}</div>;
   const back = <div className={styles.back}><button type="button" className={styles.textButton} onClick={() => void navigate("overview")}>← All {area === "monthly" ? "Monthly" : "Foundations"}</button></div>;
 
@@ -436,21 +447,10 @@ export default function MemberPractice({ initial, connected, initialArea = "foun
     return <section aria-label={`${courseTitle(course)} assignment`}>{back}<header className={styles.assignmentHeading}><div><p className={styles.chapter}>{courseTitle(course)}</p><h2 ref={headingRef} tabIndex={-1}>{heading}</h2><p className={styles.intro}>{intro}</p></div><Badge course={course} earned={badge?.earned} /></header>{released && known ? <>
       {course === "f1" || course === "time" ? <Progress completed={badge?.completed ?? 0} target={course === "f1" ? 3 : 2} label={course === "f1" ? "timeline entries" : "steps complete"} /> : null}
       {course === "time" ? <><ol className={styles.steps} aria-label="Your assignment"><li className={(badge?.completed ?? 0) > 0 ? styles.stepComplete : ""}><span aria-hidden="true">{(badge?.completed ?? 0) > 0 ? "✓" : "01"}</span>Choose one thing</li><li className={badge?.earned ? styles.stepComplete : ""}><span aria-hidden="true">{badge?.earned ? "✓" : "02"}</span>Make room in MY 168</li></ol>{snapshot.time.action ? <div className={styles.keptPlan}><p>{snapshot.time.action}</p>{badge?.earned ? <span>{duration(snapshot.time.minutes)} planned each week</span> : null}</div> : null}</> : null}
-      <div className={styles.assignmentAction}><Primary disabled={(!writable && !hasSavedWork) || blocked} onClick={beginWork}>{!writable && hasSavedWork ? "View my work →" : course === "f1" ? hasTimelineDraft(drafts.timeline) ? "Continue entry →" : badge?.earned ? "Add another entry →" : "Add an entry →" : course === "f4" ? drafts.letter.body.trim() ? "Revisit my letter →" : "Write my letter →" : badge?.earned ? "View my week →" : snapshot.time.action || drafts.time.action ? "Continue →" : "Start assignment →"}</Primary></div>
-      {course === "f1" && snapshot.timeline.entries.length ? <section className={styles.entries} aria-label="Your private timeline entries"><h3>Your entries</h3><ol>{snapshot.timeline.entries.map((entry, index) => <li key={entry.id}><button type="button" onClick={() => editEntry(entry)} disabled={blocked}><span className={styles.entryNumber}>{String(index + 1).padStart(2, "0")}</span><span>{entry.title}</span><span className={styles.entryState}>{!writable ? "Read ↗" : entryComplete(entry) ? "Complete ↗" : "Continue ↗"}</span></button></li>)}</ol></section> : null}
+      {course === "f1" ? <div className={styles.timelineGuidance}><p>Work through the same six prompts on your Timeline. Posting shares your entry on your public profile. Save a draft to keep working privately.</p><ol><li>When was this?</li><li>What happened?</li><li>What did I make it mean?</li><li>What did I start believing?</li><li>How does it show up now?</li><li>What can I see now?</li></ol></div> : null}
+      <div className={styles.assignmentAction}><Primary disabled={(!writable && !hasSavedWork) || blocked || finishing} onClick={() => void beginWork()}>{!writable && hasSavedWork ? "View my work →" : course === "f1" ? finishing ? "Opening Timeline…" : hasTimelineDraft(drafts.timeline) ? "Continue entry →" : badge?.earned ? "Add another entry →" : "Add an entry →" : course === "f4" ? drafts.letter.body.trim() ? "Revisit my letter →" : "Write my letter →" : badge?.earned ? "View my week →" : snapshot.time.action || drafts.time.action ? "Continue →" : "Start assignment →"}</Primary>{course === "f1" && writable && hasTimelineDraft(drafts.timeline) ? <button type="button" className={styles.textButton} disabled={blocked || finishing} onClick={() => void openTimeline(undefined, false)}>Start a new entry →</button> : null}</div>
+      {course === "f1" && snapshot.timeline.entries.length ? <section className={styles.entries} aria-label="Your Timeline entries"><h3>Your entries</h3>{snapshot.timeline.entries.some(entry => entry.visibility !== "public") ? <p className={styles.recoveryNote}>Earlier work saved through Foundations stayed private. Review it here, add anything you missed, then choose Post to share it on your Timeline. Your completed work still counts toward F1.</p> : null}<ol>{snapshot.timeline.entries.map((entry, index) => <li key={entry.id}><button type="button" onClick={() => editEntry(entry)} disabled={blocked || finishing}><span className={styles.entryNumber}>{String(index + 1).padStart(2, "0")}</span><span>{entry.title}<small className={styles.entryVisibility}>{entry.visibility === "public" ? "Public Timeline" : "Private"}</small></span><span className={styles.entryState}>{!writable ? "Read ↗" : entry.visibility === "public" ? "Edit post ↗" : "Review & publish ↗"}</span></button></li>)}</ol></section> : null}
     </> : null}{released ? resourceLinks : null}</section>;
-  }
-
-  function timelineWork() {
-    const draft = drafts.timeline;
-    const questions = ["When was this?", "What happened?", "What did I make it mean?", "How did that meaning shape me?"];
-    const valid = step === 0 ? draft.year !== null && draft.year >= 1900 && draft.year <= 2200 : step === 1 ? Boolean(draft.title.trim()) : step === 2 ? Boolean(draft.meaning.trim()) : Boolean(draft.presentImpact.trim());
-    const change = <K extends keyof PracticeTimelineDraft>(key: K, value: PracticeTimelineDraft[K]) => updateDraft("timeline", { ...draftsRef.current.timeline, [key]: value });
-    return <><div className={styles.question}><h2 ref={headingRef} tabIndex={-1} id="practice-question">{questions[step]}</h2>{step === 0 ? <p>An approximate year is enough.</p> : step === 1 ? <p>Don’t only look for the hardest moments. Include experiences that changed you, good or bad.</p> : null}</div>
-      {step === 0 ? <div className={styles.field}><label htmlFor="practice-year">Year</label><input id="practice-year" type="number" inputMode="numeric" min="1900" max="2200" value={yearInput} onChange={event => { const value = event.target.value; setYearInput(value); const year = Number(value); change("year", value && Number.isInteger(year) && year >= 1900 && year <= 2200 ? year : null); }} /></div>
-        : step === 1 ? <><div className={styles.field}><label htmlFor="practice-event">Name the moment</label><input id="practice-event" value={draft.title} maxLength={200} onChange={event => change("title", event.target.value)} /></div><div className={styles.field}><label htmlFor="practice-details">A little more <span className={styles.optional}>(optional)</span></label><textarea id="practice-details" value={draft.details} maxLength={draft.id ? 20000 : 4000} onChange={event => change("details", event.target.value)} /></div></>
-          : <div className={styles.field}><label htmlFor="practice-reflection" className="sr-only">{questions[step]}</label><textarea key={step} id="practice-reflection" aria-labelledby="practice-question" value={step === 2 ? draft.meaning : draft.presentImpact} maxLength={4000} onChange={event => change(step === 2 ? "meaning" : "presentImpact", event.target.value)} /></div>}
-      <div className={styles.workActions}><button type="button" className={styles.textButton} onClick={() => step ? setStep(value => value - 1) : void navigate("assignment")}>← Back</button><Primary disabled={primaryDisabled || !valid} onClick={() => void (step === 3 ? finish() : continueStep())}>{finishing ? "Keeping…" : step === 3 ? draft.id ? "Keep changes →" : "Keep entry →" : "Continue →"}</Primary></div></>;
   }
 
   function timeWork() {
@@ -468,18 +468,19 @@ export default function MemberPractice({ initial, connected, initialArea = "foun
 
   function workView() {
     if (!snapshot.releases[course]) return assignment();
-    return <section className={styles.work} aria-label={`${courseTitle(course)} work`}><div className={styles.workTop}><button type="button" className={styles.textButton} onClick={() => void navigate("assignment")}>← Assignment</button><p>{course === "f1" ? `${step + 1} / 4` : course === "time" ? `${Math.min(step + 1, 5)} / 5` : "Foundations 4"}</p></div>
-      <fieldset className={styles.workFields} disabled={finishing || blocked || !writable}>{course === "f1" ? timelineWork() : course === "time" ? timeWork() : <><div className={styles.question}><h2 ref={headingRef} tabIndex={-1} id="practice-question">A letter to your future self.</h2><p>What do you want yourself to remember a year from now?</p></div><div className={styles.field}><label htmlFor="practice-letter" className="sr-only">Your private letter</label><textarea className={styles.letterField} id="practice-letter" aria-labelledby="practice-question" value={drafts.letter.body} maxLength={20000} onChange={event => updateDraft("letter", { body: event.target.value })} /></div><div className={styles.workActions}><button type="button" className={styles.textButton} onClick={downloadDraft}>Download a copy ↗</button><Primary disabled={primaryDisabled || !drafts.letter.body.trim()} onClick={() => void finish()}>{finishing ? "Keeping…" : "Keep my letter →"}</Primary></div></>}</fieldset>
+    if (course === "f1") return <section className={styles.work} aria-label="Your unfinished Timeline entry"><p className={styles.chapter}>Foundations 1</p><h2 ref={headingRef} tabIndex={-1}>Your unfinished entry is here.</h2><p className={styles.intro}>Continue with all six prompts in Timeline. Your draft stays private until you choose Post.</p><div className={styles.assignmentAction}><Primary disabled={primaryDisabled} onClick={() => void openTimeline()}>{finishing ? "Opening Timeline…" : "Continue in Timeline →"}</Primary></div><button type="button" className={styles.textButton} onClick={downloadDraft}>Download my draft</button></section>;
+    return <section className={styles.work} aria-label={`${courseTitle(course)} work`}><div className={styles.workTop}><button type="button" className={styles.textButton} onClick={() => void navigate("assignment")}>← Assignment</button><p>{course === "time" ? `${Math.min(step + 1, 5)} / 5` : "Foundations 4"}</p></div>
+      <fieldset className={styles.workFields} disabled={finishing || blocked || !writable}>{course === "time" ? timeWork() : <><div className={styles.question}><h2 ref={headingRef} tabIndex={-1} id="practice-question">A letter to your future self.</h2><p>What do you want yourself to remember a year from now?</p></div><div className={styles.field}><label htmlFor="practice-letter" className="sr-only">Your private letter</label><textarea className={styles.letterField} id="practice-letter" aria-labelledby="practice-question" value={drafts.letter.body} maxLength={20000} onChange={event => updateDraft("letter", { body: event.target.value })} /></div><div className={styles.workActions}><button type="button" className={styles.textButton} onClick={downloadDraft}>Download a copy ↗</button><Primary disabled={primaryDisabled || !drafts.letter.body.trim()} onClick={() => void finish()}>{finishing ? "Keeping…" : "Keep my letter →"}</Primary></div></>}</fieldset>
       <p className={styles.saveState} role="status" aria-live="polite">{!writable ? "Your saved work is read-only." : saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved to your private account." : saveState === "error" ? "Your changes need attention above." : "Your work saves automatically."}</p>
     </section>;
   }
 
   function readView() {
-    return <section className={styles.recap} aria-label="Your saved private work"><div className={styles.back}><button type="button" className={styles.textButton} onClick={() => void navigate("assignment")}>← Assignment</button></div><p className={styles.chapter}>{courseTitle(course)}</p><h2 ref={headingRef} tabIndex={-1}>{course === "f1" ? readEntry?.title || "Your timeline entry" : course === "f4" ? "Your letter to your future self." : "Your week."}</h2>{course === "f1" && readEntry ? <><p>{readEntry.year}</p>{readEntry.details ? <p className={styles.savedWriting}>{readEntry.details}</p> : null}<h3>What did I make it mean?</h3><p className={styles.savedWriting}>{readEntry.meaning || "Not yet added."}</p><h3>How did that meaning shape me?</h3><p className={styles.savedWriting}>{readEntry.presentImpact || "Not yet added."}</p>{readEntry.belief ? <><h3>What did I start believing?</h3><p className={styles.savedWriting}>{readEntry.belief}</p></> : null}{readEntry.perspective ? <><h3>What can I see now?</h3><p className={styles.savedWriting}>{readEntry.perspective}</p></> : null}</> : course === "f4" ? <p className={styles.savedWriting}>{snapshot.letter.body}</p> : <div className={styles.planReview}><p>{snapshot.time.action}</p>{snapshot.time.minutes > 0 && snapshot.time.category && snapshot.time.sourceCategory ? <span>{duration(snapshot.time.minutes)} each week for {categoryLabel(snapshot.time.category).toLowerCase()}, from {categoryLabel(snapshot.time.sourceCategory).toLowerCase()}.</span> : null}</div>}{snapshot.releases[course] ? resourceLinks : null}</section>;
+    return <section className={styles.recap} aria-label="Your saved work"><div className={styles.back}><button type="button" className={styles.textButton} onClick={() => void navigate("assignment")}>← Assignment</button></div><p className={styles.chapter}>{courseTitle(course)}</p><h2 ref={headingRef} tabIndex={-1}>{course === "f1" ? readEntry?.title || "Your timeline entry" : course === "f4" ? "Your letter to your future self." : "Your week."}</h2>{course === "f1" && readEntry ? <><p>{readEntry.year}</p>{readEntry.details ? <p className={styles.savedWriting}>{readEntry.details}</p> : null}<h3>What did I make it mean?</h3><p className={styles.savedWriting}>{readEntry.meaning || "Not yet added."}</p><h3>How does it show up now?</h3><p className={styles.savedWriting}>{readEntry.presentImpact || "Not yet added."}</p>{readEntry.belief ? <><h3>What did I start believing?</h3><p className={styles.savedWriting}>{readEntry.belief}</p></> : null}{readEntry.perspective ? <><h3>What can I see now?</h3><p className={styles.savedWriting}>{readEntry.perspective}</p></> : null}</> : course === "f4" ? <p className={styles.savedWriting}>{snapshot.letter.body}</p> : <div className={styles.planReview}><p>{snapshot.time.action}</p>{snapshot.time.minutes > 0 && snapshot.time.category && snapshot.time.sourceCategory ? <span>{duration(snapshot.time.minutes)} each week for {categoryLabel(snapshot.time.category).toLowerCase()}, from {categoryLabel(snapshot.time.sourceCategory).toLowerCase()}.</span> : null}</div>}{snapshot.releases[course] ? resourceLinks : null}</section>;
   }
 
   function recap() {
-    return <section className={styles.recap} aria-label={`${courseTitle(course)} call recap`}><div className={styles.back}><button type="button" className={styles.textButton} onClick={() => void navigate("assignment")}>← {courseTitle(course)}</button></div><p className={styles.chapter}>Call recap</p><h2 ref={headingRef} tabIndex={-1}>{course === "f1" ? <>Your story.<br />A place to begin.</> : <>The same week.<br />A different choice.</>}</h2>{course === "f1" ? <><p>In Foundations 1, we explored the Ruined philosophy, the experiences that shape us, and the difference between what happened and what we made it mean.</p><p>The experience stays. We can get curious about the meaning we carry—and how it shapes the way we live.</p><div className={styles.recapAssignment}><Badge course="f1" earned={snapshot.badges.f1.earned} /><div><h3>Earn your F1 Badge.</h3><p>Add three entries to your timeline. Choose experiences that changed you, good or bad.</p></div></div><ol><li>What happened?</li><li>What did I make it mean?</li><li>How did that meaning shape me?</li></ol><p>Take them one at a time. Once you keep three complete entries, your F1 Badge is earned.</p></> : <><p>We all work within 168 hours. Making room for what matters begins by noticing where some of that time goes—and choosing what could change.</p><p>You don’t need to rebuild your whole life. Begin with one thing.</p><div className={styles.recapAssignment}><Badge course="time" earned={snapshot.badges.time.earned} /><div><h3>Earn your TIME Badge.</h3><p>Choose one thing you want to make room for, then keep your time plan in MY 168.</p></div></div><ol><li>Name one concrete next step.</li><li>Choose how much time it needs and where that time can come from.</li><li>Keep the plan, then try that small change.</li></ol><p>Keeping a plan for your chosen step earns the badge. You can return to adjust it whenever you need.</p></>}<Primary onClick={() => void navigate("assignment")}>Open your assignment →</Primary></section>;
+    return <section className={styles.recap} aria-label={`${courseTitle(course)} call recap`}><div className={styles.back}><button type="button" className={styles.textButton} onClick={() => void navigate("assignment")}>← {courseTitle(course)}</button></div><p className={styles.chapter}>Call recap</p><h2 ref={headingRef} tabIndex={-1}>{course === "f1" ? <>Your story.<br />A place to begin.</> : <>The same week.<br />A different choice.</>}</h2>{course === "f1" ? <><p>In Foundations 1, we explored the Ruined philosophy, the experiences that shape us, and the difference between what happened and what we made it mean.</p><p>The experience stays. We can get curious about the meaning we carry—and how it shapes the way we live.</p><div className={styles.recapAssignment}><Badge course="f1" earned={snapshot.badges.f1.earned} /><div><h3>Earn your F1 Badge.</h3><p>Add three entries to your timeline. Choose experiences that changed you, good or bad.</p></div></div><ol><li>When was this?</li><li>What happened?</li><li>What did I make it mean?</li><li>What did I start believing?</li><li>How does it show up now?</li><li>What can I see now?</li></ol><p>Take them one at a time. Three complete Timeline entries earn your F1 Badge. Posts are public; drafts stay private. Earlier completed work still counts.</p></> : <><p>We all work within 168 hours. Making room for what matters begins by noticing where some of that time goes—and choosing what could change.</p><p>You don’t need to rebuild your whole life. Begin with one thing.</p><div className={styles.recapAssignment}><Badge course="time" earned={snapshot.badges.time.earned} /><div><h3>Earn your TIME Badge.</h3><p>Choose one thing you want to make room for, then keep your time plan in MY 168.</p></div></div><ol><li>Name one concrete next step.</li><li>Choose how much time it needs and where that time can come from.</li><li>Keep the plan, then try that small change.</li></ol><p>Keeping a plan for your chosen step earns the badge. You can return to adjust it whenever you need.</p></>}<Primary onClick={() => void navigate("assignment")}>Open your assignment →</Primary></section>;
   }
 
   return <main className={`member-journey-page ${styles.page}`}><header className={styles.header}><h1 className="member-page-title">The Work</h1></header><nav className={styles.tabs} aria-label="The Work topics"><button type="button" aria-pressed={area === "foundations"} onClick={() => void navigate("overview", "f1", "foundations")}>Foundations</button><button type="button" aria-pressed={area === "monthly"} onClick={() => void navigate("overview", "time", "monthly")}>Monthly</button></nav>

@@ -57,9 +57,45 @@ async function owner(authUserId: string): Promise<MemberIdentity> {
   return identity;
 }
 
+/** Owner-only assignment list. Publication answers never fall back to private legacy answers. */
+async function readPracticeTimeline(sql: Query, memberId: string) {
+  const rows = await sql<Array<{
+    id: string | null; title: string; details: string | null; entry_year: number; entry_month: number | null;
+    meaning: string | null; belief: string | null; present_impact: string | null; perspective: string | null;
+    position: number; visibility: "private" | "public"; revision: string;
+  }>>`
+    with timeline_revision as (
+      select coalesce(max(id), 0)::text as revision
+      from member_journal_entry_versions where member_id = ${memberId}::uuid
+    )
+    select entry.id, entry.event_year as entry_year, entry.event_month as entry_month,
+      coalesce(entry.title, case entry.kind when 'images' then 'A photograph' when 'video' then 'A video' else 'An untitled moment' end) as title,
+      entry.body as details, entry.visibility, entry.timeline_position as position,
+      case when entry.visibility = 'public' or entry.timeline_reflection is not null then entry.timeline_reflection ->> 'meaning' else entry.foundations_meaning end as meaning,
+      case when entry.visibility = 'public' or entry.timeline_reflection is not null then entry.timeline_reflection ->> 'belief' else entry.foundations_belief end as belief,
+      case when entry.visibility = 'public' or entry.timeline_reflection is not null then entry.timeline_reflection ->> 'presentImpact' else entry.foundations_present_impact end as present_impact,
+      case when entry.visibility = 'public' or entry.timeline_reflection is not null then entry.timeline_reflection ->> 'perspective' else entry.foundations_perspective end as perspective,
+      timeline_revision.revision
+    from timeline_revision
+    left join member_journal_entries entry on entry.member_id = ${memberId}::uuid
+      and entry.deleted_at is null and entry.include_on_timeline
+      and (entry.visibility = 'private' or entry.timeline_reflection is not null
+        or (nullif(btrim(entry.foundations_meaning), '') is not null and nullif(btrim(entry.foundations_present_impact), '') is not null))
+    order by entry.event_year, coalesce(entry.event_month, 13), coalesce(entry.event_day, 32), entry.timeline_position, entry.created_at, entry.id
+  `;
+  return {
+    entries: rows.flatMap(row => row.id ? [{
+      id: row.id, title: row.title, details: row.details, year: row.entry_year, month: row.entry_month,
+      meaning: row.meaning, belief: row.belief, presentImpact: row.present_impact, perspective: row.perspective,
+      position: row.position, visibility: row.visibility,
+    }] : []),
+    revision: rows[0]?.revision ?? "0",
+  };
+}
+
 async function snapshot(tx: postgres.TransactionSql, identity: MemberIdentity, f1: boolean): Promise<PracticeSnapshot> {
   const work = await readWork(tx, identity.memberId);
-  const timeline = await readTimelineRecord(tx, identity.memberId);
+  const timeline = await readPracticeTimeline(tx, identity.memberId);
   const completeEntries = await tx<Array<{ id: string }>>`
     select id from private.ruined_complete_practice_timeline_entries(${identity.memberId}::uuid)
   `;
@@ -142,6 +178,8 @@ export async function saveMemberPractice(authUserId: string, input: unknown): Pr
     if (action.action === "save_timeline_draft") {
       next.timeline_draft = action.fields;
     } else if (action.action === "keep_timeline_entry") {
+      // Already-open Practice clients promised private storage. Only the
+      // Timeline composer can explicitly publish reviewed answers.
       const timeline = await readTimelineRecord(tx, identity.memberId);
       if (timeline.revision !== action.expectedTimelineRevision) throw new PracticeError(409, "Your timeline changed in another tab. Load the latest saved entries before continuing.", "timeline_revision_conflict");
       const [entry] = validateTimelineInput([{ ...action.fields, year: action.fields.year! }]);

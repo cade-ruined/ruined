@@ -63,7 +63,8 @@ test("every member page context handles denied before its unavailable fallback",
     assert.ok(denied >= 0, `${entry} must recognize an authenticated non-member`);
     assert.ok(deniedFallback > denied, `${entry} must show the member permission fallback`);
     if (entry === "GuidedTimelinePage.tsx") {
-      assert.match(contents, /getSupportAccessUrl\(startNew \? "\/my\/timeline\/new" : "\/my\/timeline"\)/);
+      assert.match(contents, /getSupportAccessUrl\(`/);
+      assert.match(contents, /query\.set\("practice", "f1"\)/);
       assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\(accessHref\)/);
     } else {
       assert.match(contents, /context\.state === "signed_out"[\s\S]*redirect\("\/my\/access"\)/);

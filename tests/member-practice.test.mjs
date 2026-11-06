@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { practiceFixture, ids } from './helpers/practice-fixture.mjs';
 
 const draft = (title = 'A beginning') => ({ id: null, year: 2001, title, details: '', meaning: 'I could start again.', presentImpact: 'I choose to try.' });
 const time = { action: 'Walk outside', category: 'health', minutes: 30, sourceCategory: 'media', sourceMinutes: 120 };
 const rejected = (status, code) => error => error.status === status && (!code || error.code === code);
+const reflection = { meaning: 'A meaning I choose to share.', belief: 'A belief I noticed.', presentImpact: 'How it shows up today.', perspective: 'What I see now.' };
+const story = (changes = {}) => ({ id: randomUUID(), kind: 'text', title: 'A public beginning', body: 'The moment itself.', mediaIds: [],
+  eventYear: 2005, eventMonth: 6, eventDay: 9, includeOnTimeline: true, visibility: 'public', timelineReflection: reflection, ...changes });
+const edit = (entry, changes = {}) => ({ expectedVersion: entry.version, kind: entry.kind, title: entry.title ?? '', body: entry.body ?? '',
+  mediaIds: entry.media.map(media => media.id), eventYear: entry.eventYear, eventMonth: entry.eventMonth, eventDay: entry.eventDay,
+  includeOnTimeline: entry.includeOnTimeline, visibility: entry.visibility, ...changes });
 
 test('Practice saves partial F1 work to its owner, commits atomically and rejects uncertain duplicate retries', async t => {
   const f = await practiceFixture(t);
@@ -26,7 +34,7 @@ test('Practice saves partial F1 work to its owner, commits atomically and reject
   assert.equal(row.visibility, 'private');
 });
 
-test('F1 counts three distinct complete private entries, preserves extra canonical fields and rejects stale journal revisions', async t => {
+test('F1 preserves legacy completion credit across owner-reviewed publication and rejects stale legacy writes', async t => {
   const f = await practiceFixture(t);
   let state = await f.get();
   for (let index = 0; index < 3; index++) state = await f.save('keep_timeline_entry', { ...draft(`Event ${index}`), belief: 'An existing belief', perspective: 'Another perspective' }, state.revision, { expectedTimelineRevision: state.timeline.revision });
@@ -44,8 +52,93 @@ test('F1 counts three distinct complete private entries, preserves extra canonic
   assert.equal(state.timeline.entries.find(entry => entry.id === first.id).belief, 'An existing belief');
   assert.equal(state.timeline.entries.find(entry => entry.id === first.id).perspective, 'Another perspective');
   assert.equal(state.badges.f1.completed, 3, 'Edits and versions are never extra entries');
-  await f.db.query("update member_journal_entries set visibility='public' where id=$1", [first.id]);
-  assert.equal((await f.get()).badges.f1.earned, false, 'A public event is not private assignment evidence');
+  const earnedAt = state.badges.f1.earnedAt;
+  const owner = await f.journal.getJournalEntry(ids.auth, first.id);
+  const reviewed = { ...reflection, belief: null, perspective: null };
+  const published = await f.journal.editJournalEntry(ids.auth, first.id, edit(owner, { visibility: 'public', timelineReflection: reviewed }));
+  state = await f.get();
+  assert.equal(state.badges.f1.earned, true);
+  assert.equal(state.badges.f1.earnedAt, earnedAt);
+  assert.equal(state.badges.f1.completed, 3);
+  assert.equal(state.timeline.entries.filter(entry => entry.id === first.id).length, 1);
+  assert.deepEqual(state.timeline.entries.find(entry => entry.id === first.id), {
+    ...first, meaning: reviewed.meaning, presentImpact: reviewed.presentImpact, belief: null, perspective: null, visibility: 'public',
+  });
+  await assert.rejects(f.save('keep_timeline_entry', revised, state.revision, { expectedTimelineRevision: staleTimeline }), rejected(409, 'timeline_revision_conflict'));
+  await assert.rejects(f.save('keep_timeline_entry', revised, state.revision, { expectedTimelineRevision: state.timeline.revision }), f.repository.MembershipConflictError);
+  assert.equal((await f.journal.getJournalEntry(ids.auth, first.id)).visibility, 'public', 'An old Keep request cannot unpublish a reviewed post');
+  // Completion evidence does not require the owner to expose old private answers.
+  await f.journal.editJournalEntry(ids.auth, first.id, edit(published, { timelineReflection: null }));
+  state = await f.get();
+  assert.equal(state.badges.f1.earned, true);
+  assert.equal(state.timeline.entries.find(entry => entry.id === first.id).meaning, null);
+  assert.equal(state.timeline.entries.find(entry => entry.id === first.id).presentImpact, null);
+  assert.equal((await f.db.query('select foundations_meaning from member_journal_entries where id=$1', [first.id])).rows[0].foundations_meaning, 'A revised meaning');
+});
+
+test('three distinct complete public Timeline stories earn F1 without counting ordinary posts, partial stories or drafts', async t => {
+  const f = await practiceFixture(t);
+  await f.journal.createJournalEntry(ids.auth, story({ title: 'An ordinary post', timelineReflection: null }));
+  await f.journal.createJournalEntry(ids.auth, story({ title: 'An incomplete reflection', timelineReflection: { ...reflection, meaning: ' ' } }));
+  await f.journal.createJournalEntry(ids.auth, story({ title: 'Private canonical reflection', visibility: 'private' }));
+  const savedDraft = await f.journal.createJournalDraft(ids.auth, story({ title: 'Unpublished draft' }));
+  assert.equal(savedDraft.visibility, 'private');
+  let state = await f.get();
+  assert.equal(state.badges.f1.completed, 0);
+  assert.equal(state.timeline.entries.some(entry => entry.id === savedDraft.id), false);
+  const entries = [];
+  for (let index = 0; index < 3; index++) {
+    entries.push(await f.journal.createJournalEntry(ids.auth, story({ title: `Shared story ${index}` })));
+    state = await f.get();
+    assert.equal(state.badges.f1.completed, index + 1);
+    assert.equal(state.badges.f1.earned, index === 2);
+  }
+  assert.deepEqual(new Set(state.timeline.completeEntryIds), new Set(entries.map(entry => entry.id)));
+  assert.deepEqual((await f.get(ids.otherAuth)).timeline.entries, [], 'Assignment reads stay owner-bound');
+  await f.journal.editJournalEntry(ids.auth, entries[0].id, edit(entries[0], { timelineReflection: { ...reflection, perspective: 'A revised perspective.' } }));
+  state = await f.get();
+  assert.equal(state.badges.f1.completed, 3, 'Versions never count as more entries');
+  const stored = (await f.db.query('select foundations_meaning,foundations_present_impact from member_journal_entries where id=$1', [entries[0].id])).rows[0];
+  assert.deepEqual(stored, { foundations_meaning: null, foundations_present_impact: null }, 'Public completion uses reviewed canonical answers');
+  await f.db.query('update member_journal_entries set deleted_at=statement_timestamp() where id=$1', [entries[1].id]);
+  state = await f.get();
+  assert.equal(state.badges.f1.completed, 2);
+  assert.equal(state.timeline.entries.some(entry => entry.id === entries[1].id), false);
+});
+
+test('mixed legacy/private and published evidence share completion while public Journal excludes private work', async t => {
+  const f = await practiceFixture(t);
+  let state = await f.get();
+  state = await f.save('keep_timeline_entry', draft('Legacy kept work'), state.revision, { expectedTimelineRevision: state.timeline.revision });
+  const legacyId = state.lastTimelineEntryId;
+  const canonical = await f.journal.createJournalEntry(ids.auth, story({ title: 'Published story' }));
+  state = await f.save('save_timeline_draft', draft('Private unsaved assignment'), state.revision);
+  assert.equal(state.badges.f1.completed, 2);
+  assert.equal(state.timeline.entries.find(entry => entry.id === legacyId).visibility, 'private');
+  assert.equal(state.timeline.entries.find(entry => entry.id === canonical.id).visibility, 'public');
+  const publicPosts = await f.journal.getJournal(ids.auth, null, false, { collection: 'public', view: 'timeline' });
+  assert.deepEqual(publicPosts.entries.map(entry => entry.id), [canonical.id]);
+  assert.equal(JSON.stringify(publicPosts).includes('Legacy kept work'), false);
+  const privatePosts = await f.journal.getJournal(ids.auth, null, false, { collection: 'private' });
+  assert.deepEqual(privatePosts.entries.map(entry => entry.id), [legacyId]);
+});
+
+test('F1 public support migration preserves entries, histories, drafts, visibility and browser privileges', async t => {
+  const f = await practiceFixture(t, { publicTimelineMigration: false });
+  const state = await f.get();
+  await f.save('keep_timeline_entry', draft(), state.revision, { expectedTimelineRevision: state.timeline.revision });
+  await f.journal.createJournalEntry(ids.auth, story());
+  await f.journal.createJournalDraft(ids.auth, story());
+  const tables = ['member_journal_entries', 'member_journal_entry_versions', 'member_journal_drafts', 'member_practice_work', 'member_badge_awards'];
+  const before = new Map();
+  for (const table of tables) before.set(table, (await f.db.query(`select to_jsonb(row) as row from ${table} row order by to_jsonb(row)::text`)).rows);
+  const migration = await readFile(new URL('../db/migrations/20261106010000_practice_public_timeline.sql', import.meta.url), 'utf8');
+  await f.db.exec(migration);
+  for (const table of tables) assert.deepEqual((await f.db.query(`select to_jsonb(row) as row from ${table} row order by to_jsonb(row)::text`)).rows, before.get(table));
+  assert.equal((await f.get()).badges.f1.completed, 2);
+  for (const role of ['anon', 'authenticated']) {
+    assert.equal((await f.db.query("select has_function_privilege($1,'private.ruined_complete_practice_timeline_entries(uuid)','EXECUTE') as allowed", [role])).rows[0].allowed, false);
+  }
 });
 
 test('Completion IDs use canonical reflection evidence and retain the same media entry after Keep', async t => {

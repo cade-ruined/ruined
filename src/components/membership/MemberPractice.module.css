@@ -40,7 +40,7 @@
 .assignmentHeading > .badge { width: 100px; height: 112px; font-size: 56px; }
 .assignmentHeading > .badgeTime { font-size: 32px; }
 .chapter { font-size: 15px; line-height: 1.5; color: var(--member-muted); margin: 0 0 20px; }
-.assignmentAction { margin-top: 30px; }
+.assignmentAction { margin-top: 30px; display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
 .entries { margin-top: 42px; max-width: 800px; }
 .entries h3 { font-size: 17px; font-weight: 500; margin: 0 0 15px; color: var(--member-muted); }
 .entries ol { padding: 0; margin: 0; list-style: none; border-top: 1px solid var(--member-rule); }
@@ -125,4 +125,14 @@
   .recapAssignment .badgeTime { font-size: 20px; }
   .recapAssignment h3 { font-size: 28px; }
   .recap > p, .recap ol { font-size: 17px; }
+}
+
+.timelineGuidance { max-width: 64ch; margin-top: 26px; font-size: 15px; line-height: 1.65; color: var(--member-muted); }
+.timelineGuidance p { margin: 0 0 16px; }
+.timelineGuidance ol { padding-left: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; }
+.recoveryNote { font-size: 14px; line-height: 1.6; color: var(--member-muted); margin: 0 0 18px; max-width: 64ch; }
+.entryVisibility { display: block; font-size: 12px; font-weight: 400; color: var(--member-muted); margin-top: 4px; }
+@media (max-width: 640px) {
+  .timelineGuidance ol { grid-template-columns: 1fr; gap: 6px; }
+  .entryState { max-width: 12ch; text-align: right; }
 }

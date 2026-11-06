@@ -59,8 +59,8 @@ function fixture({ initial = snapshot(), initialArea, initialCourse, connected =
     return response(server);
   };
   const fetch = async (url, options = {}) => {
-    assert.equal(url, "/api/my/practice", "Practice work never uses the public journal composer");
     assert.equal(options.headers["x-ruined-session-owner"], owner);
+    assert.equal(url, "/api/my/practice");
     if (options.method !== "POST") return getSnapshot ? getSnapshot(server, response) : response(server);
     const request = JSON.parse(options.body); requests.push(request);
     return handle ? handle(request, { apply, server, response }) : apply(request);
@@ -103,73 +103,56 @@ test("Practice keeps Foundations and Monthly separate, future assignments visibl
   ui.unmount();
 });
 
-test("F1 saves partial writing to the account and keeps a complete entry only after all four questions", async () => {
+test("F1 opens the shared Timeline composer with all six prompts and explicit visibility", async () => {
   const ui = fixture({ initialCourse: "f1" });
+  for (const prompt of ["When was this?", "What happened?", "What did I make it mean?", "What did I start believing?", "How does it show up now?", "What can I see now?"]) assert.ok(text(ui.render()).includes(prompt));
+  assert.match(text(ui.render()), /Posting shares your entry on your public profile/);
+  assert.match(text(ui.render()), /Save a draft to keep working privately/);
   await ui.click("Add an entry →");
-  assert.match(text(ui.render()), /When was this\?/);
-  ui.change("practice-year", "2008"); await ui.autosave();
-  assert.equal(ui.server().timelineDraft.year, 2008);
-  assert.equal(ui.server().timeline.entries.length, 0);
-  await ui.click("Continue →");
-  ui.change("practice-event", "Moved to a new city");
-  await ui.click("Continue →");
-  assert.equal(ui.server().timelineDraft.title, "Moved to a new city");
-  assert.equal(nodes(ui.render()).filter(node => node.type === "textarea").length, 1);
-  ui.change("practice-reflection", "I had to do everything alone.");
-  await ui.click("Continue →");
-  ui.change("practice-reflection", "I stopped asking for help.");
-  await ui.click("Keep entry →");
-  assert.equal(ui.server().timeline.entries.length, 1);
-  assert.equal(ui.server().timelineDraft, null);
-  assert.equal(ui.server().badges.f1.earned, false);
-  assert.equal(ui.requests.at(-1).action, "keep_timeline_entry");
-  assert.equal(ui.requests.at(-1).expectedTimelineRevision, "0");
-  assert.ok(ui.events.includes("ruined:member-progress"));
-  assert.match(text(ui.render()), /1 \/ 3timeline entries/);
+  assert.equal(ui.navigations.at(-1), "/my/timeline/new?practice=f1");
+  assert.equal(ui.requests.length, 0);
+  assert.equal(nodes(ui.render()).some(node => node.props.id === "practice-reflection"), false);
   ui.unmount();
 });
 
-test("saved partial work resumes on another visit and a deck remains a separate resource", async () => {
+test("saved partial Work opens owner draft recovery without mutating or publishing it", async () => {
   const draft = { id: null, year: 2016, title: "Started over", details: "", meaning: "", presentImpact: "" };
   const ui = fixture({ initial: snapshot({ timelineDraft: draft }), initialCourse: "f1" });
   assert.ok(ui.button("View deck ↗"));
-  assert.equal(nodes(ui.render()).some(node => node.type === "textarea"), false);
   await ui.click("Continue entry →");
-  assert.match(text(ui.render()), /What did I make it mean\?/);
-  ui.change("practice-reflection", "I could begin again.");
-  await ui.click("← Assignment");
-  assert.equal(ui.server().timelineDraft.meaning, "I could begin again.");
+  assert.equal(ui.navigations.at(-1), "/my/timeline/new?practice=f1&resume=1");
+  assert.equal(ui.requests.length, 0);
+  assert.equal(ui.server().badges.f1.earned, false);
+  assert.deepEqual(ui.server().timelineDraft, draft);
+  await ui.click("Start a new entry →");
+  assert.equal(ui.navigations.at(-1), "/my/timeline/new?practice=f1");
+  assert.deepEqual(ui.server().timelineDraft, draft);
   await ui.click("View deck ↗");
   assert.equal(ui.navigations.at(-1), "/my/practice/deck/f1");
-  assert.equal(ui.server().badges.f1.earned, false);
   ui.unmount();
 });
 
-test("an uncertain save blocks advancement, keeps the open draft and reconciles before retry", async () => {
+test("an uncertain private letter save blocks advancement and reconciles without duplicate writes", async () => {
   let fail = true;
-  const ui = fixture({ initialCourse: "f1", handle(request, { apply }) { const response = apply(request); if (fail) { fail = false; throw Error("Connection interrupted"); } return response; } });
-  await ui.click("Add an entry →"); ui.change("practice-year", "2012"); await ui.autosave();
-  assert.equal(ui.button("Continue →").props.disabled, true);
+  const initial = snapshot(); initial.releases.f4 = true;
+  const ui = fixture({ initial, initialCourse: "f4", handle(request, { apply }) { const response = apply(request); if (fail) { fail = false; throw Error("Connection interrupted"); } return response; } });
+  await ui.click("Write my letter →"); ui.change("practice-letter", "Remember this."); await ui.autosave();
+  assert.equal(ui.button("Keep my letter →").props.disabled, true);
   assert.equal(ui.requests.length, 1);
   await ui.click("Check saved work");
-  assert.equal(ui.button("Continue →").props.disabled, false);
-  await ui.click("Continue →");
-  assert.equal(ui.requests.length, 1, "confirmed save is adopted without a duplicate mutation");
+  assert.equal(ui.button("Keep my letter →").props.disabled, false);
+  assert.equal(ui.requests.length, 1);
   ui.unmount();
 });
 
-test("a lost Keep response adopts the canonical entry rather than adding it twice", async () => {
-  const draft = { id: null, year: 2014, title: "A turning point", details: "", meaning: "I had more choice.", presentImpact: "I began making room." };
-  const ui = fixture({ initial: snapshot({ timelineDraft: draft }), initialCourse: "f1", handle(request, { apply }) { const response = apply(request); if (request.action === "keep_timeline_entry") throw Error("Connection interrupted"); return response; } });
+test("an existing entry draft resumes by the same ID without a duplicate entry", async () => {
+  const id = "22222222-2222-4222-8222-000000000001";
+  const draft = { id, year: 2014, title: "A turning point", details: "Unfinished details", meaning: "I had more choice.", presentImpact: "I began making room." };
+  const ui = fixture({ initial: snapshot({ timelineDraft: draft }), initialCourse: "f1" });
   await ui.click("Continue entry →");
-  await ui.click("Continue →"); await ui.click("Continue →"); await ui.click("Continue →");
-  await ui.click("Keep entry →");
-  assert.equal(ui.server().timeline.entries.length, 1);
-  await ui.click("Check saved work");
-  assert.match(text(ui.render()), /Your entry was saved/);
-  assert.equal(ui.server().timeline.entries.length, 1);
-  assert.equal(ui.requests.filter(request => request.action === "keep_timeline_entry").length, 1);
-  assert.equal(ui.server().timelineDraft, null);
+  assert.equal(ui.navigations.at(-1), `/my/timeline?moment=${id}&practice=f1&resume=1`);
+  assert.deepEqual(ui.server().timelineDraft, draft);
+  assert.equal(ui.requests.length, 0);
   ui.unmount();
 });
 
@@ -229,42 +212,45 @@ test("a released TBD assignment keeps its full deck available without inventing 
   ui.unmount();
 });
 
-test("rapid typing then a shell link waits for every serialized account save", async () => {
+test("rapid typing then a shell link waits for every serialized private letter save", async () => {
   let releaseFirst;
-  const ui = fixture({ initialCourse: "f1", handle(request, { apply }) {
+  const initial = snapshot(); initial.releases.f4 = true;
+  const ui = fixture({ initial, initialCourse: "f4", handle(request, { apply }) {
     if (!releaseFirst) return new Promise(resolve => { releaseFirst = () => resolve(apply(request)); });
     return apply(request);
   } });
-  await ui.click("Add an entry →");
-  ui.change("practice-year", "2008"); await ui.autosave();
-  ui.change("practice-year", "2010"); await ui.autosave();
+  await ui.click("Write my letter →");
+  ui.change("practice-letter", "Remember."); await ui.autosave();
+  ui.change("practice-letter", "Remember this detail."); await ui.autosave();
   const event = ui.clickShellLink("https://members.test/my/circle");
   assert.equal(event.defaultPrevented, true);
   assert.equal(event.stopped, true);
   assert.equal(ui.navigations.length, 0);
-  assert.equal(ui.requests.length, 1, "a second request cannot race the in-flight revision");
+  assert.equal(ui.requests.length, 1);
   releaseFirst(); await ui.settle();
-  assert.equal(ui.server().timelineDraft.year, 2010);
+  assert.equal(ui.server().letter.body, "Remember this detail.");
   assert.deepEqual(ui.requests.map(request => request.expectedRevision), ["0", "1"]);
   assert.equal(ui.navigations.at(-1), "https://members.test/my/circle");
   ui.unmount();
 });
 
 test("shell navigation stays on Practice when an account save fails", async () => {
-  const ui = fixture({ initialCourse: "f1", handle() { throw Error("Offline"); } });
-  await ui.click("Add an entry →"); ui.change("practice-year", "2018");
+  const initial = snapshot(); initial.releases.f4 = true;
+  const ui = fixture({ initial, initialCourse: "f4", handle() { throw Error("Offline"); } });
+  await ui.click("Write my letter →"); ui.change("practice-letter", "Keep this safe.");
   const event = ui.clickShellLink("https://members.test/my"); await ui.settle();
   assert.equal(event.defaultPrevented, true);
   assert.equal(ui.navigations.length, 0);
   assert.match(text(ui.render()), /Offline/);
-  assert.equal(ui.find(node => node.props.id === "practice-year").props.value, "2018");
+  assert.equal(ui.find(node => node.props.id === "practice-letter").props.value, "Keep this safe.");
   ui.unmount();
 });
 
 test("StrictMode effect replay does not abandon a pending save or its owner checkpoint", async () => {
   let resolveSave;
-  const ui = fixture({ initialCourse: "f1", handle(request, { apply }) { return new Promise(resolve => { resolveSave = () => resolve(apply(request)); }); } });
-  await ui.click("Add an entry →"); ui.change("practice-year", "2020"); await ui.autosave();
+  const initial = snapshot(); initial.releases.f4 = true;
+  const ui = fixture({ initial, initialCourse: "f4", handle(request, { apply }) { return new Promise(resolve => { resolveSave = () => resolve(apply(request)); }); } });
+  await ui.click("Write my letter →"); ui.change("practice-letter", "Remember this."); await ui.autosave();
   ui.strictEffects();
   assert.ok(ui.draftStore.read());
   resolveSave(); await ui.settle();
@@ -273,40 +259,74 @@ test("StrictMode effect replay does not abandon a pending save or its owner chec
   ui.unmount();
 });
 
-test("Back retains an unacknowledged draft in the owner layout and requires reconciliation on return", async () => {
+test("old unacknowledged F1 work must reconcile and flush before opening the shared composer", async () => {
   const store = createPracticeDraftStore(owner);
-  const ui = fixture({ initialCourse: "f1", draftStore: store, handle() { throw Error("Offline"); } });
-  await ui.click("Add an entry →"); ui.change("practice-year", "2019"); ui.back(); await ui.settle(); ui.unmount();
-  assert.equal(store.read().draft.drafts.timeline.year, 2019);
-  const resumed = fixture({ initialCourse: "f1", draftStore: store });
-  assert.match(text(resumed.render()), /Your unfinished work is still here/);
-  assert.equal(resumed.find(node => node.props.id === "practice-year").props.value, "2019");
-  assert.equal(resumed.button("Continue →").props.disabled, true);
-  assert.equal(resumed.requests.length, 0, "restoring memory must not overwrite server work");
-  await resumed.click("Check saved work");
-  await resumed.click("Continue with my open draft"); await resumed.autosave();
-  assert.equal(resumed.server().timelineDraft.year, 2019);
-  resumed.unmount();
+  const timeline = { id: null, year: 2019, title: "Unfinished", details: "A remembered detail", meaning: "", presentImpact: "" };
+  const blank = { id: null, year: null, title: "", details: "", meaning: "", presentImpact: "" };
+  store.write(Symbol("old-work"), { drafts: { timeline, letter: { body: "" }, time: snapshot().time }, saved: { timeline: JSON.stringify(blank), letter: JSON.stringify({ body: "" }), time: JSON.stringify(snapshot().time) }, revision: "0", course: "f1", step: 2, yearInput: "2019", failed: { request: { action: "save_timeline_draft", ownerId: owner, expectedRevision: "0", fields: timeline }, entryIds: [] } });
+  const ui = fixture({ initialCourse: "f1", draftStore: store });
+  assert.match(text(ui.render()), /Your unfinished work is still here/);
+  assert.equal(ui.button("Continue in Timeline →").props.disabled, true);
+  assert.equal(ui.requests.length, 0);
+  await ui.click("Check saved work");
+  await ui.click("Continue with my open draft");
+  await ui.click("Continue in Timeline →");
+  assert.equal(ui.requests[0].action, "save_timeline_draft");
+  assert.equal(ui.requests[0].fields.details, "A remembered detail");
+  assert.equal(ui.navigations.at(-1), "/my/timeline/new?practice=f1&resume=1");
+  assert.equal(ui.server().timelineDraft.details, "A remembered detail");
+  ui.unmount();
   assert.equal(createPracticeDraftStore("another-owner").read(), null);
-  assert.equal(createPracticeDraftStore().read(), null);
 });
 
-test("recovery never mistakes an older entry for an optional-details edit that failed to Keep", async () => {
+test("a pre-fix lost Keep response still reconciles without duplicating or publishing the entry", async () => {
   const id = "22222222-2222-4222-8222-000000000001";
-  const entry = { id, position: 1, year: 2014, month: 4, title: "A turning point", details: "Old details", meaning: "I had more choice.", presentImpact: "I began making room." };
-  const initial = snapshot({ timeline: { entries: [entry], revision: "1" }, lastTimelineEntryId: id });
-  const ui = fixture({ initial, initialCourse: "f1", handle(request, { apply }) {
-    if (request.action === "keep_timeline_entry") throw Error("Offline before Keep");
-    return apply(request);
-  } });
-  ui.find(node => node.type === "button" && text(node).includes("A turning point")).props.onClick(); await ui.settle();
-  await ui.click("Continue →"); ui.change("practice-details", "New details that must not disappear.");
-  await ui.click("Continue →"); await ui.click("Continue →"); await ui.click("Keep changes →");
+  const fields = { id: null, year: 2014, title: "A turning point", details: "Preserve this writing", meaning: "I had more choice.", presentImpact: "I began making room." };
+  const time = { action: "", category: "", minutes: 0, sourceCategory: "", sourceMinutes: 0 };
+  const store = createPracticeDraftStore(owner);
+  store.write(Symbol("old-keep"), { drafts: { timeline: fields, letter: { body: "" }, time }, saved: { timeline: JSON.stringify(fields), letter: JSON.stringify({ body: "" }), time: JSON.stringify(time) }, revision: "0", course: "f1", step: 3, yearInput: "2014", failed: { request: { action: "keep_timeline_entry", ownerId: owner, expectedRevision: "0", expectedTimelineRevision: "0", fields }, entryIds: [] } });
+  const entry = { ...fields, id, position: 1, visibility: "private" };
+  const ui = fixture({ initial: snapshot({ revision: "1", timeline: { entries: [entry], completeEntryIds: [id], revision: "1" }, timelineDraft: null, lastTimelineEntryId: id }), initialCourse: "f1", draftStore: store });
+  assert.equal(ui.button("Continue in Timeline →").props.disabled, true);
   await ui.click("Check saved work");
-  assert.equal(ui.server().timeline.entries[0].details, "Old details");
-  assert.equal(ui.server().timelineDraft.details, "New details that must not disappear.");
-  assert.doesNotMatch(text(ui.render()), /Your entry was saved/);
-  assert.ok(ui.button("Keep changes →"));
+  assert.match(text(ui.render()), /Your entry was saved/);
+  assert.equal(ui.requests.length, 0);
+  assert.equal(ui.server().timeline.entries.length, 1);
+  assert.equal(ui.server().timeline.entries[0].visibility, "private");
+  assert.equal(ui.server().timelineDraft, null);
+  assert.ok(ui.button("Add an entry →"));
+  assert.equal(store.read(), null);
+  ui.unmount();
+});
+
+test("failed recovered Work saves never navigate away or discard the owner draft", async () => {
+  const fields = { id: null, year: 2018, title: "Unfinished", details: "Keep these words", meaning: "", presentImpact: "" };
+  const blank = { id: null, year: null, title: "", details: "", meaning: "", presentImpact: "" };
+  const time = { action: "", category: "", minutes: 0, sourceCategory: "", sourceMinutes: 0 };
+  const store = createPracticeDraftStore(owner);
+  store.write(Symbol("old-writing"), { drafts: { timeline: fields, letter: { body: "" }, time }, saved: { timeline: JSON.stringify(blank), letter: JSON.stringify({ body: "" }), time: JSON.stringify(time) }, revision: "0", course: "f1", step: 1, yearInput: "2018", failed: null });
+  const ui = fixture({ initialCourse: "f1", draftStore: store, handle() { throw Error("Offline"); } });
+  await ui.click("Continue in Timeline →");
+  assert.equal(ui.navigations.length, 0);
+  assert.match(text(ui.render()), /Offline/);
+  assert.equal(ui.button("Continue in Timeline →").props.disabled, true);
+  assert.equal(store.read().draft.drafts.timeline.details, "Keep these words");
+  ui.unmount();
+});
+
+test("private saved work is reviewed explicitly and published work stays editable in Timeline", async () => {
+  const privateEntry = { id: "22222222-2222-4222-8222-000000000001", position: 1, year: 2014, title: "Private moment", details: "Old details", meaning: "A meaning", presentImpact: "An effect", visibility: "private" };
+  const publicEntry = { ...privateEntry, id: "22222222-2222-4222-8222-000000000002", title: "Shared moment", visibility: "public" };
+  const ui = fixture({ initial: snapshot({ timeline: { entries: [privateEntry, publicEntry], completeEntryIds: [privateEntry.id, publicEntry.id], revision: "2" } }), initialCourse: "f1" });
+  assert.match(text(ui.render()), /Earlier work saved through Foundations stayed private/);
+  assert.match(text(ui.render()), /Private momentPrivateReview & publish/);
+  assert.match(text(ui.render()), /Shared momentPublic TimelineEdit post/);
+  ui.find(node => node.type === "button" && text(node).includes("Private moment")).props.onClick(); await ui.settle();
+  assert.equal(ui.navigations.at(-1), `/my/timeline?moment=${privateEntry.id}&practice=f1`);
+  ui.find(node => node.type === "button" && text(node).includes("Shared moment")).props.onClick(); await ui.settle();
+  assert.equal(ui.navigations.at(-1), `/my/timeline?moment=${publicEntry.id}&practice=f1`);
+  assert.equal(ui.requests.length, 0);
+  assert.equal(ui.server().timeline.entries[0].visibility, "private");
   ui.unmount();
 });
 
@@ -350,22 +370,20 @@ test("Practice draft provider retains a verified owner through outages and isola
 });
 
 test("focus refresh opens released courses without replacing writing or its saved revision", async () => {
-  const draft = { id: null, year: 2018, title: "My open moment", details: "", meaning: "", presentImpact: "" };
-  const initial = snapshot({ timelineDraft: draft });
-  const ui = fixture({ initial, initialCourse: "f1", getSnapshot(server, response) {
-    return response({ ...server, revision: "9", releases: { ...server.releases, f4: true }, timelineDraft: { ...draft, title: "A different draft from another tab", meaning: "Other meaning" } });
+  const initial = snapshot(); initial.releases.f4 = true;
+  const ui = fixture({ initial, initialCourse: "f4", getSnapshot(server, response) {
+    return response({ ...server, revision: "9", releases: { ...server.releases, f2: true }, letter: { body: "A different letter from another tab", keptAt: null } });
   } });
-  await ui.click("Continue entry →");
-  ui.change("practice-reflection", "My unsaved meaning stays here.");
+  await ui.click("Write my letter →");
+  ui.change("practice-letter", "My unsaved writing stays here.");
   ui.focus(); await ui.settle();
-  assert.equal(ui.find(node => node.props.id === "practice-reflection").props.value, "My unsaved meaning stays here.");
-  assert.equal(ui.requests.length, 0, "availability refresh does not write or advance the assignment");
+  assert.equal(ui.find(node => node.props.id === "practice-letter").props.value, "My unsaved writing stays here.");
+  assert.equal(ui.requests.length, 0);
   await ui.click("← Assignment");
-  assert.equal(ui.requests[0].expectedRevision, "0", "the account write baseline is never advanced by a metadata refresh");
-  assert.equal(ui.requests[0].fields.title, "My open moment");
-  assert.equal(ui.requests[0].fields.meaning, "My unsaved meaning stays here.");
+  assert.equal(ui.requests[0].expectedRevision, "0");
+  assert.equal(ui.requests[0].fields.body, "My unsaved writing stays here.");
   ui.focus(); await ui.settle();
   await ui.click("Foundations");
-  assert.equal(nodes(ui.render()).filter(node => node.props["aria-label"] === "Locked").length, 2);
+  assert.equal(nodes(ui.render()).filter(node => node.props["aria-label"] === "Locked").length, 1);
   ui.unmount();
 });

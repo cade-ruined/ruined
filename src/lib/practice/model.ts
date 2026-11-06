@@ -24,7 +24,7 @@ export type PracticeBadge = { earned: boolean; earnedAt: string | null; complete
 export type PracticeSnapshot = {
   ownerId: string; revision: string; canWrite: boolean;
   releases: Record<PracticeCourse, boolean>;
-  timeline: { entries: MemberTimelineEntry[]; revision: string; completeEntryIds: string[] };
+  timeline: { entries: (MemberTimelineEntry & { visibility: "private" | "public" })[]; revision: string; completeEntryIds: string[] };
   timelineDraft: PracticeTimelineDraft | null;
   lastTimelineEntryId: string | null;
   letter: { body: string; keptAt: string | null };
