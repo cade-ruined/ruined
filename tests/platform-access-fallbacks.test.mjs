@@ -44,11 +44,19 @@ test("every member page context handles denied before its unavailable fallback",
     entry: "GuidedTimelinePage.tsx",
     contents: await readFile(new URL("../src/components/membership/GuidedTimelinePage.tsx", import.meta.url), "utf8"),
   };
-  const pages = [...modernPages, ...legacyPages, sharedTimeline];
+  const sharedUpdates = {
+    entry: "MemberUpdatesContent.tsx",
+    contents: await readFile(new URL("../src/components/membership/MemberUpdatesContent.tsx", import.meta.url), "utf8"),
+  };
+  const modernContexts = [...modernPages, sharedUpdates];
+  const pages = [...modernContexts, ...legacyPages, sharedTimeline];
 
   // The legacy Foundations experience now redirects to the separately gated
   // document reader; it no longer loads a member page context of its own.
-  assert.equal(modernPages.length, 17);
+  // Updates shares one authorized loader between its direct and drawer routes.
+  assert.equal(modernPages.length, 16);
+  assert.equal(modernContexts.length, 17);
+  assert.match(sharedUpdates.contents, /getMembershipPageContext\(PREVIEW_MEMBER_UPDATES, getMemberUpdates, "updates"\)/);
   assert.ok(modernPages.some(page => page.entry === "members/page.tsx"));
   assert.ok(modernPages.some(page => page.entry === "practice/page.tsx"));
   assert.ok(!modernPages.some(page => page.entry === "foundations/experience/page.tsx"));
@@ -59,9 +67,16 @@ test("every member page context handles denied before its unavailable fallback",
   assert.equal(legacyPages.length, 1);
   for (const { contents, entry } of pages) {
     const denied = contents.indexOf('context.state === "denied"');
-    const deniedFallback = contents.indexOf('reason="member_access"');
+    const deniedFallback = contents.indexOf(entry === "MemberUpdatesContent.tsx"
+      ? "Notifications aren’t available for this account."
+      : 'reason="member_access"');
     assert.ok(denied >= 0, `${entry} must recognize an authenticated non-member`);
     assert.ok(deniedFallback > denied, `${entry} must show the member permission fallback`);
+    if (entry === "MemberUpdatesContent.tsx") {
+      const unavailable = contents.indexOf("if (!context.data)");
+      assert.ok(unavailable > deniedFallback, "Updates permission denial must precede its connection fallback");
+      assert.match(contents.slice(unavailable), /Notifications couldn’t load\. Close this panel and try again\./);
+    }
     if (entry === "GuidedTimelinePage.tsx") {
       assert.match(contents, /getSupportAccessUrl\(`/);
       assert.match(contents, /query\.set\("practice", "f1"\)/);
