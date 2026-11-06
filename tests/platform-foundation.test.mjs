@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
 
 async function source(relativePath) {
   return readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
@@ -382,9 +383,10 @@ test("platform RLS defaults to self-read surfaces without client write policies"
 });
 
 test("Stripe billing changes update only the canonical billing and paid-program lifecycle", () => {
-  const stateWriter = billingRepository.slice(
-    billingRepository.indexOf("export async function updateMemberBillingState"),
-  );
+  const syntax = ts.createSourceFile("billing-repository.ts", billingRepository, ts.ScriptTarget.Latest, true);
+  const writer = syntax.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "updateMemberBillingState");
+  assert.ok(writer, "The canonical billing writer must exist");
+  const stateWriter = writer.getText(syntax);
 
   assert.match(stateWriter, /insert into member_lifecycle \(member_id, billing_state\)/);
   assert.match(stateWriter, /update member_lifecycle[\s\S]*set[\s\S]*billing_state =/);
