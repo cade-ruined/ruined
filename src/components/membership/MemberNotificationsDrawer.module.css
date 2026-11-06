@@ -1,0 +1,24 @@
+.drawer {
+  position:fixed; inset:0 0 0 auto; margin:0; padding:0;
+  width:min(440px,100%); max-width:none; height:100dvh; max-height:none;
+  border:0; border-left:1px solid var(--member-rule); border-radius:0;
+  background:var(--member-paper); color:var(--member-ink); font-family:var(--font-body);
+  overflow:hidden; box-shadow:-16px 0 60px #0003;
+}
+.drawer:not([open]) { display:none; }
+.drawer[open] { display:block; animation:arrive 220ms cubic-bezier(.2,.8,.2,1); }
+.drawer::backdrop { background:#08080870; backdrop-filter:blur(3px); }
+.surface { display:grid; grid-template-rows:auto minmax(0,1fr); height:100%; min-width:0; }
+.header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 24px; border-bottom:1px solid var(--member-rule); }
+.header h2 { margin:0; font-family:var(--font-body)!important; font-size:23px!important; font-weight:700!important; letter-spacing:-.045em; line-height:1.2; }
+.close { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:44px; padding:0 12px; border:1px solid var(--member-rule); background:transparent; color:var(--member-ink); font-size:13px; font-weight:600; cursor:pointer; }
+.close span { font-size:24px; font-weight:400; line-height:1; }
+.close:hover { background:var(--member-subtle); border-color:var(--member-ink); }
+.close:focus-visible { outline:2px solid var(--member-red); outline-offset:3px; }
+.content { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:0 24px calc(24px + env(safe-area-inset-bottom,0px)); }
+.status { margin:0; padding:28px 0; color:var(--member-muted); font-size:14px; line-height:1.6; }
+.status a,.status button { display:inline-flex; align-items:center; min-height:44px; margin-top:12px; color:var(--member-ink); text-decoration:underline; text-underline-offset:4px; }
+@keyframes arrive { from { transform:translateX(100%); } to { transform:translateX(0); } }
+@media(max-width:480px) { .header { padding:12px 20px; } .header h2 { font-size:21px!important; } .content { padding-inline:20px; } }
+@media(prefers-reduced-motion:reduce) { .drawer[open] { animation:none; } }
+@media(forced-colors:active) { .drawer,.close { border:1px solid CanvasText; } }

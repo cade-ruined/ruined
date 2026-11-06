@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function MyRuinedLayout({ children }: { children: React.ReactNode }) {
+export default async function MyRuinedLayout({ children, notifications }: { children: React.ReactNode; notifications: React.ReactNode }) {
   if (!isMyRuinedVisible()) notFound();
 
   const configuration = getPlatformConfiguration();
@@ -91,6 +91,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
     >
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}
+      {notifications}
     </MemberJourneyShell>
     </MemberPracticeDraftState>
     </MemberJournalDraftState>
