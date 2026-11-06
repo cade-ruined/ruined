@@ -414,6 +414,7 @@ export type MemberArtifactsSnapshot = {
 };
 
 export type MemberUpdateItem = {
+  actionLabel?: string | null;
   body: string;
   href: string | null;
   id: string;

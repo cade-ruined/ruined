@@ -5,8 +5,10 @@ import { createHash, randomUUID } from "node:crypto";
 import type postgres from "postgres";
 
 import { getApplicationDatabase } from "@/lib/database/server";
+import { safeMemberNotificationHref } from "@/lib/membership/notification-inbox-model";
 import {
   normalizeOpsNotificationRequestKey,
+  normalizeOpsNotificationShowOnNextVisit,
   type OpsNotificationDeliveryStatus,
   resolveOpsNotificationStatusAt,
 } from "@/lib/platform/ops-notification-model";
@@ -99,6 +101,7 @@ function notificationFingerprint(input: {
   actorAuthUserId: string;
   body: string;
   notificationType: string;
+  showOnNextVisit?: true;
   targetId: string | null;
   targetType: string;
   title: string;
@@ -259,6 +262,7 @@ export async function sendOpsNotification(input: {
   body: string;
   notificationType: string;
   requestKey: string;
+  showOnNextVisit?: unknown;
   targetId?: string | null;
   targetType: string;
   title: string;
@@ -269,6 +273,10 @@ export async function sendOpsNotification(input: {
   const targetType = input.targetType.trim();
   const actionLabel = optionalText(input.actionLabel, 120);
   const actionUrl = optionalText(input.actionUrl, 2000);
+  const showOnNextVisit = normalizeOpsNotificationShowOnNextVisit(input.showOnNextVisit);
+  if (showOnNextVisit === null) {
+    throw new OpsOperatingRepositoryError("invalid_request", "Show once when members return must be true or false.");
+  }
   if (!NOTIFICATION_TYPES.has(notificationType)) {
     throw new OpsOperatingRepositoryError("invalid_request", "Notification type is invalid.");
   }
@@ -278,7 +286,7 @@ export async function sendOpsNotification(input: {
   if (Boolean(actionLabel) !== Boolean(actionUrl)) {
     throw new OpsOperatingRepositoryError("invalid_request", "Action label and link must be supplied together.");
   }
-  if (actionUrl && !/^https:\/\//i.test(actionUrl) && !actionUrl.startsWith("/my")) {
+  if (actionUrl && !safeMemberNotificationHref(actionUrl)) {
     throw new OpsOperatingRepositoryError("invalid_request", "Action link must be a secure URL or a My Ruined path.");
   }
   const actorAuthUserIdValue = requireUuid(input.actorAuthUserId, "Operator identity");
@@ -296,6 +304,7 @@ export async function sendOpsNotification(input: {
     targetId,
     targetType,
     title,
+    ...(showOnNextVisit ? { showOnNextVisit: true as const } : {}),
   });
   const sql = getApplicationDatabase();
   return sql.begin(async (tx) => {
@@ -317,7 +326,8 @@ export async function sendOpsNotification(input: {
         title_snapshot,
         body_snapshot,
         action_label_snapshot,
-        action_url_snapshot
+        action_url_snapshot,
+        show_on_next_visit
       ) values (
         ${dispatchId}::uuid,
         ${requestKey},
@@ -329,7 +339,8 @@ export async function sendOpsNotification(input: {
         ${title},
         ${body},
         ${actionLabel},
-        ${actionUrl}
+        ${actionUrl},
+        ${showOnNextVisit}
       )
       on conflict (request_key) do nothing
       returning id, recipient_count, request_fingerprint, status
@@ -414,6 +425,7 @@ export async function sendOpsNotification(input: {
           body_snapshot,
           action_label_snapshot,
           action_url_snapshot,
+          show_on_next_visit,
           status,
           sent_at,
           delivered_at,
@@ -429,6 +441,7 @@ export async function sendOpsNotification(input: {
           ${body},
           ${actionLabel},
           ${actionUrl},
+          ${showOnNextVisit},
           'delivered',
           statement_timestamp(),
           statement_timestamp(),
@@ -447,7 +460,7 @@ export async function sendOpsNotification(input: {
           ${notificationId}::uuid,
           'delivered',
           ${actorAuthUserId}::uuid,
-          ${tx.json({ dispatchId: dispatch.id, requestKey, source: "operator", targetId, targetType })},
+          ${tx.json({ dispatchId: dispatch.id, requestKey, showOnNextVisit, source: "operator", targetId, targetType })},
           ${`ops-notification-delivered:${requestKey}:${recipient.member_id}`}
         )
       `;
@@ -482,7 +495,7 @@ export async function sendOpsNotification(input: {
         'notification.sent',
         'notification_dispatch',
         ${dispatch.id},
-        ${tx.json({ notificationType, recipientCount: recipients.length, targetId, targetType, title })},
+        ${tx.json({ notificationType, recipientCount: recipients.length, showOnNextVisit, targetId, targetType, title })},
         ${tx.json({ channel: "in_app", requestKey })},
         ${`notification-dispatch:${requestKey}`}
       )

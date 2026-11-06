@@ -148,6 +148,7 @@ const migrations = [
   "../db/migrations/20261106010000_complimentary_registration_onboarding.sql",
   "../db/migrations/20261106010000_practice_public_timeline.sql",
   "../db/migrations/20261106200000_private_member_library.sql",
+  "../db/migrations/20261107010000_member_notification_announcements.sql",
 ];
 
 function migrationBody(migration, migrationName) {

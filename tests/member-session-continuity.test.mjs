@@ -180,13 +180,14 @@ function hookHarness() {
 
 test("continuity retains the same child subtree during outages, expiry and recovery without refreshing drafts", async () => {
   const h = hookHarness(); let notify; let refreshes = 0;
+  const sessionEvents = [];
   const router = { refresh() { refreshes++; } };
   const passwordless = () => null;
   const Component = (await load("src/components/membership/MemberSessionContinuity.tsx", {
     react: h.hooks, "next/navigation": { useRouter: () => router, usePathname: () => "/my/journal" },
     "@/components/platform/PasswordlessAccessForm": { __esModule: true, default: passwordless },
     "@/lib/auth/member-session-monitor": { startMemberSessionMonitor(args) { notify = args.onStatus; return { stop() {}, async check() {} }; } },
-  })).default;
+  }, { window: { dispatchEvent(event) { sessionEvents.push(event.type); } } })).default;
   const draft = React.createElement("textarea", { defaultValue: "An unfinished journal entry" });
   const celebration = React.createElement("dialog", { "aria-label": "New badge" });
   const render = () => h.render(() => Component({ children: draft, celebration, enabled: true, ownerId: "owner-one" }));
@@ -206,6 +207,7 @@ test("continuity retains the same child subtree during outages, expiry and recov
     assert.equal(childModalCloses, status === "account_changed" ? 1 : 0, "only a changed account releases child modals so Open profile remains reachable");
     assert.equal(nodes(tree).filter(node => node.type === passwordless).length, 1);
   }
+  assert.deepEqual(sessionEvents, ["ruined:member-session-restored"], "notifications revalidate when the same member signs back in");
   notify("signed_out");
   await nodes(render()).find(node => node.type === passwordless).props.onAuthenticated();
   const accepted = render();

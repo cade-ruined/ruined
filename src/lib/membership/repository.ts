@@ -3852,6 +3852,7 @@ export async function getMemberUpdates(
   const sql = getApplicationDatabase();
   const rows = await sql<
     Array<{
+      action_label: string | null;
       body: string;
       href: string | null;
       id: string;
@@ -3859,14 +3860,33 @@ export async function getMemberUpdates(
       published_at: Date | string;
       read_at: Date | string | null;
       title: string;
+      unread_count: number | string;
     }>
   >`
-    with membership_scope as (
+    with eligible_member as (
+      select member.id
+      from platform_users account
+      join ruined_members member on member.person_id = account.person_id
+        and (account.member_id is null or account.member_id = member.id)
+        and member.deleted_at is null
+      join people person on person.id = member.person_id and person.status = 'active'
+      join member_lifecycle lifecycle on lifecycle.member_id = member.id and lifecycle.account_state = 'active'
+      where account.auth_user_id = ${authUserId}::uuid
+        and account.status = 'active'
+        and member.id = ${identity.memberId}::uuid
+        and member.person_id = ${identity.personId}::uuid
+        and exists (
+          select 1 from platform_role_grants member_grant
+          where member_grant.auth_user_id = account.auth_user_id
+            and member_grant.role_slug = 'member' and member_grant.revoked_at is null
+        )
+    ), membership_scope as (
       select
         member_assignment.circle_id,
         block_assignment.block_id,
         lifecycle.current_progression_level_slug
       from member_lifecycle lifecycle
+      join eligible_member owner on owner.id = lifecycle.member_id
       left join circle_member_assignments member_assignment
         on member_assignment.member_id = lifecycle.member_id
         and private.ruined_member_circle_is_revealed(lifecycle.member_id)
@@ -3882,10 +3902,12 @@ export async function getMemberUpdates(
         'notification'::text as kind,
         notification.title_snapshot as title,
         notification.body_snapshot as body,
+        notification.action_label_snapshot as action_label,
         notification.action_url_snapshot as href,
         notification.created_at as published_at,
         notification.read_at
       from member_notifications notification
+      join eligible_member owner on owner.id = notification.member_id
       left join operator_notification_dispatches dispatch on dispatch.id = notification.operator_dispatch_id
       where notification.member_id = ${identity.memberId}::uuid
         and notification.person_id = ${identity.personId}::uuid
@@ -3897,7 +3919,7 @@ export async function getMemberUpdates(
           where target.announcement_id = notification.announcement_id
             and target.target_type not in ('circle', 'block')
         ))
-        and notification.status not in ('failed', 'cancelled')
+        and notification.status = 'delivered'
         and notification.scheduled_for <= statement_timestamp()
         and notification.dismissed_at is null
       union all
@@ -3906,6 +3928,7 @@ export async function getMemberUpdates(
         'announcement'::text as kind,
         announcement.title,
         announcement.body_text as body,
+        announcement.action_label,
         announcement.action_url as href,
         announcement.published_at,
         null::timestamptz as read_at
@@ -3936,12 +3959,14 @@ export async function getMemberUpdates(
             )
         )
     )
-    select id, kind, title, body, href, published_at, read_at
+    select id, kind, title, body, action_label, href, published_at, read_at,
+      count(*) filter (where kind = 'notification' and read_at is null) over () as unread_count
     from update_rows
-    order by published_at desc
+    order by published_at desc, id desc
     limit 100
   `;
   const items = rows.map((row) => ({
+    actionLabel: row.action_label,
     body: row.body,
     href: row.href,
     id: row.id,
@@ -3953,7 +3978,7 @@ export async function getMemberUpdates(
   return {
     access,
     items,
-    unreadCount: items.filter((item) => item.kind === "notification" && !item.readAt).length,
+    unreadCount: Number(rows[0]?.unread_count ?? 0),
   };
 }
 

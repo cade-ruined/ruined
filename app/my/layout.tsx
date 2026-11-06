@@ -87,6 +87,7 @@ export default async function MyRuinedLayout({ children }: { children: React.Rea
       invitedCalendarAvailable={invitedCalendarAvailable}
       memberDirectoryAvailable={memberDirectoryAvailable}
       viewerLabel={configuration.mode === "preview" ? "Preview member" : viewer?.email}
+      ownerId={viewer?.authUserId}
     >
       {scenario ? <MemberPreviewSwitcher scenario={scenario} /> : null}
       {children}

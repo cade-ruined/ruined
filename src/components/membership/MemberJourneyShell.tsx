@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import MemberNavigationFab from "@/components/platform/MemberNavigationFab";
 import MemberIcon from "@/components/membership/MemberIcon";
 import InstallRuined from "@/components/membership/InstallRuined";
+import MemberNotificationCenter from "@/components/membership/MemberNotificationCenter";
 import { currentMemberDestination, currentMemberPrimaryDestination, MEMBER_DESTINATIONS, MEMBER_PRIMARY_DESTINATIONS } from "@/lib/membership/navigation";
 import type { PlatformConfiguration } from "@/lib/platform/config";
 import type { OperatorNavigationRole } from "@/lib/platform/operations-navigation";
@@ -20,11 +21,12 @@ function appearanceValue(value: string | null): MemberAppearance {
   return value === "paper" || value === "ink" ? value : "system";
 }
 
-export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, registrationOnly: restrictedRegistration = false, invitedCalendarAvailable = false, memberDirectoryAvailable = false }: {
+export default function MemberJourneyShell({ children, configuration, operatorRole, viewerLabel, ownerId, registrationOnly: restrictedRegistration = false, invitedCalendarAvailable = false, memberDirectoryAvailable = false }: {
   children: React.ReactNode;
   configuration: PlatformConfiguration;
   operatorRole?: OperatorNavigationRole | null;
   viewerLabel?: string | null;
+  ownerId?: string;
   registrationOnly?: boolean;
   invitedCalendarAvailable?: boolean;
   memberDirectoryAvailable?: boolean;
@@ -92,7 +94,7 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
                 <MemberIcon name={pathname === "/my/members" ? "person" : "search"} />
               </Link>
             : <Link className={styles.quietLink} href={focused ? "/my/foundations" : "mailto:connect@theruinedproject.com"}>{focused ? "Back to Foundations" : "Support"}</Link>}
-          {hasNavigation ? <Link className={styles.iconButton} aria-label="Updates" title="Updates" href="/my/updates"><MemberIcon name="bell" /></Link> : null}
+          {hasNavigation ? <MemberNotificationCenter ownerId={ownerId} preview={preview} /> : null}
           {registrationOnly ? viewerLabel && !preview ? <form action="/api/auth/sign-out?next=/access" method="post"><button className={styles.quietLink} type="submit">Sign out</button></form> : null : <MemberNavigationFab {...menuProps} trigger="settings" />}
         </div>
       </header>
