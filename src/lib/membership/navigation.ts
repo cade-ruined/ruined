@@ -30,11 +30,11 @@ export function findMemberDestinations(query: string) {
 
 
 export const MEMBER_PRIMARY_DESTINATIONS = [
-  { href: "/my", label: "Profile", icon: "person" },
-  { href: "/my/circle", label: "My Circle", icon: "circle" },
-  { href: "/my/practice", label: "The Work", icon: "book" },
-  { href: "/my/library", label: "Library", icon: "library" },
-  { href: "/my/experiences", label: "Calendar", icon: "calendar" },
+  { href: "/my", label: "Profile", mobileLabel: "Profile", icon: "person" },
+  { href: "/my/circle", label: "My Circle", mobileLabel: "Circle", icon: "circle" },
+  { href: "/my/practice", label: "The Work", mobileLabel: "Work", icon: "book" },
+  { href: "/my/library", label: "Library", mobileLabel: "Library", icon: "library" },
+  { href: "/my/experiences", label: "Calendar", mobileLabel: "Calendar", icon: "calendar" },
 ] as const;
 
 export function currentMemberPrimaryDestination(pathname: string): string | undefined {

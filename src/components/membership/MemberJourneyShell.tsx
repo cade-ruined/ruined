@@ -61,8 +61,8 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
     try { window.localStorage.setItem(APPEARANCE_KEY, value); } catch { /* Appearance persists for this visit without storage. */ }
   }
 
-  function primaryLinks() {
-    return MEMBER_PRIMARY_DESTINATIONS.map(({ href, label, icon }) => <Link key={href} href={href} className={styles.primaryLink} aria-current={currentPrimary === href ? "page" : undefined}><MemberIcon name={icon} /><span>{label}</span></Link>);
+  function primaryLinks(mobile = false) {
+    return MEMBER_PRIMARY_DESTINATIONS.map(({ href, label, mobileLabel, icon }) => <Link key={href} href={href} className={styles.primaryLink} aria-current={currentPrimary === href ? "page" : undefined}>{!mobile ? <MemberIcon name={icon} /> : null}<span>{mobile ? mobileLabel : label}</span></Link>);
   }
 
   const menuProps = { appearance, onAppearanceChange: changeAppearance, preview, operatorRole, viewerLabel };
@@ -102,6 +102,6 @@ export default function MemberJourneyShell({ children, configuration, operatorRo
       <div className={`${styles.content} ${threshold ? styles.thresholdContent : ""} ${focused ? styles.experienceContent : ""} ${membershipEntry ? styles.entryContent : ""}`}>{children}{viewerLabel && pathname === "/my/account" ? <InstallRuined /> : null}</div>
       {!focused ? <footer className={styles.footer}><span>The Ruined Project</span><Link href={threshold ? "mailto:connect@theruinedproject.com" : "/my/support"}>Need a hand?</Link></footer> : null}
     </div>
-    {hasNavigation ? <nav className={styles.mobileNavigation} aria-label="Member pages">{primaryLinks()}</nav> : null}
+    {hasNavigation ? <nav className={styles.mobileNavigation} aria-label="Member pages">{primaryLinks(true)}</nav> : null}
   </div>;
 }
