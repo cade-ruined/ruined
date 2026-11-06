@@ -38,6 +38,31 @@ function fixture({ items = [notification], unreadCount = items.filter(item => it
   return { calls, events, draw, refreshes: () => refreshes, all: () => nodes(draw()), text: () => text(draw()), find(predicate) { const node = nodes(draw()).find(predicate); assert.ok(node, "Expected matching element"); return node; }, settle: () => new Promise(resolve => setImmediate(resolve)) };
 }
 
+function showAll(f) {
+  f.find(node => node.type === "button" && text(node).startsWith("All")).props.onClick();
+}
+
+test("Updates starts with unread notices and switching filters never marks anything read", () => {
+  const items = [notification,
+    { ...notification, id: "read-notice", title: "Earlier notice", readAt: "2026-11-06T13:00:00Z" },
+    { ...notification, id: "announcement", title: "General announcement", kind: "announcement" },
+  ];
+  const f = fixture({ items });
+  assert.equal(f.find(node => node.type === "button" && text(node).startsWith("Unread")).props["aria-pressed"], true);
+  assert.equal(f.all().filter(node => node.type === "li").length, 1);
+  assert.match(text(f.find(node => node.type === "li")), /The Library is live/);
+  assert.doesNotMatch(f.text(), /Earlier notice|General announcement|From Ruined/);
+  assert.equal(f.all().some(node => node.type === "h1"), false, "The drawer owns the sole title");
+  assert.equal(f.all().some(node => node.type === "span" && ["For you", "Announcement", "Read", "Unread"].includes(text(node))), false);
+  showAll(f);
+  assert.equal(f.all().filter(node => node.type === "li").length, 3);
+  assert.match(f.text(), /Earlier notice/);
+  f.find(node => node.type === "button" && text(node).startsWith("Unread")).props.onClick();
+  assert.equal(f.all().filter(node => node.type === "li").length, 1);
+  assert.deepEqual(f.calls, []);
+  assert.deepEqual(f.events, []);
+});
+
 test("Updates uses the configured button label and opens the ordinary link while marking read", async () => {
   const f = fixture();
   const link = f.find(node => node.type === "a");
@@ -85,12 +110,14 @@ test("unsafe legacy CTA links are omitted while safe unlabeled links keep the fa
     assert.ok(f.find(node => node.type === "button" && text(node) === "Mark as read"));
   }
   const f = fixture({ items: [{ ...notification, actionLabel: null, readAt: "2026-11-06T13:00:00Z" }] });
+  showAll(f);
   assert.match(text(f.find(node => node.type === "a")), /^View details/);
 });
 
 test("readonly and announcement links navigate without trying to mark a notification read", async () => {
   for (const options of [{ writable: false }, { items: [{ ...notification, kind: "announcement" }] }, { items: [{ ...notification, readAt: "2026-11-06T13:00:00Z" }] }]) {
     const f = fixture(options);
+    showAll(f);
     f.find(node => node.type === "a").props.onClick(); await f.settle();
     assert.deepEqual(f.calls, []);
     assert.deepEqual(f.events, []);
@@ -128,7 +155,10 @@ test("preview opening is reflected locally in Updates without affecting real mem
   const items = [{ ...notification, id: "preview-library-launch" }, { ...notification, id: "circle", title: "Your Circle" }];
   const preview = fixture({ items, writable: false, previewChoice: "open" });
   assert.match(preview.text(), /1 unread update/);
-  assert.equal(text(preview.find(node => node.type === "li")).includes("Unread"), false);
+  assert.equal(preview.all().filter(node => node.type === "li").length, 1);
+  assert.match(text(preview.find(node => node.type === "li")), /Your Circle/);
+  showAll(preview);
+  assert.equal(preview.all().filter(node => node.type === "li").length, 2);
   assert.deepEqual(preview.calls, []);
   assert.deepEqual(preview.events, []);
   assert.match(fixture({ items, writable: true, previewChoice: "open" }).text(), /2 unread updates/);

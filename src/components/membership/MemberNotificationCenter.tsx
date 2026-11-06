@@ -110,7 +110,7 @@ export default function MemberNotificationCenter({ ownerId, preview = false }: {
 
   const unreadCount = current?.unreadCount ?? 0;
   return <>
-    <Link className={styles.bell} href="/my/updates" aria-label={unreadCount ? `Updates — ${unreadCount} unread` : "Updates"} title={unreadCount ? `${unreadCount} unread ${unreadCount === 1 ? "update" : "updates"}` : "Updates"}>
+    <Link className={styles.bell} href="/my/updates" scroll={false} aria-haspopup="dialog" aria-label={unreadCount ? `Updates — ${unreadCount} unread` : "Updates"} title={unreadCount ? `${unreadCount} unread ${unreadCount === 1 ? "update" : "updates"}` : "Updates"}>
       <MemberIcon name="bell" />{unreadCount ? <span className={styles.dot} aria-hidden="true" /> : null}
     </Link>
     <dialog ref={dialogRef} className={styles.dialog} aria-labelledby={`${id}-title`} aria-describedby={`${id}-body`}

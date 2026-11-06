@@ -36,7 +36,7 @@ function formatDate(value: string) {
 export default function MemberUpdates({ initialUpdates, writable }: { initialUpdates: MemberUpdatesSnapshot; writable: boolean }) {
   const router = useRouter();
   const [updates, setUpdates] = useState(initialUpdates);
-  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [filter, setFilter] = useState<"all" | "unread">("unread");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -100,23 +100,18 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
   }
 
   return (
-    <main className={`member-journey-page ${styles.page}`}>
-      <header className={styles.header}>
-        <p className={styles.note}>From Ruined</p>
-        <h1 className={styles.title}>Updates</h1>
-        <p className={styles.summary}>
+    <div className={styles.page}>
+        <p className={styles.srOnly}>
           {updates.unreadCount
             ? `${updates.unreadCount} unread ${updates.unreadCount === 1 ? "update" : "updates"}.`
             : updates.items.length ? "You’re all caught up." : "Your membership notices will appear here."}
         </p>
-      </header>
-
       <div aria-label="Filter updates" className={styles.filters} role="group">
-        <button aria-controls="member-updates-list" aria-pressed={filter === "all"} className={styles.filter} onClick={() => setFilter("all")} type="button">
-          All <span className={styles.count}>{updates.items.length}</span>
-        </button>
         <button aria-controls="member-updates-list" aria-pressed={filter === "unread"} className={styles.filter} onClick={() => setFilter("unread")} ref={unreadFilter} type="button">
           Unread <span className={styles.count}>{updates.unreadCount}</span>
+        </button>
+        <button aria-controls="member-updates-list" aria-pressed={filter === "all"} className={styles.filter} onClick={() => setFilter("all")} type="button">
+          All
         </button>
       </div>
 
@@ -139,10 +134,6 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
                 <li className={`${styles.card} ${unread ? styles.unread : ""}`} key={`${item.kind}-${item.id}`}>
                   <article aria-labelledby={`update-${item.kind}-${item.id}`}>
                     <div className={styles.metadata}>
-                      <div className={styles.kind}>
-                        <span>{item.kind === "announcement" ? "Announcement" : "For you"}</span>
-                        {item.kind === "notification" ? <span className={unread ? styles.unreadLabel : styles.readLabel}>{unread ? "Unread" : "Read"}</span> : null}
-                      </div>
                       <time dateTime={item.publishedAt}>{formatDate(item.publishedAt)}</time>
                     </div>
                     <h2 className={styles.cardTitle} id={`update-${item.kind}-${item.id}`}>{item.title}</h2>
@@ -182,6 +173,6 @@ export default function MemberUpdates({ initialUpdates, writable }: { initialUpd
           </div>
         )}
       </section>
-    </main>
+    </div>
   );
 }
