@@ -51,7 +51,7 @@
 .editorTop { margin-bottom: 20px; }
 .stepCaption { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; margin-bottom: 10px; }
 .stepCaption > span:first-child { color: var(--ink); font-weight: 600; }
-.steps { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 7px; }
+.steps { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); gap: 7px; }
 .steps button { position: relative; min-height: 44px; padding: 8px 0; }
 .steps button::before { content: ""; position: absolute; inset: 20px 0; background: var(--member-rule); height: 4px; }
 .steps button[data-past="true"]::before { background: var(--ink); }

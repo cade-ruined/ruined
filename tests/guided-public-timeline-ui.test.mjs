@@ -19,6 +19,8 @@ const control = (tree, id) => nodes(tree).find(node => node.props.id === id);
 const disclosure = (tree, label) => nodes(tree).find(node => node.type === "details" && React.Children.toArray(node.props.children).some(child => React.isValidElement(child) && child.type === "summary" && text(child).trim().startsWith(label)));
 const form = tree => nodes(tree).find(node => node.type === "form");
 const responses = { meaning: "I thought I had to manage alone.", belief: "Asking for help was a burden.", presentImpact: "I try to solve everything first.", perspective: "Connection can begin by asking." };
+const editableResponses = Object.fromEntries(Object.entries(responses).filter(([field]) => field !== "presentImpact"));
+const newStoryResponses = { ...editableResponses, presentImpact: null };
 const entry = (overrides = {}) => ({ id: "11111111-1111-4111-8111-111111111111", kind: "text", title: "Moved to a new city", body: "No familiar faces.", eventYear: 2008, eventMonth: 6, eventDay: 12, includeOnTimeline: true, visibility: "private", createdAt: "2026-10-20T12:00:00Z", version: "4", saved: false, media: [], ...overrides });
 const snapshot = (entries = [], extras = {}) => ({ entries, writable: true, mediaReady: true, hasMore: false, nextCursor: null, ...extras });
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
@@ -85,14 +87,14 @@ async function fillStory(ui) {
   ui.change("timeline-year", "2014");
   ui.change("timeline-event", "Starting over");
   ui.change("timeline-details", "A new room and a new beginning.");
-  for (const [field, response] of Object.entries(responses)) ui.change(`timeline-${field}`, response);
+  for (const [field, response] of Object.entries(editableResponses)) ui.change(`timeline-${field}`, response);
 }
 
 test("the page starts with a blank composer instead of editing the first saved story", () => {
   const ui = fixture({ initialJournal: snapshot([entry({ body: "Private unfinished words.", legacyTimelineReflection: responses }), entry({ id: "22222222-2222-4222-8222-222222222222", title: "An existing public post", visibility: "public" })]) });
   assert.equal(control(ui.render(), "timeline-details").props.value, "");
   assert.equal(disclosure(ui.render(), "Go deeper").props.open, false);
-  for (const field of Object.keys(responses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, "");
+  for (const field of Object.keys(editableResponses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, "");
   assert.equal(button(ui.render(), "Post").props.disabled, true);
   assert.equal(ui.writes().length, 0);
   ui.unmount();
@@ -124,7 +126,7 @@ test("Posts and Drafts keep private entries separate and editing is an explicit 
   await ui.click(`Edit ${privateDraft.title}`);
   assert.equal(control(ui.render(), "timeline-details").props.value, privateDraft.body);
   assert.equal(disclosure(ui.render(), "Go deeper").props.open, true);
-  for (const [field, value] of Object.entries(responses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
+  for (const [field, value] of Object.entries(editableResponses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
   assert.equal(ui.writes().length, 0);
   ui.unmount();
 });
@@ -156,7 +158,7 @@ test("one composer collects a public story and optional reflections without an i
   assert.equal(ui.writes()[0].owner, "owner-a");
   assert.equal(ui.writes()[0].value.visibility, "public");
   assert.equal(ui.writes()[0].value.includeOnTimeline, true);
-  assert.deepEqual(ui.writes()[0].value.timelineReflection, responses);
+  assert.deepEqual(ui.writes()[0].value.timelineReflection, newStoryResponses);
   assert.equal(ui.saved.size, 1);
   assert.equal(ui.guardStates.at(-1).scope, "public-timeline");
   ui.unmount();
@@ -195,11 +197,30 @@ test("a text-only private draft gets a valid visible title and stays private unt
 test("legacy private reflections are reviewed but never published by opening them", async () => {
   const ui = fixture({ initialJournal: snapshot([entry({ legacyTimelineReflection: responses })]), initialEntryId: entry().id });
   assert.equal(disclosure(ui.render(), "Go deeper").props.open, true);
-  for (const [field, value] of Object.entries(responses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
+  for (const [field, value] of Object.entries(editableResponses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
   assert.match(text(ui.render()), /Private draft/); assert.equal(ui.writes().length, 0);
   await ui.submit(); assert.equal(ui.writes().length, 1);
   assert.deepEqual(ui.writes()[0].value.timelineReflection, responses);
   assert.equal(ui.writes()[0].value.visibility, "public"); ui.unmount();
+});
+
+test("editing an older present-impact-only story preserves its answer without offering the retired question", async () => {
+  const savedReflection = { meaning: null, belief: null, presentImpact: "An answer written before the prompt was retired.", perspective: null };
+  for (const visibility of ["private", "public"]) {
+    const existing = entry({ visibility, ...(visibility === "public" ? { timelineReflection: savedReflection } : { legacyTimelineReflection: savedReflection }) });
+    const ui = fixture({ initialJournal: snapshot([existing]), initialEntryId: existing.id });
+    const tree = ui.render();
+    assert.equal(control(tree, "timeline-presentImpact"), undefined);
+    assert.doesNotMatch(text(tree), /How does it show up now\?/);
+    assert.ok(text(tree).includes(savedReflection.presentImpact), "The previous answer remains readable before saving");
+    assert.equal(ui.writes().length, 0);
+    ui.change("timeline-details", "Updated context with the original reflection intact.");
+    await ui.submit();
+    assert.deepEqual(ui.writes()[0].value.timelineReflection, savedReflection);
+    assert.equal(ui.writes()[0].value.expectedVersion, existing.version);
+    assert.ok(text(ui.render()).includes(savedReflection.presentImpact), "The previous answer remains readable in the saved feed");
+    ui.unmount();
+  }
 });
 
 test("reflection edits preserve attachment identities, exact dates, long context, and version", async () => {
@@ -569,7 +590,7 @@ const importedWork = (overrides = {}) => ({
   revision: "37", entryId: "cccccccc-cccc-4ccc-8ccc-111111111111", newerSavedVersion: false, ...overrides,
 });
 
-test("Foundations opens the same six prompts immediately and posts an explicit public reflection snapshot", async () => {
+test("Foundations opens the same five prompts immediately and posts an explicit public reflection snapshot", async () => {
   const ui = fixture({ practice: true, startNew: true });
   const tree = ui.render();
   assert.ok(nodes(tree).some(node => node.type === "summary" && node.props["aria-label"] === "When was this?"));
@@ -577,17 +598,19 @@ test("Foundations opens the same six prompts immediately and posts an explicit p
   assert.ok(control(tree, "timeline-details"));
   const reflectionSection = nodes(tree).find(node => node.type === "section" && node.props["aria-label"] === "Foundations reflection questions");
   assert.ok(reflectionSection);
-  assert.equal(nodes(reflectionSection).filter(node => node.type === "textarea").length, 4);
+  assert.equal(control(tree, "timeline-presentImpact"), undefined);
+  assert.doesNotMatch(text(tree), /How does it show up now\?/);
+  assert.equal(nodes(reflectionSection).filter(node => node.type === "textarea").length, 3);
   assert.equal(nodes(reflectionSection).some(node => node.type === "details"), false);
   assert.equal(disclosure(tree, "Go deeper"), undefined, "the missing last question cannot be hidden behind an optional disclosure");
-  for (const label of ["What happened?", "What did I make it mean?", "What did I start believing?", "How does it show up now?", "What can I see now?"]) assert.ok(text(tree).includes(label));
+  for (const label of ["What happened?", "What did I make it mean?", "What did I start believing?", "What can I see now?"]) assert.ok(text(tree).includes(label));
   assert.ok(button(tree, "Save draft"));
   assert.ok(button(tree, "Post to Timeline"));
   assert.equal(ui.writes().length, 0);
   await fillStory(ui); await ui.submit();
   assert.equal(ui.writes().length, 1);
   assert.equal(ui.writes()[0].value.visibility, "public");
-  assert.deepEqual(ui.writes()[0].value.timelineReflection, responses);
+  assert.deepEqual(ui.writes()[0].value.timelineReflection, newStoryResponses);
   assert.match(text(ui.render()), /Published to your Timeline/);
   ui.unmount();
 });
@@ -597,7 +620,7 @@ test("Foundations Save draft persists all questions privately before a separate 
   await fillStory(ui); await ui.click("Save draft");
   assert.equal(ui.writes().length, 1);
   assert.equal(ui.writes()[0].value.visibility, "private");
-  assert.deepEqual(ui.writes()[0].value.timelineReflection, responses);
+  assert.deepEqual(ui.writes()[0].value.timelineReflection, newStoryResponses);
   assert.match(text(ui.render()), /Only you can see it/);
   assert.equal([...ui.saved.values()][0].visibility, "private");
   assert.equal(button(ui.render(), "Drafts").props["aria-pressed"], true);
@@ -617,7 +640,7 @@ test("an imported Work draft keeps its content and deterministic ID, clearing th
   assert.equal(control(ui.render(), "timeline-year").props.value, "2011");
   assert.equal(control(ui.render(), "timeline-month").props.value, "3");
   assert.equal(control(ui.render(), "timeline-details").props.value, source.draft.details);
-  for (const [field, value] of Object.entries(responses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
+  for (const [field, value] of Object.entries(editableResponses)) assert.equal(control(ui.render(), `timeline-${field}`).props.value, value);
   assert.equal(ui.writes().length, 0);
   await ui.click("Save draft");
   assert.deepEqual(ui.writes().map(request => request.url), ["/api/my/journal", "/api/my/practice/timeline-draft"]);

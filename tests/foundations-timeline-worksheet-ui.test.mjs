@@ -70,8 +70,8 @@ function fixture({ initialTimeline = snapshot(), writable = true, preview = fals
   return { render, change, changeYear: value => yearInput(render()).props.onChange({ target: { value } }), submit, saves, loads, guardStates, navigations, cleared: () => cleared, unmount: () => { for (const slot of slots) slot?.cleanup?.(); } };
 }
 
-const questions = ["When was this?", "What happened?", "What did I make it mean?", "What did I start believing?", "How does it show up now?", "What can I see now?"];
-const reflectionFields = ["meaning", "belief", "presentImpact", "perspective"];
+const questions = ["When was this?", "What happened?", "What did I make it mean?", "What did I start believing?", "What can I see now?"];
+const reflectionFields = ["meaning", "belief", "perspective"];
 const review = ui => button(ui.render(), "Review & save what I have").props.onClick();
 const edit = (ui, field = "meaning") => button(ui.render(), `Edit ${field}`).props.onClick();
 
@@ -106,6 +106,9 @@ test("entry selection props open the requested story or a clean new question wit
 test("a reflection-only edit updates the same moment and preserves every other saved field", async () => {
   const rich = entries.map((e, i) => ({ ...e, belief: `Belief ${i}`, presentImpact: `Impact ${i}`, perspective: `Perspective ${i}` }));
   const ui = fixture({ initialTimeline: snapshot(rich) });
+  assert.equal(control(ui.render(), "foundation-presentImpact"), undefined);
+  assert.doesNotMatch(text(ui.render()), /How does it show up now\?/);
+  assert.ok(text(panel(ui.render(), "Your moment in perspective")).includes(rich[0].presentImpact));
   edit(ui, "belief"); ui.change("foundation-belief", "I could learn to ask people for help."); ui.render();
   assert.equal(ui.guardStates.at(-1).dirty, true);
   review(ui); await ui.submit();
@@ -120,13 +123,15 @@ test("a reflection-only edit updates the same moment and preserves every other s
   assert.match(text(tree), /Saved to your private timeline/); ui.unmount();
 });
 
-test("one question at a time preserves all six answers while Back, skips, and review never save implicitly", async () => {
+test("one question at a time preserves all five answers while Back, skips, and review never save implicitly", async () => {
   const ui = fixture({ initialTimeline: snapshot([]) });
+  assert.match(text(ui.render()), /Question 1 of 5/);
+  assert.equal(control(ui.render(), "foundation-presentImpact"), undefined);
   ui.changeYear("2009"); await ui.submit();
   ui.change("foundation-event", "A move that stayed with me"); ui.change("foundation-details", "A place without familiar faces.");
   await ui.submit();
-  const responses = ["I thought I had to manage alone.", "Asking for help was a burden.", "I try to solve everything first.", "Connection can begin by asking."];
-  for (let i = 0; i < 4; i++) {
+  const responses = ["I thought I had to manage alone.", "Asking for help was a burden.", "Connection can begin by asking."];
+  for (let i = 0; i < reflectionFields.length; i++) {
     const tree = ui.render();
     for (let q = 0; q < questions.length; q++) assert.equal(panel(tree, questions[q]).props.hidden, q !== i + 2);
     ui.change(`foundation-${reflectionFields[i]}`, responses[i]);
@@ -139,9 +144,10 @@ test("one question at a time preserves all six answers while Back, skips, and re
   }
   let tree = ui.render(); assert.equal(panel(tree, "Your moment in perspective").props.hidden, false);
   for (const response of responses) assert.ok(text(panel(tree, "Your moment in perspective")).includes(response));
+  assert.match(text(tree), /3 of 3 reflections explored/);
   assert.equal(ui.saves.length, 0, "reading the completed story must precede the explicit save");
   await ui.submit(); assert.equal(ui.saves.length, 1);
-  assert.deepEqual(ui.saves[0].entries, [{ id: null, year: 2009, month: null, title: "A move that stayed with me", details: "A place without familiar faces.", meaning: responses[0], belief: responses[1], presentImpact: responses[2], perspective: responses[3] }]);
+  assert.deepEqual(ui.saves[0].entries, [{ id: null, year: 2009, month: null, title: "A move that stayed with me", details: "A place without familiar faces.", meaning: responses[0], belief: responses[1], presentImpact: null, perspective: responses[2] }]);
   tree = ui.render(); assert.equal(ui.guardStates.at(-1).dirty, false); assert.match(text(tree), /Saved to your private timeline/); ui.unmount();
 });
 
@@ -152,7 +158,7 @@ test("year and title are the only requirements; all deeper questions can be skip
   await ui.submit(); assert.equal(panel(ui.render(), questions[1]).props.hidden, false); assert.match(text(ui.render()), /Give this moment a short title/);
   ui.change("foundation-event", "Started over"); await ui.submit();
   assert.ok(button(ui.render(), "Review & save what I have"));
-  for (let i = 0; i < 4; i++) button(ui.render(), "Skip for now").props.onClick();
+  for (let i = 0; i < reflectionFields.length; i++) button(ui.render(), "Skip for now").props.onClick();
   assert.equal(panel(ui.render(), "Your moment in perspective").props.hidden, false); assert.equal(ui.saves.length, 0);
   await ui.submit(); assert.equal(ui.saves.length, 1);
   assert.deepEqual(ui.saves[0].entries, [{ id: null, year: 2022, month: null, title: "Started over", details: null, meaning: null, belief: null, presentImpact: null, perspective: null }]);

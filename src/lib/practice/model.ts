@@ -69,8 +69,8 @@ export function parsePracticeAction(value: unknown): PracticeAction {
       || !["belief", "perspective"].every(key => fields[key] === undefined || fields[key] === null || text(fields[key], 4000))) {
       throw new PracticeError(400, "Check your timeline entry. Your answers have not been changed.");
     }
-    if (keepTimeline && (fields.year === null || !fields.title.trim() || !fields.meaning.trim() || !fields.presentImpact.trim())) {
-      throw new PracticeError(400, "Add the year, what happened, what it meant, and how it shaped you.");
+    if (keepTimeline && (fields.year === null || !fields.title.trim() || !fields.meaning.trim())) {
+      throw new PracticeError(400, "Add the year, what happened, and what it meant.");
     }
   } else if (value.action === "save_letter" || value.action === "keep_letter") {
     if (!keys(fields, ["body"]) || !text(fields.body, 20000)) throw new PracticeError(400, "Your letter must be 20,000 characters or fewer.");

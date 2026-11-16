@@ -5,7 +5,7 @@ import { timelineFixture, timelineIds } from './canonical-journal-fixture.mjs';
 export const ids = timelineIds;
 const source = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
 
-export async function practiceFixture(t, { beforeMigration, launched = true, publicTimelineMigration = true } = {}) {
+export async function practiceFixture(t, { beforeMigration, launched = true, publicTimelineMigration = true, presentImpactOptionalMigration = true } = {}) {
   const f = await timelineFixture(t);
   await f.db.exec(`
     alter table ruined_members add column if not exists deleted_at timestamptz;
@@ -23,6 +23,7 @@ export async function practiceFixture(t, { beforeMigration, launched = true, pub
   if (beforeMigration) await beforeMigration(f);
   await f.db.exec(await source('db/migrations/20261104180000_member_practice.sql'));
   if (publicTimelineMigration) await f.db.exec(await source('db/migrations/20261106010000_practice_public_timeline.sql'));
+  if (publicTimelineMigration && presentImpactOptionalMigration) await f.db.exec(await source('db/migrations/20261116174702_timeline_remove_present_impact_requirement.sql'));
   const releaseSchedule = (await f.db.query('select course,release_at from member_practice_releases order by course')).rows;
   // The release contract is inspected above; mutation scenarios stay deterministic after December.
   await f.db.query("update member_practice_releases set release_at=statement_timestamp()+interval '1 day' where course='time'");

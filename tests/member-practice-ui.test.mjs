@@ -42,10 +42,10 @@ function fixture({ initial = snapshot(), initialArea, initialCourse, connected =
       const entry = { ...request.fields, id, position: server.timeline.entries.length + 1 };
       server.timeline.entries = [...server.timeline.entries.filter(entry => entry.id !== id), entry];
       server.timeline.revision = String(Number(server.timeline.revision) + 1);
-      server.timeline.completeEntryIds = server.timeline.entries.filter(entry => entry.title && entry.meaning && entry.presentImpact).map(entry => entry.id);
+      server.timeline.completeEntryIds = server.timeline.entries.filter(entry => entry.title && entry.meaning).map(entry => entry.id);
       server.timelineDraft = null;
       server.lastTimelineEntryId = id;
-      const completed = server.timeline.entries.filter(entry => entry.title && entry.meaning && entry.presentImpact).length;
+      const completed = server.timeline.entries.filter(entry => entry.title && entry.meaning).length;
       server.badges.f1 = { earned: completed >= 3, earnedAt: completed >= 3 ? "2026-11-05T23:00:00Z" : null, completed: Math.min(3, completed), target: 3 };
     }
     if (request.action.includes("letter")) server.letter = { ...request.fields, keptAt: request.action === "keep_letter" ? "2026-11-30T23:00:00Z" : null };
@@ -103,9 +103,10 @@ test("Practice keeps Foundations and Monthly separate, future assignments visibl
   ui.unmount();
 });
 
-test("F1 opens the shared Timeline composer with all six prompts and explicit visibility", async () => {
+test("F1 opens the shared Timeline composer with all five prompts and explicit visibility", async () => {
   const ui = fixture({ initialCourse: "f1" });
-  for (const prompt of ["When was this?", "What happened?", "What did I make it mean?", "What did I start believing?", "How does it show up now?", "What can I see now?"]) assert.ok(text(ui.render()).includes(prompt));
+  for (const prompt of ["When was this?", "What happened?", "What did I make it mean?", "What did I start believing?", "What can I see now?"]) assert.ok(text(ui.render()).includes(prompt));
+  assert.doesNotMatch(text(ui.render()), /How does it show up now\?|six prompts/);
   assert.match(text(ui.render()), /Posting shares your entry on your public profile/);
   assert.match(text(ui.render()), /Save a draft to keep working privately/);
   await ui.click("Add an entry →");

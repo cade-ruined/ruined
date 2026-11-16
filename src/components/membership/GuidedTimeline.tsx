@@ -16,9 +16,9 @@ const EMPTY = { year: "", month: "", title: "", details: "", meaning: "", belief
 const REFLECTIONS = [
   { field: "meaning", label: "What did I make it mean?", short: "Meaning", chapter: "The meaning I gave it", hint: "What did that moment seem to say about you, other people, or life?", placeholder: "At the time, I took it to mean…" },
   { field: "belief", label: "What did I start believing?", short: "Belief", chapter: "The belief I carried", hint: "Did it become a rule you lived by, a promise, or an expectation?", placeholder: "After that, I began to believe…" },
-  { field: "presentImpact", label: "How does it show up now?", short: "Now", chapter: "The echo in my life", hint: "Where do you notice that story in your choices, relationships, or habits today?", placeholder: "I notice it when…" },
   { field: "perspective", label: "What can I see now?", short: "Perspective", chapter: "What I can see from here", hint: "With some distance, what feels clearer, different, or still unresolved?", placeholder: "Looking back from here…" },
 ] as const;
+const SAVED_REFLECTIONS = [REFLECTIONS[0], REFLECTIONS[1], { field: "presentImpact", label: "How it shows up now", short: "Now" }, REFLECTIONS[2]] as const;
 function formFor(entry?: MemberTimelineEntry & { journal?: JournalEntry }): TimelineFormValue {
   const now = new Date();
   return entry ? { year: entry.journal && entry.journal.eventYear === null ? "" : String(entry.year), month: entry.month ? String(entry.month) : "", title: entry.title, details: entry.details ?? "", meaning: entry.meaning ?? "", belief: entry.belief ?? "", presentImpact: entry.presentImpact ?? "", perspective: entry.perspective ?? "" } : { ...EMPTY, year: String(now.getFullYear()), month: String(now.getMonth() + 1) };
@@ -32,7 +32,7 @@ function PublicIcon() {
 function PhotoIcon() {
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/><circle cx="8" cy="9" r="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="m3 17 5-5 4 4 4-5 5 6" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>;
 }
-function hasReflections(value: TimelineFormValue) { return REFLECTIONS.some(item => value[item.field]?.trim()); }
+function hasReflections(value: TimelineFormValue) { return SAVED_REFLECTIONS.some(item => value[item.field]?.trim()); }
 function draftTitle(value: TimelineFormValue, kind: PublicTimelineMediaDraft["kind"]) {
   return value.details.trim().split(/\n/)[0].slice(0, 80).trim() || (kind === "images" ? "Photos" : kind === "video" ? "Video" : "A moment in my story");
 }
@@ -431,7 +431,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       <div className={styles.headerActions}>{initialJournal.publicUrl ? <Link href={initialJournal.publicUrl} target="_blank" rel="noreferrer">View profile ↗</Link> : null}<details className={styles.options}><summary aria-label="Timeline options">···</summary><div><button onClick={downloadDraft}>Download draft</button><button disabled={pending} onClick={() => void loadLatest()}>Load latest moments</button></div></details></div>
     </header>
     <Link className={styles.graphicsLink} href="/my#graphics">Timeline graphics <Arrow /></Link>
-    {practice ? <aside className={styles.practiceIntro}><strong>Foundations 1 · Your story, one moment at a time.</strong><p>Work through all six questions below. Choose what you’re ready to share. <b>Post to Timeline</b> makes your entry public; <b>Save draft</b> keeps it private.</p>{initialEntry?.journal.legacyTimelineReflection ? <p>Your earlier entry is still private. Review your answers—including what you can see now—before publishing.</p> : null}</aside> : null}
+    {practice ? <aside className={styles.practiceIntro}><strong>Foundations 1 · Your story, one moment at a time.</strong><p>Work through all five questions below. Choose what you’re ready to share. <b>Post to Timeline</b> makes your entry public; <b>Save draft</b> keeps it private.</p>{initialEntry?.journal.legacyTimelineReflection ? <p>Your earlier entry is still private. Review your answers—including what you can see now—before publishing.</p> : null}</aside> : null}
     {olderWorkDraft ? <aside className={styles.recovery}><div><h2>A newer version is already saved.</h2><p>It’s shown below. Your older unfinished Work draft is also safe.</p></div><button disabled={selected?.id !== olderWorkDraft.entryId || dirty || pending || Boolean(recoveryDraft)} onClick={reviewOlderWorkDraft}>Review unfinished draft</button><button onClick={downloadWorkDraft}>Download unfinished draft</button></aside> : null}
     {preview ? <p className={styles.previewNote}>Try posting here. This preview isn’t saved to an account.</p> : null}
     {recoveryDraft ? <aside className={styles.recovery}><div><h2>Pick up where you left off.</h2><p>Your unfinished post is here.</p></div><button onClick={restore}>Restore draft</button><button onClick={dismissRecovery}>Discard recovered draft</button></aside> : null}
@@ -466,16 +466,18 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       {practice ? <section className={styles.practiceReflections} aria-label="Foundations reflection questions"><div className={styles.reflectionFields}>
           <p>These answers become part of your public post when you publish.</p>
           {REFLECTIONS.map(item => <label key={item.field} htmlFor={`timeline-${item.field}`}><span>{item.label}</span><textarea id={`timeline-${item.field}`} rows={3} maxLength={4000} disabled={frozen} value={form[item.field] ?? ""} onChange={event => change(item.field, event.target.value)} placeholder={item.placeholder} /></label>)}
+          {form.presentImpact?.trim() ? <section><h3>How it shows up now</h3><p className={styles.savedText}>{form.presentImpact}</p></section> : null}
         </div></section> : <details className={styles.deeper} open={reflectionsOpen} onToggle={event => setReflectionsOpen(event.currentTarget.open)}>
         <summary><span>Go deeper <small>optional</small></span><span className={styles.disclosureMark} aria-hidden="true">+</span></summary>
         <div className={styles.reflectionFields}>
           <p>These answers become part of your public post when you publish.</p>
           {REFLECTIONS.map(item => <label key={item.field} htmlFor={`timeline-${item.field}`}><span>{item.label}</span><textarea id={`timeline-${item.field}`} rows={3} maxLength={4000} disabled={frozen} value={form[item.field] ?? ""} onChange={event => change(item.field, event.target.value)} placeholder={item.placeholder} /></label>)}
+          {form.presentImpact?.trim() ? <section><h3>How it shows up now</h3><p className={styles.savedText}>{form.presentImpact}</p></section> : null}
         </div>
       </details>}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {needsReview ? <aside className={styles.review}><h2>Review before saving.</h2>{!reviewLoaded ? <button disabled={pending} type="button" onClick={() => void loadLatest()}>Load latest saved story</button> : <>
-        {selected && !missingAfterReview ? <><p>Currently saved: <strong>{selected.title}</strong> · {formatTimelineDate(selected)}</p><p className={styles.savedText}>{selected.details || "No context added."}</p>{REFLECTIONS.map(item => <p className={styles.savedText} key={item.field}>{item.short}: {selected[item.field] || "Not added."}</p>)}<button type="button" onClick={keepDraft}>Keep my draft for this story</button></> : <><p>{uncertain && !editingId ? "No saved story was found for this attempt. Your draft can be retried with the same identifier." : "This story is no longer available. Your writing is still here."}</p><button type="button" onClick={keepDraft}>{editingId ? "Keep draft as a new story" : "Keep draft and retry"}</button></>}
+        {selected && !missingAfterReview ? <><p>Currently saved: <strong>{selected.title}</strong> · {formatTimelineDate(selected)}</p><p className={styles.savedText}>{selected.details || "No context added."}</p>{SAVED_REFLECTIONS.filter(item => item.field !== "presentImpact" || selected.presentImpact?.trim()).map(item => <p className={styles.savedText} key={item.field}>{item.short}: {selected[item.field] || "Not added."}</p>)}<button type="button" onClick={keepDraft}>Keep my draft for this story</button></> : <><p>{uncertain && !editingId ? "No saved story was found for this attempt. Your draft can be retried with the same identifier." : "This story is no longer available. Your writing is still here."}</p><button type="button" onClick={keepDraft}>{editingId ? "Keep draft as a new story" : "Keep draft and retry"}</button></>}
       </>}</aside> : null}
       <div className={styles.saveRow}>
         <span className={styles.publicLabel}><PublicIcon /> Public<span className={styles.audienceDescription}> · on your profile</span></span>
@@ -494,7 +496,7 @@ export default function GuidedTimeline({ initialJournal, preview = false, ownerI
       <div className={styles.feedTop}><div className={styles.tabs} aria-label="Timeline filters"><button type="button" aria-pressed={feedFilter === "posts"} onClick={() => { setFeedFilter("posts"); setVisibleCount(40); }}>Posts</button><button type="button" aria-pressed={feedFilter === "drafts"} onClick={() => { setFeedFilter("drafts"); setVisibleCount(40); }}><Lock /> Drafts</button></div>{timeline.entries.length > 6 ? <input className={styles.search} type="search" aria-label="Find a post" placeholder="Find a post…" value={search} onChange={event => { setSearch(event.target.value); setVisibleCount(40); }} /> : null}</div>
       {!matchingEntries.length ? <div className={styles.empty}><p>{search ? "No matching posts." : feedFilter === "drafts" ? "No private drafts." : "Your story starts anywhere."}</p><span>{feedFilter === "drafts" ? "Save a private draft from the post options. Only you can see it." : "Share a thought, a photograph, or a moment that stayed with you."}</span></div> : null}
       <div className={styles.posts}>{matchingEntries.slice(0, visibleCount).map(entry => {
-        const reflections = REFLECTIONS.filter(item => entry[item.field]?.trim());
+        const reflections = SAVED_REFLECTIONS.filter(item => entry[item.field]?.trim());
         const showTitle = Boolean(entry.title && !entry.details?.trim().startsWith(entry.title));
         const longBody = (entry.details?.length ?? 0) > 500;
         return <article key={entry.id} className={styles.post} aria-label={postLabel(entry)} data-editing={editingId === entry.id}>
