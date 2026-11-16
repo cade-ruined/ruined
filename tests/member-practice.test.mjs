@@ -76,26 +76,30 @@ test('F1 preserves legacy completion credit across owner-reviewed publication an
   assert.equal((await f.db.query('select foundations_meaning from member_journal_entries where id=$1', [first.id])).rows[0].foundations_meaning, 'A revised meaning');
 });
 
-test('three distinct complete public Timeline stories earn F1 without counting ordinary posts, partial stories or drafts', async t => {
+test('three public Timeline stories without the removed impact answer earn F1 while private, untitled and incomplete work stays excluded', async t => {
   const f = await practiceFixture(t);
+  const currentReflection = { ...reflection, presentImpact: null };
   await f.journal.createJournalEntry(ids.auth, story({ title: 'An ordinary post', timelineReflection: null }));
   await f.journal.createJournalEntry(ids.auth, story({ title: 'An incomplete reflection', timelineReflection: { ...reflection, meaning: ' ' } }));
-  await f.journal.createJournalEntry(ids.auth, story({ title: 'Private canonical reflection', visibility: 'private' }));
-  const savedDraft = await f.journal.createJournalDraft(ids.auth, story({ title: 'Unpublished draft' }));
+  await f.journal.createJournalEntry(ids.auth, story({ title: 'Private canonical reflection', visibility: 'private', timelineReflection: currentReflection }));
+  await f.journal.createJournalEntry(ids.auth, story({ title: 'Private Journal reflection', visibility: 'private', includeOnTimeline: false, timelineReflection: currentReflection }));
+  const untitled = await f.journal.createJournalEntry(ids.auth, story({ title: '', timelineReflection: null }));
+  await f.db.query('update member_journal_entries set foundations_meaning=$1 where id=$2', ['A legacy meaning without a title', untitled.id]);
+  const savedDraft = await f.journal.createJournalDraft(ids.auth, story({ title: 'Unpublished draft', timelineReflection: currentReflection }));
   assert.equal(savedDraft.visibility, 'private');
   let state = await f.get();
   assert.equal(state.badges.f1.completed, 0);
   assert.equal(state.timeline.entries.some(entry => entry.id === savedDraft.id), false);
   const entries = [];
   for (let index = 0; index < 3; index++) {
-    entries.push(await f.journal.createJournalEntry(ids.auth, story({ title: `Shared story ${index}` })));
+    entries.push(await f.journal.createJournalEntry(ids.auth, story({ title: `Shared story ${index}`, timelineReflection: currentReflection })));
     state = await f.get();
     assert.equal(state.badges.f1.completed, index + 1);
     assert.equal(state.badges.f1.earned, index === 2);
   }
   assert.deepEqual(new Set(state.timeline.completeEntryIds), new Set(entries.map(entry => entry.id)));
   assert.deepEqual((await f.get(ids.otherAuth)).timeline.entries, [], 'Assignment reads stay owner-bound');
-  await f.journal.editJournalEntry(ids.auth, entries[0].id, edit(entries[0], { timelineReflection: { ...reflection, perspective: 'A revised perspective.' } }));
+  await f.journal.editJournalEntry(ids.auth, entries[0].id, edit(entries[0], { timelineReflection: { ...currentReflection, perspective: 'A revised perspective.' } }));
   state = await f.get();
   assert.equal(state.badges.f1.completed, 3, 'Versions never count as more entries');
   const stored = (await f.db.query('select foundations_meaning,foundations_present_impact from member_journal_entries where id=$1', [entries[0].id])).rows[0];
@@ -104,6 +108,47 @@ test('three distinct complete public Timeline stories earn F1 without counting o
   state = await f.get();
   assert.equal(state.badges.f1.completed, 2);
   assert.equal(state.timeline.entries.some(entry => entry.id === entries[1].id), false);
+});
+
+test('legacy Keep accepts a missing impact answer and retains completion after a reviewed public entry omits private answers', async t => {
+  const f = await practiceFixture(t);
+  let state = await f.get();
+  state = await f.save('keep_timeline_entry', { ...draft('A retained story'), presentImpact: '' }, state.revision, { expectedTimelineRevision: state.timeline.revision });
+  const id = state.lastTimelineEntryId;
+  assert.deepEqual(state.timeline.completeEntryIds, [id]);
+  assert.equal(state.badges.f1.completed, 1);
+  const owner = await f.journal.getJournalEntry(ids.auth, id);
+  assert.equal(owner.legacyTimelineReflection.presentImpact, null);
+  await f.journal.editJournalEntry(ids.auth, id, edit(owner, { visibility: 'public', timelineReflection: null }));
+  state = await f.get();
+  assert.deepEqual(state.timeline.completeEntryIds, [id]);
+  assert.equal(state.timeline.entries.find(entry => entry.id === id).visibility, 'public');
+  assert.equal(state.timeline.entries.find(entry => entry.id === id).meaning, null, 'Private completion evidence is not surfaced as public reflection');
+});
+
+test('removing the impact requirement preserves all existing data and awards while keeping the completion function private', async t => {
+  const f = await practiceFixture(t, { presentImpactOptionalMigration: false });
+  let state = await f.get();
+  for (let index = 0; index < 3; index++) state = await f.save('keep_timeline_entry', draft(`Earlier story ${index}`), state.revision, { expectedTimelineRevision: state.timeline.revision });
+  const earnedAt = state.badges.f1.earnedAt;
+  const completedIds = state.timeline.completeEntryIds;
+  await f.journal.createJournalDraft(ids.auth, story({ title: 'An existing private draft' }));
+  const tables = ['member_journal_entries', 'member_journal_entry_versions', 'member_journal_drafts', 'member_practice_work', 'member_badge_awards'];
+  const before = new Map();
+  for (const table of tables) before.set(table, (await f.db.query(`select to_jsonb(row) as row from ${table} row order by to_jsonb(row)::text`)).rows);
+  const migration = await readFile(new URL('../db/migrations/20261116174702_timeline_remove_present_impact_requirement.sql', import.meta.url), 'utf8');
+  await f.db.exec(migration);
+  for (const table of tables) assert.deepEqual((await f.db.query(`select to_jsonb(row) as row from ${table} row order by to_jsonb(row)::text`)).rows, before.get(table));
+  state = await f.get();
+  assert.deepEqual(state.timeline.completeEntryIds, completedIds);
+  assert.equal(state.badges.f1.earnedAt, earnedAt);
+  assert.equal(state.badges.f1.earned, true);
+  for (const role of ['anon', 'authenticated']) {
+    assert.equal((await f.db.query("select has_function_privilege($1,'private.ruined_complete_practice_timeline_entries(uuid)','EXECUTE') as allowed", [role])).rows[0].allowed, false);
+  }
+  const [configuration] = (await f.db.query("select prosecdef,proconfig from pg_proc where oid='private.ruined_complete_practice_timeline_entries(uuid)'::regprocedure")).rows;
+  assert.equal(configuration.prosecdef, false);
+  assert.deepEqual(configuration.proconfig, ['search_path=""']);
 });
 
 test('mixed legacy/private and published evidence share completion while public Journal excludes private work', async t => {

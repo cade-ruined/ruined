@@ -80,7 +80,7 @@ async function readPracticeTimeline(sql: Query, memberId: string) {
     left join member_journal_entries entry on entry.member_id = ${memberId}::uuid
       and entry.deleted_at is null and entry.include_on_timeline
       and (entry.visibility = 'private' or entry.timeline_reflection is not null
-        or (nullif(btrim(entry.foundations_meaning), '') is not null and nullif(btrim(entry.foundations_present_impact), '') is not null))
+        or nullif(btrim(entry.foundations_meaning), '') is not null)
     order by entry.event_year, coalesce(entry.event_month, 13), coalesce(entry.event_day, 32), entry.timeline_position, entry.created_at, entry.id
   `;
   return {

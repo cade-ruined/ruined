@@ -13,7 +13,6 @@ const EMPTY = { year: "", month: "", title: "", details: "", meaning: "", belief
 const REFLECTIONS = [
   { field: "meaning", label: "What did I make it mean?", short: "Meaning", chapter: "The meaning I gave it", hint: "What did that moment seem to say about you, other people, or life?", placeholder: "At the time, I took it to mean…" },
   { field: "belief", label: "What did I start believing?", short: "Belief", chapter: "The belief I carried", hint: "Did it become a rule you lived by, a promise, or an expectation?", placeholder: "After that, I began to believe…" },
-  { field: "presentImpact", label: "How does it show up now?", short: "Now", chapter: "The echo in my life", hint: "Where do you notice that story in your choices, relationships, or habits today?", placeholder: "I notice it when…" },
   { field: "perspective", label: "What can I see now?", short: "Perspective", chapter: "What I can see from here", hint: "With some distance, what feels clearer, different, or still unresolved?", placeholder: "Looking back from here…" },
 ] as const;
 const STEPS = ["When", "What happened", ...REFLECTIONS.map(item => item.short)];
@@ -134,7 +133,7 @@ export default function FoundationsTimelineWorksheet({ initialTimeline, preview 
     setUncertain(recoveryDraft.wasPending); focusStep("review"); dismissRecovery(); setStatus("Your unfinished moment is restored.");
   }
   function validThrough(target: EditorStep) {
-    const index = target === "review" ? 6 : target;
+    const index = target === "review" ? STEPS.length : target;
     if (index > 0 && (!/^\d{4}$/.test(form.year) || Number(form.year) < 1900 || Number(form.year) > 2200)) {
       focusStep(0); setError("Add a four-digit year between 1900 and 2200. An approximate year is fine."); return false;
     }
@@ -147,7 +146,7 @@ export default function FoundationsTimelineWorksheet({ initialTimeline, preview 
   }
   function advance() {
     if (step === "review") return;
-    go(step === 5 ? "review" : step + 1);
+    go(step === STEPS.length - 1 ? "review" : step + 1);
   }
   async function submitStep(event: FormEvent) {
     event.preventDefault();
@@ -231,7 +230,7 @@ export default function FoundationsTimelineWorksheet({ initialTimeline, preview 
       {missingRequested || (!allowEdit && !selected) ? <section className={styles.editor} aria-label="Timeline moment unavailable"><h2>{missingRequested ? "This moment isn’t available." : "No saved moments yet."}</h2><p>{missingRequested ? "It may have been removed from your private timeline. Choose another moment to revisit." : "Your saved Foundations moments will appear here."}</p>{allowEdit ? <button type="button" className={styles.backStep} onClick={() => open()}>Start a new moment <Arrow /></button> : null}</section> : null}
       <form ref={formElement} className={styles.editor} hidden={missingRequested || (!allowEdit && !selected)} onSubmit={submitStep} noValidate aria-label="Explore a timeline moment">
         {step !== "review" ? <div className={styles.editorTop}>
-          <div className={styles.stepCaption}><span>{STEPS[step]}</span><span>Question {step + 1} of 6</span></div>
+          <div className={styles.stepCaption}><span>{STEPS[step]}</span><span>Question {step + 1} of {STEPS.length}</span></div>
           <nav className={styles.steps} aria-label="Questions in this moment">{STEPS.map((label, index) => <button key={label} type="button" aria-label={`Question ${index + 1}: ${label}`} aria-current={step === index ? "step" : undefined} data-past={step > index} disabled={disabled} onClick={() => go(index)}><span>{index + 1}</span></button>)}</nav>
         </div> : null}
         <section className={styles.question} data-tone="date" hidden={step !== 0} aria-label="When was this?">
@@ -256,14 +255,15 @@ export default function FoundationsTimelineWorksheet({ initialTimeline, preview 
           {form.details ? <p className={styles.storyContext}>{form.details}</p> : null}
           {allowEdit ? <div className={styles.storyActions}><button type="button" disabled={disabled} onClick={() => go(0)}>{reviewingDraft ? "Edit the moment" : "Edit story"}<Arrow /></button>{firstUnanswered !== -1 ? <button type="button" disabled={disabled} onClick={() => go(firstUnanswered + 2)}>Continue exploring <Arrow /></button> : null}</div> : null}
           <div className={styles.storyReflections}>{REFLECTIONS.map((item, index) => <div key={item.field} className={styles.storyReflection} data-tone={item.field} data-empty={!form[item.field]?.trim()}><div><h3>{item.chapter}</h3>{allowEdit ? <button type="button" disabled={disabled} onClick={() => go(index + 2)} aria-label={`Edit ${item.short.toLowerCase()}`}>{form[item.field]?.trim() ? "Edit" : "Explore"}<Arrow /></button> : null}</div><p>{form[item.field]?.trim() || "Still open. There’s room to come back to this."}</p></div>)}</div>
-          <p className={styles.storyFoot}>{answered ? `${answered} of 4 reflections explored.` : "The moment is a starting point."} Nothing has to be resolved to save it.</p>
+          {form.presentImpact?.trim() ? <div className={styles.storyReflection}><h3>The echo in my life</h3><p>{form.presentImpact}</p></div> : null}
+          <p className={styles.storyFoot}>{answered ? `${answered} of ${REFLECTIONS.length} reflections explored.` : "The moment is a starting point."} Nothing has to be resolved to save it.</p>
         </section>
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
         {needsReview ? <aside className={styles.review}><h2>Review before saving.</h2>{!reviewLoaded ? <button disabled={pending} type="button" onClick={() => void loadLatest()}>Load latest saved moments</button> : <>
-          {selected ? <><p>Currently saved: <strong>{selected.title}</strong> · {formatTimelineDate(selected)}</p><p className={styles.savedText}>{selected.details || "No details added."}</p>{REFLECTIONS.map(item => <p className={styles.savedText} key={item.field}>{item.short}: {selected[item.field] || "Not added."}</p>)}<button type="button" onClick={keepDraft}>Keep my draft for this moment</button></> : uncertain ? <p>The save may have reached your timeline. Download your draft, then discard it here and open the matching saved moment above. Review the list before adding it again.</p> : <><p>This moment is no longer on your timeline.</p><button type="button" onClick={keepDraft}>Keep draft as a new moment</button></>}
+          {selected ? <><p>Currently saved: <strong>{selected.title}</strong> · {formatTimelineDate(selected)}</p><p className={styles.savedText}>{selected.details || "No details added."}</p>{REFLECTIONS.map(item => <p className={styles.savedText} key={item.field}>{item.short}: {selected[item.field] || "Not added."}</p>)}{selected.presentImpact?.trim() ? <p className={styles.savedText}>Now: {selected.presentImpact}</p> : null}<button type="button" onClick={keepDraft}>Keep my draft for this moment</button></> : uncertain ? <p>The save may have reached your timeline. Download your draft, then discard it here and open the matching saved moment above. Review the list before adding it again.</p> : <><p>This moment is no longer on your timeline.</p><button type="button" onClick={keepDraft}>Keep draft as a new moment</button></>}
         </>}</aside> : null}
         <div className={styles.saveRow}>
-          {step !== "review" ? <><button className={styles.backStep} type="button" disabled={disabled || step === 0} onClick={() => go(step - 1)}><Arrow back /> Back</button><div className={styles.saveActions}>{step >= 2 && !form[REFLECTIONS[step - 2].field]?.trim() ? <button className={styles.skip} type="button" disabled={disabled} onClick={advance}>Skip for now</button> : null}<button className={styles.save} type="button" disabled={disabled} onClick={event => { event.preventDefault(); advance(); }}>{step === 5 ? "Read my story" : "Continue"}<Arrow /></button></div></> : <><span className={styles.saveState}><span className={styles.stateDot} data-dirty={dirty || needsReview} aria-hidden="true" />{pending ? "Saving…" : needsReview ? "Review needed" : dirty ? "Unsaved changes" : !allowEdit ? "Read only" : preview ? "Preview only" : !selected ? "New moment" : "Saved to your timeline"}</span>{allowEdit ? <button className={styles.save} type="submit" disabled={disabled || !dirty || needsReview} aria-label={preview ? "Save in preview" : "Save to my timeline"}>{pending ? "Saving…" : "Save moment"}{pending ? null : <Check />}</button> : null}</>}
+          {step !== "review" ? <><button className={styles.backStep} type="button" disabled={disabled || step === 0} onClick={() => go(step - 1)}><Arrow back /> Back</button><div className={styles.saveActions}>{step >= 2 && !form[REFLECTIONS[step - 2].field]?.trim() ? <button className={styles.skip} type="button" disabled={disabled} onClick={advance}>Skip for now</button> : null}<button className={styles.save} type="button" disabled={disabled} onClick={event => { event.preventDefault(); advance(); }}>{step === STEPS.length - 1 ? "Read my story" : "Continue"}<Arrow /></button></div></> : <><span className={styles.saveState}><span className={styles.stateDot} data-dirty={dirty || needsReview} aria-hidden="true" />{pending ? "Saving…" : needsReview ? "Review needed" : dirty ? "Unsaved changes" : !allowEdit ? "Read only" : preview ? "Preview only" : !selected ? "New moment" : "Saved to your timeline"}</span>{allowEdit ? <button className={styles.save} type="submit" disabled={disabled || !dirty || needsReview} aria-label={preview ? "Save in preview" : "Save to my timeline"}>{pending ? "Saving…" : "Save moment"}{pending ? null : <Check />}</button> : null}</>}
         </div>
         <p className={styles.status} role="status">{status}</p>
         <div className={styles.afterword}><div>{dirty || needsReview ? <button className={styles.discard} type="button" disabled={pending} onClick={() => ask({ kind: "discard" })} aria-label="Discard draft">Discard draft</button> : <span>Only for you. Go at your own pace.</span>}{step !== "review" && (step >= 2 || selected) ? <button type="button" disabled={disabled} onClick={() => go("review")}>Review & save what I have</button> : null}</div>{nextMoment && !dirty && !needsReview && step === "review" ? <button type="button" disabled={pending || Boolean(recoveryDraft)} onClick={() => open(nextMoment)}>Next moment <Arrow /></button> : null}</div>

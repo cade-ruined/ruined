@@ -66,6 +66,7 @@ test('recap preserves approved copy and delivery fields while using official bra
    assert.equal(attr(badge,'width'),'112');assert.match(attr(badge,'style'),/height:auto/);assert.equal(attr(badge,'height'),undefined);
   }
  }
+ assert.deepEqual(model.PRACTICE_RECAPS.f1.steps, ['When was this?', 'What happened?', 'What did I make it mean?', 'What did I start believing?', 'What can I see now?']);
  assert.equal(model.isPracticeReleaseCourse('f2'),false);assert.equal(model.isPracticeReleaseCourse('f3'),false);
  assert.equal(model.practiceDeliveryMustStop(6,null),true);assert.equal(model.practiceDeliveryMustStop(2,new Date(Date.now()-24*60*60_000)),true);
 });
