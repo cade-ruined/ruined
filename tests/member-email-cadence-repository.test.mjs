@@ -7,6 +7,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { id, loader, read } from "./helpers/member-sms-fixture.mjs";
 import { installCurrentOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { installPaidReservationFunction } from "./helpers/paid-reservation-fixture.mjs";
+import { Parameter, types } from "../node_modules/postgres/src/types.js";
 
 // The existing SMS fixture's lazy-fragment bridge also supports conditional FOR SHARE clauses.
 function sqlBridge(engine) {
@@ -563,6 +564,20 @@ async function foundationSequence(f, options = {}) {
 
 test("reusable email sequences inherit only reviewed semantics and current authority", async t => {
   const f = await fixture(t);
+  await t.test("scoped call lookup retains a JSON array under the real driver's JSONB serializer", async () => {
+    await f.reset();
+    const first=await f.event({registrationMode:"none"}),second=await f.event({registrationMode:"none"});
+    // PostgreSQL tells postgres.js that ::jsonb parameters need its JSON
+    // serializer. A pre-stringified array therefore becomes a JSON scalar.
+    const driverSql=(strings,...values)=>f.sql(strings,...values.map((value,index)=>
+      value instanceof Parameter ? types.json.serialize(value.value)
+        : /^::jsonb\b/.test(strings[index+1]) ? types.json.serialize(value) : value));
+    driverSql.json=value=>new Parameter(value,types.json.to);
+    await assert.rejects(async()=>await driverSql`select jsonb_array_elements_text(${JSON.stringify([first.id])}::jsonb)`,/scalar/);
+    assert.deepEqual((await f.inheritance.matchingCadenceEvents(driverSql,"membership","members",Infinity,[first.id])).map(event=>event.id),[first.id]);
+    assert.deepEqual(await f.inheritance.matchingCadenceEvents(driverSql,"membership","members",Infinity,[]),[]);
+    assert.deepEqual((await f.inheritance.matchingCadenceEvents(driverSql,"membership","members")).map(event=>event.id).sort(),[first.id,second.id].sort());
+  });
   await t.test("semantic calls inherit without title matching; explicit exclusions, public calls and external calls do not", async () => {
     await f.reset(); const actor = await f.member();
     const first = await f.event({ title: "Any authored title", registrationMode: "none" });

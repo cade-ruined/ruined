@@ -86,7 +86,7 @@ export async function matchingCadenceEvents(tx: TransactionSql,kind: CadenceKind
   const candidates=await tx<Array<{id:string}>>`select event.id from experiences event
     left join private.member_email_cadence_event_bindings binding on binding.experience_id=event.id
     where event.status='published' and event.cancelled_at is null and event.starts_at>statement_timestamp()
-      and (${experienceIds===undefined} or event.id::text in (select jsonb_array_elements_text(${JSON.stringify(experienceIds??[])}::jsonb)))
+      and (${experienceIds===undefined} or event.id::text in (select jsonb_array_elements_text(${tx.json(experienceIds ? [...experienceIds] : [])}::jsonb)))
       and event.ends_at>event.starts_at and event.visibility<>'public' and event.registration_mode<>'external'
       and ((binding.kind=${kind} and binding.track=${track}) or (binding.experience_id is null and ${track}='members'
         and ((${kind}='membership' and event.kind='weekly_call' and event.visibility in ('all_members','block','progression'))
