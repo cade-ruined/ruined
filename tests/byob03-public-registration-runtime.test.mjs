@@ -44,12 +44,17 @@ async function fixture(t, { migrate03 = true } = {}) {
   const communityModel = await load("src/lib/events/community-event-model.ts", {
     "@/data/events": events, "@/lib/events/byob-registration-model": model,
   });
+  const eventDates = await load("src/lib/events/public-event-date.ts");
+  class FixtureDate extends Date {
+    constructor(value) { super(value ?? "2026-09-01T18:00:00.000Z"); }
+  }
   const repository = await load("src/lib/events/community-event-repository.ts", {
     "@/data/events": events,
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/events/community-event-model": communityModel,
+    "@/lib/events/public-event-date": eventDates,
     "@/lib/events/byob-registration-model": model,
-  }, { process: { env: { DATABASE_URL: "postgresql://isolated.invalid/test" } } });
+  }, { process: { env: { DATABASE_URL: "postgresql://isolated.invalid/test" } }, Date: FixtureDate });
   const writer = await load("src/lib/events/byob-registration-repository.ts", {
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/events/community-event-repository": repository,

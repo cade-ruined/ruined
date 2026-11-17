@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
 import * as productColors from "../src/lib/store/product-colors.ts";
+import { resolvePublicEventDate } from "../src/lib/events/public-event-date.ts";
 
 const indexSource = await readFile(new URL("../src/components/sequence/JourneyIndexes.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(indexSource, {
@@ -266,6 +267,16 @@ test("an archive-only homepage keeps its newest three recaps and never labels on
   assert.ok(cards.every(card => text(card).startsWith("Archive")));
   assert.doesNotMatch(cards.map(text).join(" "), /Available|Next gathering|Register/);
   assert.equal(renderEventCards([]).cards.length, 0);
+});
+
+test("expired feed entries become archive cards and disappear from the next-event lobby promotion", () => {
+  const stale = { ...novemberByob, timezone: "America/Denver", location: "Details to come", summary: "Bring Your Own (Bell or bodyweight)." };
+  const feed = [...completedByob.map(item => ({ ...item, timezone: "America/Denver", location: "", time: "", summary: "" })), stale]
+    .map(item => resolvePublicEventDate(item, new Date("2026-11-17T18:00:00Z")));
+  const { cards } = renderEventCards(feed);
+  assert.deepEqual(cards.map(card => attr(card, "href")), ["/community#byob-04", "/community#byob-03", "/community#byob-02"]);
+  assert.ok(cards.every(card => text(card).startsWith("Archive")));
+  assert.doesNotMatch(render({ events: feed }).cards.map(text).join(" "), /Save the date|Register now|Next gathering/);
 });
 
 test("event cards retain the full-width feature and archive pair through mobile landscape widths", () => {

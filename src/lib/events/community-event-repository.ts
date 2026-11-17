@@ -1,10 +1,11 @@
 import "server-only";
 
 import type postgres from "postgres";
-import { EVENTS } from "@/data/events";
+import { EVENTS, type StudioEvent } from "@/data/events";
 import { getApplicationDatabase } from "@/lib/database/server";
 import { BYOB_02_EVENT_KEY } from "@/lib/events/byob-registration-model";
 import { studioEventFromCommunityEvent, type CommunityEventInput, type CommunityEventRecord } from "@/lib/events/community-event-model";
+import { publicEventDateHasPassed, resolvePublicEventDate } from "@/lib/events/public-event-date";
 
 export class CommunityEventRegistrationClosedError extends Error {
   constructor() {
@@ -34,28 +35,34 @@ function record(row: ListingRow): CommunityEventRecord {
 }
 
 /** Missing legacy schema is different from a configured database failing. */
-export async function getPublicCommunityEvents() {
-  if (!process.env.DATABASE_URL?.trim()) return EVENTS;
+export async function getPublicCommunityEvents(now = new Date()) {
+  const currentEvents = (events: StudioEvent[]) => events.map((event) => resolvePublicEventDate(event, now));
+  if (!process.env.DATABASE_URL?.trim()) return currentEvents(EVENTS);
   const sql = getApplicationDatabase();
   const schema = await sql<Array<{ ready: boolean }>>`select to_regclass('public.community_event_listings') is not null as ready`;
-  if (!schema[0]?.ready) return EVENTS;
+  if (!schema[0]?.ready) return currentEvents(EVENTS);
   const rows = await sql<ListingRow[]>`
     select * from community_event_listings where publication_state = 'published'
     order by starts_at, event_key
   `;
   // An empty published set is intentional, never a reason to revive static events.
-  return rows.map((row) => studioEventFromCommunityEvent(record(row)));
+  return currentEvents(rows.map((row) => studioEventFromCommunityEvent(record(row))));
 }
 
-export async function assertCommunityEventRegistrationOpen(tx: postgres.TransactionSql, eventKey: string) {
+export async function assertCommunityEventRegistrationOpen(tx: postgres.TransactionSql, eventKey: string, now = new Date()) {
   const schema = await tx<Array<{ ready: boolean }>>`select to_regclass('public.community_event_listings') is not null as ready`;
-  if (!schema[0]?.ready && eventKey === BYOB_02_EVENT_KEY) return; // Only the original route predates listings.
+  if (!schema[0]?.ready && eventKey === BYOB_02_EVENT_KEY) {
+    const original = EVENTS.find((event) => event.id === eventKey);
+    if (original && !publicEventDateHasPassed(original, now)) return; // Only the original route predates listings.
+  }
   if (!schema[0]?.ready) throw new CommunityEventRegistrationClosedError();
-  const rows = await tx<Array<{ event_key: string }>>`
-    select event_key from community_event_listings
+  const rows = await tx<Array<{ event_key: string; starts_at: Date | string; timezone: string }>>`
+    select event_key, starts_at, timezone from community_event_listings
     where event_key = ${eventKey} and publication_state = 'published'
       and registration_mode = 'byob' and registration_open and event_state <> 'Ended'
     for share
   `;
-  if (!rows[0]) throw new CommunityEventRegistrationClosedError();
+  if (!rows[0] || publicEventDateHasPassed({ dateTime: iso(rows[0].starts_at), timezone: rows[0].timezone }, now)) {
+    throw new CommunityEventRegistrationClosedError();
+  }
 }
