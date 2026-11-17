@@ -43,12 +43,17 @@ async function fixture(t, { schema = true, configured = true, fail = false } = {
   const model = await load("src/lib/events/community-event-model.ts", {
     "@/data/events": events, "@/lib/events/byob-registration-model": byobModel,
   });
+  const eventDates = await load("src/lib/events/public-event-date.ts");
+  class FixtureDate extends Date {
+    constructor(value) { super(value ?? "2026-09-01T18:00:00.000Z"); }
+  }
   const repository = await load("src/lib/events/community-event-repository.ts", {
     "@/data/events": events,
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/events/community-event-model": model,
     "@/lib/events/byob-registration-model": byobModel,
-  }, { process: { env: configured ? { DATABASE_URL: "isolated" } : {} } });
+    "@/lib/events/public-event-date": eventDates,
+  }, { process: { env: configured ? { DATABASE_URL: "isolated" } : {} }, Date: FixtureDate });
   const byob = await load("src/lib/events/byob-registration-repository.ts", {
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/events/community-event-repository": repository,
@@ -99,10 +104,10 @@ test("canonical listings retain exact legacy labels/gallery while filtering priv
   assert.doesNotMatch(JSON.stringify(publicEvents), /never expose|private_note|version|email_normalized/);
 });
 
-test("November's confirmed Saturday gathering follows the completed October archive", async (t) => {
+test("November's completed gathering keeps its actual date without advertising a new one", async (t) => {
   const f = await fixture(t);
   const events = await f.repository.getPublicCommunityEvents();
-  assert.deepEqual(events.filter((event) => event.status !== "Ended").map((event) => event.id), ["byob-04"]);
+  assert.deepEqual(events.filter((event) => event.status !== "Ended"), []);
   const october = events.find((event) => event.id === "byob-03");
   assert.equal(october.status, "Ended");
   assert.equal(october.registration.status, "Closed");
@@ -111,15 +116,38 @@ test("November's confirmed Saturday gathering follows the completed October arch
   assert.equal(new Date(november.dateTime).getUTCDay(), 6);
   assert.equal(november.dateOnly, undefined);
   assert.equal(november.time, "9:00 AM MST");
-  assert.equal(november.location, "Details to come");
+  assert.equal(november.location, "");
   assert.equal(november.registration, undefined);
-  assert.match(november.summary, /Location and registration details coming soon/);
+  assert.equal(november.status, "Ended");
+  assert.doesNotMatch(november.summary, /coming soon/);
   await assert.rejects(f.repository.assertCommunityEventRegistrationOpen(f.sql, "byob-03"),
     (error) => error instanceof f.repository.CommunityEventRegistrationClosedError);
   await f.db.exec("update community_event_listings set starts_at='2026-11-14T17:00:00Z' where event_key='byob-04'");
   const scheduled = (await f.repository.getPublicCommunityEvents()).find((event) => event.id === "byob-04");
   assert.equal(scheduled.dateOnly, undefined, "An operator can revise the confirmed time");
   assert.equal(scheduled.time, "10:00 AM MST");
+});
+
+test("past scheduled listings resolve as closed archives without changing canonical records", async (t) => {
+  const f = await fixture(t);
+  await f.db.exec("update community_event_listings set event_state='Upcoming', registration_open=true, summary='Bring Your Own (Bell or bodyweight). Location and registration details coming soon.', location='Details to come' where event_key='byob-03'");
+  const now = new Date("2026-11-17T18:00:00.000Z");
+  const event = (await f.repository.getPublicCommunityEvents(now)).find((item) => item.id === "byob-03");
+  assert.equal(event.status, "Ended");
+  assert.equal(event.registration.status, "Closed");
+  assert.equal(event.location, "");
+  assert.equal(event.summary, "Bring Your Own (Bell or bodyweight).");
+  await assert.rejects(f.repository.assertCommunityEventRegistrationOpen(f.sql, "byob-03", now),
+    (error) => error instanceof f.repository.CommunityEventRegistrationClosedError);
+  assert.equal((await f.db.query("select event_state from community_event_listings where event_key='byob-03'")).rows[0].event_state, "Upcoming");
+  assert.equal((await f.db.query("select count(*)::int as count from community_event_registrations")).rows[0].count, 0);
+  assert.equal((await f.db.query("select count(*)::int as count from integration_outbox")).rows[0].count, 0);
+});
+
+test("past legacy registration cannot bypass the date cutoff when listings are absent", async (t) => {
+  const f = await fixture(t, { schema: false });
+  await assert.rejects(f.repository.assertCommunityEventRegistrationOpen(f.sql, "byob-02", new Date("2026-11-17T18:00:00Z")),
+    (error) => error instanceof f.repository.CommunityEventRegistrationClosedError);
 });
 
 test("draft/archived and intentionally empty published sets never revive static defaults", async (t) => {

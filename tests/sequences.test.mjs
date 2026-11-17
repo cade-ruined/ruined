@@ -973,7 +973,7 @@ test("Community defaults to all events and event details return to that index", 
   assert.match(eventsIndex, /setSelectedId\(event\?\.id \?\? initialSelectedId\)/);
 });
 
-test("BYOB Nº 01 is an ended recap and the next gathering stays current", async () => {
+test("BYOB recaps retain their media without advertising a past gathering", async () => {
   const [events, eventsIndex, video, videoStat, posterStat, posterMetadata] =
     await Promise.all([
       fs.readFile(path.join(root, "src", "data", "events.ts"), "utf8"),
@@ -993,8 +993,9 @@ test("BYOB Nº 01 is an ended recap and the next gathering stays current", async
 
   assert.match(events, /Array\.from\(\{ length: 4 \}/);
   assert.match(events, /const BYOB_01_FEATURE_IMAGE = BYOB_01_GALLERY\[0\]\?\.src/);
-  assert.match(events, /status: index < 3 \? "Ended" : "Upcoming"/);
-  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"[\s\S]*?"Details to come"/);
+  assert.match(events, /status: "Ended"/);
+  assert.match(events, /isRegistrationEvent[\s\S]*?"8:00 AM MDT"/);
+  assert.doesNotMatch(events, /Details to come/);
   assert.match(events, /Tibble Fork Reservoir · Hill south of the parking lot/);
   assert.match(events, /\/events\/byob-01-recap\.mp4\?v=2/);
   assert.match(events, /\/events\/byob-01-recap-poster\.webp\?v=2/);

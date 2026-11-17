@@ -235,22 +235,22 @@ export default function EventsIndex({ initialEvents = [], initialSelectedId = nu
                       <time dateTime={selected.dateOnly ? selected.dateTime.slice(0, 10) : selected.dateTime}>{selected.date}</time>
                     </dd>
                   </div>
-                  <div>
+                  {selected.time ? <div>
                     <dt className="ui-heading text-[0.58rem] text-black/45">
                       Time
                     </dt>
                     <dd className="mt-1 text-sm leading-tight sm:text-base">
                       {selected.time}
                     </dd>
-                  </div>
-                  <div className="col-span-2 sm:col-span-1">
+                  </div> : null}
+                  {selected.location ? <div className="col-span-2 sm:col-span-1">
                     <dt className="ui-heading text-[0.58rem] text-black/45">
                       Place
                     </dt>
                     <dd className="mt-1 text-sm leading-tight sm:text-base">
                       {selected.location}
                     </dd>
-                  </div>
+                  </div> : null}
                 </dl>
 
                 <div className="border-t border-black/20 pt-4 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
@@ -324,6 +324,11 @@ function EventsOverview({
             heading="Upcoming"
             events={UPCOMING_EVENTS}
           />
+          {!UPCOMING_EVENTS.length ? (
+            <p className="border-b border-black/15 px-1 py-6 text-sm text-black/65 sm:px-2">
+              No upcoming gatherings scheduled.
+            </p>
+          ) : null}
           <EventGroup
             heading="Previously held"
             events={ARCHIVE_EVENTS}

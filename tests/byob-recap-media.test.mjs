@@ -7,13 +7,13 @@ import ts from 'typescript';
 import sharp from 'sharp';
 const root=path.resolve(import.meta.dirname,'..');
 
-test('completed BYOB dates retain their history while November is announced without registration',async()=>{
+test('completed BYOB dates retain their history without promoting a new gathering',async()=>{
  const source=await readFile(path.join(root,'src/data/events.ts'),'utf8');
  const {outputText}=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}});
  const exports={};
  vm.runInNewContext(outputText,{exports,require:()=>({BYOB_01_GALLERY:[{src:'/events/byob-01/gallery/01-img-8059.webp?v=1'}]})});
  const events=JSON.parse(JSON.stringify(exports.EVENTS));
- assert.deepEqual(events.map(e=>[e.id,e.status]),[['byob-01','Ended'],['byob-02','Ended'],['byob-03','Ended'],['byob-04','Upcoming']]);
+ assert.deepEqual(events.map(e=>[e.id,e.status]),[['byob-01','Ended'],['byob-02','Ended'],['byob-03','Ended'],['byob-04','Ended']]);
  assert.deepEqual(events.slice(0,3).map(e=>e.dateTime),[
   '2026-08-14T14:00:00.000Z','2026-09-11T14:00:00.000Z','2026-10-09T14:00:00.000Z',
  ]);
@@ -29,14 +29,16 @@ test('completed BYOB dates retain their history while November is announced with
  assert.equal(october.time,'8:00 AM MDT');
  assert.equal(october.location,'Tibble Fork Reservoir · Hill south of the parking lot');
  assert.deepEqual(october.registration,{href:'/community/byob-03/register',label:'Register',status:'Closed'});
- const upcoming=events.find(e=>e.id==='byob-04');
- assert.equal(upcoming.image,'/events/byob-key-art.png');
- assert.equal(upcoming.date,'14 November 2026');
- assert.equal(upcoming.dateTime,'2026-11-14T16:00:00.000Z');
- assert.equal(upcoming.dateOnly,undefined);
- assert.equal(upcoming.time,'9:00 AM MST');
- assert.equal(upcoming.timezone,'America/Denver');
- assert.equal(upcoming.registration,undefined);
+ const november=events.find(e=>e.id==='byob-04');
+ assert.equal(november.image,'/events/byob-key-art.png');
+ assert.equal(november.date,'14 November 2026');
+ assert.equal(november.dateTime,'2026-11-14T16:00:00.000Z');
+ assert.equal(november.dateOnly,undefined);
+ assert.equal(november.time,'9:00 AM MST');
+ assert.equal(november.timezone,'America/Denver');
+ assert.equal(november.registration,undefined);
+ assert.equal(november.location,'');
+ assert.doesNotMatch(november.summary,/coming soon/i);
 });
 
 for (const number of ['02', '03']) test(`BYOB${number} recap has web-sized media with playback metadata at the front`,async()=>{

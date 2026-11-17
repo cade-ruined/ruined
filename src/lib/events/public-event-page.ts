@@ -10,7 +10,7 @@ export function publicEventHref(eventId: string) {
 function eventDescription(event: StudioEvent) {
   return [
     event.summary.trim(),
-    `${event.date}${event.dateOnly ? "" : ` · ${event.time}`}.`,
+    `${event.date}${event.dateOnly || !event.time.trim() ? "" : ` · ${event.time}`}.`,
     event.location.trim(),
   ].filter(Boolean).join(" ");
 }

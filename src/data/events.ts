@@ -69,11 +69,9 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 4 }, (_, index) => {
       ? "Tibble Fork Reservoir · Up on the hill"
       : isRegistrationEvent
         ? "Tibble Fork Reservoir · Hill south of the parking lot"
-        : "Details to come",
+        : "",
     admission: "",
-    summary: isNovemberEvent
-      ? "Bring Your Own (Bell or bodyweight). Location and registration details coming soon."
-      : "Bring Your Own (Bell or bodyweight).",
+    summary: "Bring Your Own (Bell or bodyweight).",
     timezone: "America/Denver",
     image: isFirstEvent
       ? BYOB_01_FEATURE_IMAGE
@@ -90,6 +88,6 @@ export const EVENTS: StudioEvent[] = Array.from({ length: 4 }, (_, index) => {
           status: "Closed",
         }
       : undefined,
-    status: index < 3 ? "Ended" : "Upcoming",
+    status: "Ended",
   };
 });
