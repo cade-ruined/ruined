@@ -27,8 +27,12 @@ test("personal invitation page shares the greeting but never recipient email, de
   const token = "P".repeat(43), card = { name: "Inviter", memberTag: "inviter" };
   const route = await loadPage(async () => ({ card, recipientName: "Taylor <Test>", recipientEmail: "PRIVATE@example.test", recipientPhone: "PRIVATE PHONE", complimentaryReason: "PRIVATE NOTE", membershipType: "complimentary", complimentaryEndsAt: null, expiresAt: "2099-01-01T00:00:00Z", deliveryStatus: "PRIVATE DELIVERY", joinedCount: 91023 }));
   const props = { params: Promise.resolve({ token }) };
+  const requestStartedAt = Date.now();
   const page = await route.default(props);
-  assert.deepEqual(page.props, { prepaymentRequired: false, registrationOnly: false, signupEnabled: false, paymentSetupOnly: false,
+  const { scheduleAsOf, ...publicProps } = page.props;
+  assert.equal(new Date(scheduleAsOf).toISOString(), scheduleAsOf, "Public schedule dates receive a canonical server timestamp");
+  assert.ok(Date.parse(scheduleAsOf) >= requestStartedAt && Date.parse(scheduleAsOf) <= Date.now(), "Schedule time comes from this request");
+  assert.deepEqual(publicProps, { prepaymentRequired: false, registrationOnly: false, signupEnabled: false, paymentSetupOnly: false,
     invitation: { card, recipientName: "Taylor <Test>", token, expiresAt: "2099-01-01T00:00:00Z", membershipType: "complimentary", complimentaryEndsAt: null, invitationSource: "member", recipientEmailRequired: true } });
   assert.doesNotMatch(JSON.stringify(page.props), /PRIVATE|"recipientEmail":|recipientPhone|91023/);
   const metadata = await route.generateMetadata(props);

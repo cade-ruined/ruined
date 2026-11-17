@@ -45,6 +45,7 @@
 .months li:nth-child(3) { background: #a3b8a6; }
 .months time { display: flex; flex-wrap: wrap; gap: 4px 8px; font: 500 11px/1.5 var(--font-header); }
 .months time span { opacity: .7; }
+.monthStatus { display: block; margin-bottom: 9px; font: 650 10px/1.5 var(--font-header); letter-spacing: .04em; text-transform: uppercase; }
 .months h4 { margin-top: 18px; font: 600 clamp(23px, 2.5vw, 34px)/1.15 var(--font-header); letter-spacing: -.035em; }
 .months p { max-width: 30ch; margin-top: 8px !important; font-size: 12px; line-height: 1.6; }
 .roadmapNote { margin-top: 12px !important; color: #bdbbb2; font-size: 12px; }
@@ -119,6 +120,7 @@
   .months { grid-template-columns: 1fr; gap: 8px; margin-top: 16px; }
   .months li { display: grid; grid-template-columns: 82px minmax(0, 1fr); column-gap: 18px; padding: 18px; }
   .months time { grid-row: span 2; display: block; padding-top: 3px; }
+  .monthStatus { grid-column: 1 / -1; margin-bottom: 7px; }
   .months time span { display: block; }
   .months h4 { margin-top: 0; font-size: 24px; }
   .months p { margin-top: 5px !important; font-size: 11px; }

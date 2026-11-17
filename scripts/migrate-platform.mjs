@@ -150,6 +150,7 @@ const migrations = [
   "../db/migrations/20261106200000_private_member_library.sql",
   "../db/migrations/20261107010000_member_notification_announcements.sql",
   "../db/migrations/20261116174702_timeline_remove_present_impact_requirement.sql",
+  "../db/migrations/20261117190000_foundations_schedule_v4.sql",
 ];
 
 function migrationBody(migration, migrationName) {

@@ -29,6 +29,8 @@ function loader({ react = React, request = noNetwork, extra = {}, router = {}, r
       if (name === "next/image") return { __esModule: true, default: ({ alt, src, width, height }) => React.createElement("img", { alt, src, width, height }) };
       if (name === "@/components/platform/OperatorPageFrame") return { __esModule: true, default: ({ children }) => React.createElement("main", null, children) };
       if (name === "@/components/platform/OperatorGoogleCommunicationField" && !realCommunicationFields) return { __esModule: true, default: () => React.createElement("div", null, "Google link") };
+      if (name === "@/lib/membership/calendar-closures") return load("src/lib/membership/calendar-closures.ts");
+      if (name === "@/lib/communications/member-lifecycle-email-model") return load("src/lib/communications/member-lifecycle-email-model.ts");
       if (/^@\/(components\/platform|lib\/(platform|datetime))\//.test(name)) {
         const local = `src/${name.slice(2)}`;
         const target = [".ts", ".tsx"].map((extension) => local + extension).find((candidate) => existsSync(new URL(candidate, root)));

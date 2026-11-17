@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
 import OperatorDialog from "@/components/platform/OperatorDialog";
+import OperatorClosedDates from "@/components/platform/OperatorClosedDates";
 import OperatorDateTimeField from "@/components/platform/OperatorDateTimeField";
 import OperatorPageFrame from "@/components/platform/OperatorPageFrame";
 import OperatorQuickEventForm from "@/components/platform/OperatorQuickEventForm";
@@ -253,6 +254,8 @@ export default function OperatorExperienceDirectory({
           </p>
         ) : null}
       </section>
+
+      <OperatorClosedDates />
 
       {directory.canCreate ? (
         <OperatorDialog key={formVersion} open={createOpen} title={advancedCreate ? "Advanced event setup" : selectedCircle ? "Schedule a meeting" : "New event"} context={selectedCircle ? <span className="text-sm text-[color:var(--operator-muted)]">{selectedCircle.name}</span> : undefined} onClose={closeCreate} pending={pending} returnFocusId="new-experience-trigger">

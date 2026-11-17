@@ -20,6 +20,7 @@ async function fixture(t) {
   await db.exec(read("db/migrations/20261012200000_foundations_schedule_v3.sql"));
   await db.exec(read("db/migrations/20261104190000_complimentary_foundations_cohorts.sql"));
   await db.exec(read("db/migrations/20261105235000_active_complimentary_foundations_exception.sql"));
+  await db.exec(read("db/migrations/20261117190000_foundations_schedule_v4.sql").split("-- Preserve pending")[0] + "commit;");
   const resolve=async memberId=>(await db.query("select private.ruined_assign_complimentary_foundations($1) as schedule",[memberId])).rows[0].schedule;
   async function member(at,basis="complimentary",ready=true,complimentary=true) {
     const id=randomUUID();await db.query("insert into member_registration_access values($1,$2,$3,$4,$5)",[id,at,basis,ready,complimentary]);return id;

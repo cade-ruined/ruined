@@ -39,7 +39,7 @@ export function normalizeCadenceEventBinding(value: unknown, event: BindingEvent
     if (typeof input.cohortMonth!=="string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.cohortMonth)
       || input.cohortMonth<"2026-11" || input.cohortMonth>"9998-12") throw new AdminEmailError(400,"Choose the accepted Foundations cohort month.");
     const index=Number(kind.slice(-2))-1;
-    const supported=["foundations-prepaid-v1","foundations-prepaid-v2","foundations-prepaid-v3"] as const;
+    const supported=["foundations-prepaid-v1","foundations-prepaid-v2","foundations-prepaid-v3","foundations-prepaid-v4"] as const;
     if ((event.timezone ?? event.timeZone)!=="America/Denver" || !supported.some(version=>
       Date.parse(foundationsBillingScheduleForMonth(input.cohortMonth as string,"monthly",version).callStartsAt[index])===Date.parse(event.startsAt))) {
       throw new AdminEmailError(400,"This call must match its accepted cohort session time.");
@@ -82,10 +82,11 @@ async function classification(tx: TransactionSql,event: CadenceEventSnapshot): P
 const sameBinding=(a:CadenceEventBinding|undefined|null,b:CadenceEventBinding)=>Boolean(a && a.kind===b.kind && a.track===b.track && (a.cohortMonth ?? null)===(b.cohortMonth ?? null));
 
 /** Lists semantic matches only. Neither titles nor calendar coincidences classify a call. */
-export async function matchingCadenceEvents(tx: TransactionSql,kind: CadenceKind,track: CadenceTrack,deadline=Infinity): Promise<CadenceEventSnapshot[]> {
+export async function matchingCadenceEvents(tx: TransactionSql,kind: CadenceKind,track: CadenceTrack,deadline=Infinity,experienceIds?: readonly string[]): Promise<CadenceEventSnapshot[]> {
   const candidates=await tx<Array<{id:string}>>`select event.id from experiences event
     left join private.member_email_cadence_event_bindings binding on binding.experience_id=event.id
     where event.status='published' and event.cancelled_at is null and event.starts_at>statement_timestamp()
+      and (${experienceIds===undefined} or event.id::text in (select jsonb_array_elements_text(${tx.json(experienceIds ? [...experienceIds] : [])}::jsonb)))
       and event.ends_at>event.starts_at and event.visibility<>'public' and event.registration_mode<>'external'
       and ((binding.kind=${kind} and binding.track=${track}) or (binding.experience_id is null and ${track}='members'
         and ((${kind}='membership' and event.kind='weekly_call' and event.visibility in ('all_members','block','progression'))
@@ -219,7 +220,7 @@ async function enrollComplimentaryCohort(tx: TransactionSql,event: CadenceEventS
 }
 
 /** Runs only behind the worker's enablement/configuration gates. It never calls a provider. */
-export async function reconcileCadenceInheritance(configuration: CadenceConfiguration,deadline: number): Promise<{plans:number;enrolled:number}> {
+export async function reconcileCadenceInheritance(configuration: CadenceConfiguration,deadline: number,experienceIds?: readonly string[]): Promise<{plans:number;enrolled:number}> {
   const result={plans:0,enrolled:0};
   if (!configuration.enabled || !configuration.ready || !configuration.activatedAt || Date.parse(configuration.activatedAt)>Date.now() || Date.now()>=deadline) return result;
   const sql=getApplicationDatabase();
@@ -227,7 +228,7 @@ export async function reconcileCadenceInheritance(configuration: CadenceConfigur
     from private.member_email_cadence_sequences where active order by id`;
   for (const source of sequences) {
     if (Date.now()>=deadline) break;
-    const events=await matchingCadenceEvents(sql as unknown as TransactionSql,source.kind,source.track,deadline);
+    const events=await matchingCadenceEvents(sql as unknown as TransactionSql,source.kind,source.track,deadline,experienceIds);
     for (const expectedEvent of events) {
       if (Date.now()>=deadline) break;
       try {

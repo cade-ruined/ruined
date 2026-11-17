@@ -1074,8 +1074,12 @@ export async function getOpsExperienceRecord(
 export async function createOpsExperience(input: {
   actorAuthUserId: string;
   draft: OpsExperienceDraftInput;
+  requestId?: string;
 }): Promise<{ experienceId: string }> {
-  return persistOpsExperience(input);
+  return persistOpsExperience({
+    ...input,
+    ...(input.requestId ? { requestId: requireUuid(input.requestId, "Creation request") } : {}),
+  });
 }
 
 export async function createAndPublishOpsExperience(input: {
@@ -1141,8 +1145,8 @@ async function persistOpsExperience(input: {
     }
     await requireBadgeCreditContext(tx, draft.badgeCredit ?? readExperienceBadgeCredit({}), draft, undefined, input.meetingUrl);
     const dedupeKey = input.requestId ? `experience-create:${access.authUserId}:${input.requestId}` : undefined;
-    const requestFingerprint = input.meetingUrl
-      ? createHash("sha256").update(JSON.stringify({ draft, meetingUrl: input.meetingUrl })).digest("hex")
+    const requestFingerprint = input.requestId
+      ? createHash("sha256").update(JSON.stringify({ draft, meetingUrl: input.meetingUrl ?? null })).digest("hex")
       : null;
     if (dedupeKey) {
       await tx`select pg_advisory_xact_lock(hashtext(${dedupeKey}), 50)`;

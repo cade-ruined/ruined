@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { MEMBERSHIP_LINKS } from "@/data/public-membership";
 import type { MembershipBillingPlan } from "@/lib/membership/pricing";
 import type { PublicMemberInvitation } from "@/lib/membership/invitation-model";
+import { publicMembershipSchedule } from "@/lib/membership/public-schedule";
 import PersonalInvitationAcceptance from "@/components/membership/PersonalInvitationAcceptance";
 import { useInvitationExpired } from "@/components/membership/use-invitation-expiry";
 import MembershipWaitlistForm from "./MembershipWaitlistForm";
@@ -20,9 +21,19 @@ import styles from "./MembershipOverview.module.css";
 
 export type MembershipLandingInvitation = PublicMemberInvitation & { token?: string };
 
-export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, invitation, onVerified }: {
-  preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean; prepaymentRequired?: boolean; invitation?: MembershipLandingInvitation; onVerified?: (destination: string) => void;
+export default function MembershipOverview({ preview = false, signupEnabled = false, paymentSetupOnly = false, registrationOnly = false, prepaymentRequired = false, invitation, onVerified, scheduleAsOf = null }: {
+  preview?: boolean; signupEnabled?: boolean; paymentSetupOnly?: boolean; registrationOnly?: boolean; prepaymentRequired?: boolean; invitation?: MembershipLandingInvitation; onVerified?: (destination: string) => void; scheduleAsOf?: string | null;
 }) {
+  const [currentScheduleDate, setCurrentScheduleDate] = useState(scheduleAsOf);
+  const schedule = publicMembershipSchedule(currentScheduleDate);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refresh = () => setCurrentScheduleDate(new Date().toISOString());
+    refresh();
+    const interval = window.setInterval(refresh, 30_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", refresh); };
+  }, [scheduleAsOf]);
   const personalInvitation = Boolean(invitation?.recipientName);
   const complimentaryInvitation = personalInvitation && invitation?.membershipType === "complimentary";
   const invitationDeadlineElapsed = useInvitationExpired(invitation?.expiresAt ?? null);
@@ -99,8 +110,8 @@ export default function MembershipOverview({ preview = false, signupEnabled = fa
       </ol>
     </section>
 
-    <MembershipFoundationsSection ctaLabel={ctaLabel} />
-    <MembershipMonthlySection ctaLabel={ctaLabel} />
+    <MembershipFoundationsSection ctaLabel={ctaLabel} schedule={schedule} />
+    <MembershipMonthlySection ctaLabel={ctaLabel} schedule={schedule} />
     <MembershipCommunitySection ctaLabel={ctaLabel} />
     <section className={styles.invitationBand} id="your-invitation" aria-labelledby="invitation-heading">
       <MembershipInvitationRoom className={styles.invitationRoom} frameToCard>

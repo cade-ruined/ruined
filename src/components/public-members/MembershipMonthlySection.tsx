@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, type ComponentType } from "react";
+import type { PublicMembershipSchedule } from "@/lib/membership/public-schedule";
 import styles from "./MembershipMonthlySection.module.css";
 
 const stages = [
@@ -38,13 +39,7 @@ const stages = [
   },
 ] as const;
 
-const confirmedMonths = [
-  { date: "2026-11", month: "November", year: "2026", topic: "Foundations", note: "Foundations only. Our shared starting point." },
-  { date: "2026-12", month: "December", year: "2026", topic: "TIME", note: "Where it goes. What matters. What changes." },
-  { date: "2027-01", month: "January", year: "2027", topic: "Reinvention", note: "Who you are becoming. What comes next." },
-] as const;
-
-const MembershipMonthlySection: ComponentType<{ ctaLabel: string }> = () => {
+const MembershipMonthlySection: ComponentType<{ ctaLabel: string; schedule?: PublicMembershipSchedule }> = ({ schedule }) => {
   const [selectedStage, setSelectedStage] = useState(0);
   const selectorId = useId();
   const stage = stages[selectedStage];
@@ -71,19 +66,20 @@ const MembershipMonthlySection: ComponentType<{ ctaLabel: string }> = () => {
 
         <div className={styles.roadmap} aria-labelledby="monthly-roadmap-heading">
           <div className={styles.roadmapHeading}>
-            <h3 id="monthly-roadmap-heading">Coming up</h3>
+            <h3 id="monthly-roadmap-heading">Now &amp; next</h3>
             <p>One starting point. Then a new topic each month.</p>
           </div>
-          <ol className={styles.months}>
-            {confirmedMonths.map(month => (
+          {!!schedule?.months.length && <ol className={styles.months}>
+            {schedule.months.map(month => (
               <li key={month.date}>
+                <span className={styles.monthStatus}>{month.status}</span>
                 <time dateTime={month.date}>{month.month} <span>{month.year}</span></time>
                 <h4>{month.topic}</h4>
                 <p>{month.note}</p>
               </li>
             ))}
-          </ol>
-          <p className={styles.roadmapNote}>More 2027 topics will be announced as they’re confirmed.</p>
+          </ol>}
+          <p className={styles.roadmapNote}>More monthly topics will be announced as they’re confirmed.</p>
         </div>
 
         <p className={styles.challenge}><strong>A monthly group challenge.</strong><span>Each topic comes with a small challenge to put the work into practice together.</span></p>
@@ -92,9 +88,9 @@ const MembershipMonthlySection: ComponentType<{ ctaLabel: string }> = () => {
           <summary><span>Explore a month: TIME</span><span className={styles.disclosureMark} aria-hidden="true">+</span></summary>
           <div className={styles.sample}>
             <div className={styles.sampleIntro}>
-              <p className={styles.eyebrow}>December 2026 · TIME</p>
+              <p className={styles.eyebrow}>A sample month · TIME</p>
               <h3>Time for<br />what matters.</h3>
-              <p className={styles.sampleNote}>An example of how we’ll explore one topic through four different conversations.</p>
+              <p className={styles.sampleNote}>An example of exploring one topic through four different conversations.</p>
               <p className={styles.annotation}>Make room for it.</p>
             </div>
             <div className={styles.sampleWork}>

@@ -12,19 +12,19 @@ const migration = "db/migrations/20260914221302_community_event_operations.sql";
 const byob03Migration = "db/migrations/20260915161147_byob_03_registration.sql";
 const admin = "11111111-1111-4111-8111-111111111111";
 const guide = "22222222-2222-4222-8222-222222222222";
-async function load(path, dependencies = {}) {
+async function load(path, dependencies = {}, globals = {}) {
   const code = ts.transpileModule(await source(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const cjsModule = { exports: {} };
-  new Function("require", "module", "exports", code)((name) => {
+  new Function("require", "module", "exports", ...Object.keys(globals), code)((name) => {
     if (name === "server-only") return {};
     assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
     return dependencies[name];
-  }, cjsModule, cjsModule.exports);
+  }, cjsModule, cjsModule.exports, ...Object.values(globals));
   return cjsModule.exports;
 }
 class OpsOperatingRepositoryError extends Error { constructor(code, message) { super(message); this.code = code; } }
 
-async function fixture(t, { migrate = true, migrateByob03 = true, databaseFails = false } = {}) {
+async function fixture(t, { migrate = true, migrateByob03 = true, databaseFails = false, now = "2026-09-01T18:00:00Z" } = {}) {
   const PGlite = await loadPGliteForSchemaChecks();
   const db = new PGlite();
   const driver = postgres({ host: "127.0.0.1", port: 1, max: 1 });
@@ -73,13 +73,16 @@ async function fixture(t, { migrate = true, migrateByob03 = true, databaseFails 
     "@/data/events": events,
     "@/lib/events/byob-registration-model": byobModel,
   });
+  const eventDates = await load("src/lib/events/public-event-date.ts");
+  class FixtureDate extends Date { constructor(...args) { super(...(args.length ? args : [now])); } }
   const repository = await load("src/lib/events/community-event-repository.ts", {
     "node:crypto": { randomUUID }, "@/data/events": events,
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/platform/ops-operating-repository": { OpsOperatingRepositoryError },
     "@/lib/events/community-event-model": model,
     "@/lib/events/byob-registration-model": byobModel,
-  });
+    "@/lib/events/public-event-date": eventDates,
+  }, { Date: FixtureDate });
   const byob = await load("src/lib/events/byob-registration-repository.ts", {
     "@/lib/database/server": { getApplicationDatabase: () => sql },
     "@/lib/events/community-event-repository": repository,
@@ -201,6 +204,41 @@ test("legacy schema fallback preserves real published content until migration, n
   assert.deepEqual(await f.repository.getPublicCommunityEvents(), f.events.EVENTS);
   await f.byob.registerByob02Participant(f.submission);
   assert.equal((await f.db.query("select count(*)::int as count from community_event_registrations")).rows[0].count, 1);
+});
+
+test("elapsed published events close in the member feed and reject registration without changing operator records", async (t) => {
+  const f = await fixture(t, { now: "2026-11-17T18:00:00Z" });
+  await publishByob03(f);
+  const before = (await f.db.query("select * from community_event_listings where event_key='byob-03'")).rows;
+  const event = (await f.repository.getPublicCommunityEvents()).find((item) => item.id === "byob-03");
+  assert.equal(event.status, "Ended");
+  assert.equal(event.registration.status, "Closed");
+  await assert.rejects(f.byob.registerByobParticipant(f.submission03, f.byobModel.BYOB_03_REGISTRATION), (error) => error.code === "conflict");
+  assert.deepEqual((await f.db.query("select * from community_event_listings where event_key='byob-03'")).rows, before);
+  assert.equal((await f.db.query("select count(*)::int n from community_event_registrations")).rows[0].n, 0);
+  assert.equal((await f.db.query("select count(*)::int n from integration_outbox")).rows[0].n, 0);
+});
+
+test("member feed fallback archives elapsed static events and legacy routes cannot bypass closure", async (t) => {
+  const f = await fixture(t, { migrate: false, now: "2026-11-17T18:00:00Z" });
+  const original = JSON.stringify(f.events.EVENTS);
+  const events = await f.repository.getPublicCommunityEvents();
+  assert.equal(events.length, 3, "No new BYOB is scheduled or invented");
+  assert.ok(events.every((event) => event.status === "Ended"));
+  assert.ok(events.every((event) => event.registration?.status !== "Open"));
+  assert.equal(JSON.stringify(f.events.EVENTS), original);
+  await assert.rejects(f.byob.registerByob02Participant(f.submission), (error) => error.code === "conflict");
+  assert.equal((await f.db.query("select count(*)::int n from community_event_registrations")).rows[0].n, 0);
+  delete process.env.DATABASE_URL;
+  assert.deepEqual(await f.repository.getPublicCommunityEvents(), events, "An unconfigured host uses the same date projection");
+});
+
+test("registration remains available on the event day and closes at Mountain midnight", async (t) => {
+  const f = await fixture(t);
+  await publishByob03(f);
+  await f.db.exec("update community_event_listings set starts_at='2026-11-14T16:00:00Z' where event_key='byob-03'");
+  await f.repository.assertCommunityEventRegistrationOpen(f.sql, "byob-03", new Date("2026-11-15T06:59:59.999Z"));
+  await assert.rejects(f.repository.assertCommunityEventRegistrationOpen(f.sql, "byob-03", new Date("2026-11-15T07:00:00Z")), (error) => error.code === "conflict");
 });
 
 test("configured database errors stop public feed reads and registration", async (t) => {

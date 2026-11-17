@@ -7,6 +7,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { id, loader, read } from "./helpers/member-sms-fixture.mjs";
 import { installCurrentOperatorFundingFunctions } from "./helpers/operator-funding-fixture.mjs";
 import { installPaidReservationFunction } from "./helpers/paid-reservation-fixture.mjs";
+import { Parameter, types } from "../node_modules/postgres/src/types.js";
 
 // The existing SMS fixture's lazy-fragment bridge also supports conditional FOR SHARE clauses.
 function sqlBridge(engine) {
@@ -85,6 +86,7 @@ async function fixture(t) {
       'select registered_at is not null and test_ready from public.member_registration_access where member_id=$1';`);
   await db.exec(read("db/migrations/20261012200000_foundations_schedule_v3.sql"));
   await db.exec(read("db/migrations/20261104190000_complimentary_foundations_cohorts.sql"));
+  await db.exec(read("db/migrations/20261117190000_foundations_schedule_v4.sql").split("-- Preserve pending")[0] + "commit;");
   const sql = sqlBridge(db);
   const calendar=[];
   const env = { MEMBER_EMAIL_CADENCE_ENABLED: "true", MEMBER_EMAIL_CADENCE_ACTIVATED_AT: ago(2880), GOOGLE_COMMUNICATIONS_LIVEMODE: "true" };
@@ -562,6 +564,20 @@ async function foundationSequence(f, options = {}) {
 
 test("reusable email sequences inherit only reviewed semantics and current authority", async t => {
   const f = await fixture(t);
+  await t.test("scoped call lookup retains a JSON array under the real driver's JSONB serializer", async () => {
+    await f.reset();
+    const first=await f.event({registrationMode:"none"}),second=await f.event({registrationMode:"none"});
+    // PostgreSQL tells postgres.js that ::jsonb parameters need its JSON
+    // serializer. A pre-stringified array therefore becomes a JSON scalar.
+    const driverSql=(strings,...values)=>f.sql(strings,...values.map((value,index)=>
+      value instanceof Parameter ? types.json.serialize(value.value)
+        : /^::jsonb\b/.test(strings[index+1]) ? types.json.serialize(value) : value));
+    driverSql.json=value=>new Parameter(value,types.json.to);
+    await assert.rejects(async()=>await driverSql`select jsonb_array_elements_text(${JSON.stringify([first.id])}::jsonb)`,/scalar/);
+    assert.deepEqual((await f.inheritance.matchingCadenceEvents(driverSql,"membership","members",Infinity,[first.id])).map(event=>event.id),[first.id]);
+    assert.deepEqual(await f.inheritance.matchingCadenceEvents(driverSql,"membership","members",Infinity,[]),[]);
+    assert.deepEqual((await f.inheritance.matchingCadenceEvents(driverSql,"membership","members")).map(event=>event.id).sort(),[first.id,second.id].sort());
+  });
   await t.test("semantic calls inherit without title matching; explicit exclusions, public calls and external calls do not", async () => {
     await f.reset(); const actor = await f.member();
     const first = await f.event({ title: "Any authored title", registrationMode: "none" });
@@ -572,7 +588,11 @@ test("reusable email sequences inherit only reviewed semantics and current autho
     const excluded = await f.event();
     await f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, excluded.id, { kind: "none", track: "members" }, excluded));
     assert.deepEqual((await f.inheritance.matchingCadenceEvents(f.sql, "membership", "members")).map(e => e.id).sort(), [first.id, second.id].sort());
-    assert.deepEqual(await reconcile(f), { plans: 2, enrolled: 0 });
+    const configuration=f.model.getMemberEmailCadenceConfiguration(f.env);
+    assert.deepEqual(await f.inheritance.reconcileCadenceInheritance(configuration,Date.now()+30_000,[]),{plans:0,enrolled:0});
+    assert.deepEqual(await f.inheritance.reconcileCadenceInheritance(configuration,Date.now()+30_000,[first.id]),{plans:1,enrolled:0});
+    assert.deepEqual((await inheritedPlans(f)).map(plan=>plan.experience_id),[first.id],"A scoped publication cannot change an unrelated call");
+    assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 0 });
     assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
     const plans = await inheritedPlans(f);
     assert.ok(plans.every(plan => plan.sequence_id === source.id && plan.sequence_revision === 1 && plan.snapshot.templateVersion === "approved-v1"));
