@@ -16,6 +16,8 @@ export type StudioEvent = {
   date: string;
   /** Absolute RFC 3339 instant. Timed events must include Z or a UTC offset. */
   dateTime: string;
+  /** A date announced without a confirmed start time. */
+  dateOnly?: boolean;
   time: string;
   location: string;
   admission: string;

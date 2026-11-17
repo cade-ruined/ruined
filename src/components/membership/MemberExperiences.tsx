@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { StudioEvent } from "@/data/events";
 import { usePublicEvents } from "@/lib/events/use-public-events";
-import { holidayClosures } from "@/lib/communications/member-lifecycle-email-model";
+import { closureDateLabel, closureLastDate, closuresInDateRange, type CalendarClosure } from "@/lib/membership/calendar-closures";
 import type {
   MemberExperienceSummary,
   MemberExperiencesSnapshot,
@@ -276,10 +276,15 @@ export default function MemberExperiences({
   );
   const monthHolidays = useMemo(() => {
     const first = new Date(Date.UTC(calendarMonth.year, calendarMonth.month, 1)).toISOString().slice(0, 10);
-    const last = new Date(Date.UTC(calendarMonth.year, calendarMonth.month + 1, 0)).toISOString().slice(0, 10);
-    return [...holidayClosures(calendarMonth.year - 1), ...holidayClosures(calendarMonth.year)]
-      .filter(period => period.start <= last && period.end >= first);
+    const next = new Date(Date.UTC(calendarMonth.year, calendarMonth.month + 1, 1)).toISOString().slice(0, 10);
+    return closuresInDateRange(first, next);
   }, [calendarMonth]);
+  const today = dateParts(new Date().toISOString(), "America/Denver");
+  const todayDate = `${today.year}-${String(today.month + 1).padStart(2, "0")}-${String(today.day).padStart(2, "0")}`;
+  const upcomingCalendarEntries = [
+    ...upcoming.map((experience) => ({ date: experience.startsAt, experience, closure: null })),
+    ...closuresInDateRange(todayDate, "2028-01-02").map((closure) => ({ date: closure.startDate, experience: null, closure })),
+  ].sort((left, right) => left.date.localeCompare(right.date));
   const selectedDayKey = selected ? dayKey(dateParts(selected.startsAt, selected.timezone)) : null;
   const selectedDayExperiences = selectedDayKey
     ? allExperiences.filter(
@@ -414,6 +419,20 @@ export default function MemberExperiences({
     );
   }
 
+  function closureRow(closure: CalendarClosure) {
+    const date = new Date(`${closure.startDate}T12:00:00Z`);
+    return <li className={styles.eventRow} data-calendar-closure={closure.id} key={closure.id}>
+      <time className={styles.date} dateTime={closure.startDate}>
+        <span>{String(date.getUTCDate()).padStart(2, "0")}</span>
+        <span>{new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(date)}</span>
+      </time>
+      <div className={styles.rowContent}>
+        <h3>{closure.title}</h3>
+        <p>Closed · All day{closureLastDate(closure) !== closure.startDate ? ` · Through ${closureDateLabel(closureLastDate(closure))}` : ""}</p>
+      </div>
+    </li>;
+  }
+
   return (
     <main className={`member-journey-page member-events-page ${styles.page}`} data-member-experiences>
       <header className={styles.header}>
@@ -431,8 +450,8 @@ export default function MemberExperiences({
           </div>
         </div>
         {view === "list" ? (
-          upcoming.length ? (
-            <ol className={styles.eventList}>{upcoming.map(eventRow)}</ol>
+          upcomingCalendarEntries.length ? (
+            <ol className={styles.eventList}>{upcomingCalendarEntries.map((entry) => entry.experience ? eventRow(entry.experience) : closureRow(entry.closure!))}</ol>
           ) : (
             <div className={styles.empty}>
               <h3>Nothing scheduled yet.</h3>
@@ -486,16 +505,16 @@ export default function MemberExperiences({
                         (experience) => dayKey(dateParts(experience.startsAt, experience.timezone)) === dayKey(cellDate),
                       );
                       const civilDate = `${cellDate.year}-${String(cellDate.month + 1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-                      const holidays = monthHolidays.filter(period => period.start <= civilDate && period.end >= civilDate);
+                      const holidays = monthHolidays.filter(period => period.startDate <= civilDate && period.endDateExclusive > civilDate);
                       const holidayLabel = holidays.map(period => period.title).join(", ");
-                      const holidayMarker = holidays.length ? <span aria-label={`${holidayLabel} holiday period`} className="mt-auto block h-1 w-3 shrink-0 bg-[var(--color-shop)]" data-holiday-date={civilDate} title={holidayLabel} /> : null;
+                      const holidayMarker = holidays.length ? <span aria-label={`${holidayLabel}: Closed all day`} className="mt-auto block text-[0.5rem] font-bold leading-tight text-[var(--member-ink)] sm:text-[0.58rem]" data-holiday-date={civilDate} title={`${holidayLabel}: Closed all day`}>Closed<span className="hidden sm:inline"> · All day</span></span> : null;
                       const selectedHere = events.some((experience) => experience.id === selectedId);
                       return (
                         <td className="align-top" key={day}>
                           {events.length ? (
                             <button
                               aria-controls="experience-detail"
-                              aria-label={`${calendarDateLabel(cellDate)}: ${events.map((experience) => experience.title).join(", ")}${holidayLabel ? `; ${holidayLabel} holiday period` : ""}`}
+                              aria-label={`${calendarDateLabel(cellDate)}: ${events.map((experience) => experience.title).join(", ")}${holidayLabel ? `; ${holidayLabel}: Closed all day` : ""}`}
                               aria-pressed={selectedHere}
                               className={`group flex h-[3.25rem] w-full flex-col rounded-[3px] p-1.5 text-left transition-[background-color,box-shadow,transform] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-poster)] sm:h-[4.5rem] sm:p-2 ${selectedHere ? "bg-[var(--member-subtle)] text-[var(--member-ink)] shadow-[inset_0_-3px_0_#d0312d]" : "bg-[var(--member-soft)] text-[var(--member-muted)] hover:bg-[var(--member-soft)]"}`}
                               onClick={() => selectExperience(events[0])}
@@ -509,7 +528,7 @@ export default function MemberExperiences({
                               </span>
                             </button>
                           ) : (
-                            <span aria-label={holidayLabel ? `${calendarDateLabel(cellDate)}: ${holidayLabel} holiday period` : undefined} className="flex h-[3.25rem] flex-col rounded-[3px] bg-[var(--member-soft)] p-1.5 font-[var(--font-body)] text-[0.6rem] font-semibold tabular-nums text-[var(--member-muted)] sm:h-[4.5rem] sm:p-2 sm:text-xs">
+                            <span aria-label={holidayLabel ? `${calendarDateLabel(cellDate)}: ${holidayLabel}: Closed all day` : undefined} className={`flex h-[3.25rem] flex-col rounded-[3px] p-1.5 font-[var(--font-body)] text-[0.6rem] font-semibold tabular-nums text-[var(--member-muted)] sm:h-[4.5rem] sm:p-2 sm:text-xs ${holidayLabel ? "bg-[var(--member-subtle)]" : "bg-[var(--member-soft)]"}`}>
                               {String(day).padStart(2, "0")}
                               {holidayMarker}
                             </span>
@@ -521,14 +540,13 @@ export default function MemberExperiences({
                 ))}
               </tbody>
             </table>
-            {monthHolidays.length ? <aside aria-label="Holiday periods" className="mt-4 border-t border-[var(--member-rule)] px-2 pt-4 text-xs leading-relaxed text-[var(--member-muted)]">
-              <p className="font-semibold text-[var(--member-ink)]">Holiday periods</p>
-              <ul className="mt-2 space-y-1">{monthHolidays.map(period => <li key={period.start + period.title}>
+            {monthHolidays.length ? <aside aria-label="Closed dates" className="mt-4 border-t border-[var(--member-rule)] px-2 pt-4 text-xs leading-relaxed text-[var(--member-muted)]">
+              <p className="font-semibold text-[var(--member-ink)]">Closed · All day</p>
+              <ul className="mt-2 space-y-1">{monthHolidays.map(period => <li key={period.id}>
                 <span aria-hidden="true" className="mr-2 inline-block h-1 w-3 bg-[var(--color-shop)]" />
-                {period.title}: <time dateTime={period.start}>{new Intl.DateTimeFormat("en-US", {timeZone:"UTC",month:"long",day:"numeric",year:"numeric"}).format(new Date(period.start+"T12:00:00Z"))}</time>
-                {period.end !== period.start ? <> – <time dateTime={period.end}>{new Intl.DateTimeFormat("en-US", {timeZone:"UTC",month:"long",day:"numeric",year:"numeric"}).format(new Date(period.end+"T12:00:00Z"))}</time></> : null}
+                {period.title}: <time dateTime={period.startDate}>{closureDateLabel(period.startDate)}</time>
+                {closureLastDate(period) !== period.startDate ? <> – <time dateTime={closureLastDate(period)}>{closureDateLabel(closureLastDate(period))}</time></> : null}
               </li>)}</ul>
-              <p className="mt-2">Scheduled calls remain listed. Check each call’s details for its confirmed time.</p>
             </aside> : null}
           </section>
         )}

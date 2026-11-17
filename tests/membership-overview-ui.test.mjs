@@ -57,9 +57,11 @@ function hooks() {
 }
 
 const pricing = await load("src/lib/membership/pricing.ts");
+const foundationsSchedule = await load("src/lib/membership/foundations-schedule.ts");
+const publicSchedule = await load("src/lib/membership/public-schedule.ts", { "./foundations-schedule": foundationsSchedule });
 
 async function components(react = React, globals = {}) {
-  const shared = { react, "next/image": Image, "next/link": Link, "@/lib/membership/pricing": pricing };
+  const shared = { react, "next/image": Image, "next/link": Link, "@/lib/membership/pricing": pricing, "@/lib/membership/public-schedule": publicSchedule };
   const DirectForm = (await load(`${base}DirectInvitationRequestForm.tsx`, shared, globals)).default;
   const WaitlistForm = (await load(`${base}MembershipWaitlistForm.tsx`, shared, globals)).default;
   const Signup = (await load(`${base}MembershipSignup.tsx`, { ...shared, "./DirectInvitationRequestForm": DirectForm, "./MembershipWaitlistForm": WaitlistForm }, globals)).default;
@@ -108,7 +110,7 @@ test("landing modes explain the correct next step without registering or chargin
   assert.doesNotMatch(unavailableSetup, /aria-label="Start your Ruined registration"/);
   assert.match(waitlist, /These are fictional examples, not member stories/);
   assert.match(waitlist, /Illustrative exercise\. This letter is fictional/);
-  assert.match(waitlist, /December 2026.*TIME/);
+  assert.match(waitlist, /A sample month.*TIME/);
 
   for (const props of [{ preview: true, paymentSetupOnly: true }, { signupEnabled: true, paymentSetupOnly: true }]) {
     const setup = render(props);
@@ -131,6 +133,50 @@ test("landing modes explain the correct next step without registering or chargin
   assert.match(paid, /lower of \$1,500 or the remaining unpaid installments/);
   assert.doesNotMatch(paid, /due at signup|No payment is due now|Foundations remains closed until launch|registration receipt|lock in \$349\/month/);
   assert.deepEqual(requests, []);
+});
+
+test("server snapshot renders the current roadmap and open intake before hydration", async () => {
+  const c = await components();
+  const render = scheduleAsOf => renderToStaticMarkup(React.createElement(c.Overview, { signupEnabled: true, scheduleAsOf }));
+  const november = render("2026-11-17T19:00:00Z");
+  assert.match(november, /Now &amp; next/);
+  assert.match(november, /In progress<\/span><time dateTime="2026-11"/);
+  assert.match(november, /Upcoming<\/span><time dateTime="2026-12"/);
+  assert.match(november, /Next Foundations group.*December 3, 2026.*3:00 PM Mountain.*Complete registration before.*December 2, 2026, .*3:00 PM Mountain/s);
+  assert.doesNotMatch(november, /Coming up|November 2026 is Foundations only|cycle begins in December/);
+  const december = render("2026-12-02T22:00:00Z");
+  assert.doesNotMatch(december, /dateTime="2026-11"/);
+  assert.match(december, /In progress<\/span><time dateTime="2026-12"/);
+  assert.match(december, /Next Foundations group.*January 7, 2027/s);
+  const february = render("2027-02-01T07:00:00Z");
+  assert.doesNotMatch(february, /dateTime="2026-11"|dateTime="2026-12"|dateTime="2027-01"/);
+  assert.match(february, /A sample month.*TIME/);
+  assert.match(february, /More monthly topics will be announced as they’re confirmed/);
+});
+
+test("main, embedded, and invitation routes supply a fresh server date for consistent initial rendering", async () => {
+  const fixedNow = "2026-11-17T19:00:00.000Z";
+  const Clock = class extends Date { constructor(...values) { super(...(values.length ? values : [fixedNow])); } };
+  const card = { name: "Cade", memberTag: "cade" };
+  const dependencies = {
+    react: { ...React, cache: fn => fn },
+    "next/navigation": { notFound() { throw Error("Unexpected unavailable invitation"); } },
+    "@/components/public-members/MembershipOverview": Room,
+    "@/components/public-members/MembershipEmbed": Room,
+    "@/lib/platform/config": { getPlatformConfiguration: () => ({ mode: "preview" }) },
+    "@/lib/membership/invitation-model": { MEMBER_INVITATION_TOKEN: /^valid-token$/ },
+    "@/lib/membership/invitation-repository": { getPublicMemberInvitation: async () => ({ card, expiresAt: null }) },
+    "@/lib/membership/invitation-preview": { memberInvitationPreviewSnapshot: () => ({ card, expiresAt: null }) },
+    "@/lib/membership/public-card-model": { publicMemberCardIdentity: value => value.name },
+  };
+  for (const path of ["app/membership/page.tsx", "app/membership/embed/page.tsx", "app/invitation/[token]/page.tsx", "app/invitation/preview/page.tsx"]) {
+    const page = await load(path, dependencies, { Date: Clock });
+    assert.equal(page.dynamic, "force-dynamic");
+    const result = await page.default({ searchParams: Promise.resolve({}), params: Promise.resolve({ token: "valid-token" }) });
+    assert.equal(result.props.scheduleAsOf, fixedNow, path);
+  }
+  const embed = (await load(`${base}MembershipEmbed.tsx`, { react: hooks().react, "./MembershipOverview": Room, "@/lib/membership/landing-embed": {} })).default;
+  assert.equal(nodes(embed({ scheduleAsOf: fixedNow })).find(node => node.type === Room).props.scheduleAsOf, fixedNow);
 });
 
 test("all six catalog offers share one billing selector with the invitation form", async () => {
@@ -337,13 +383,13 @@ test("prepaid direct signup discloses the selected cadence and passes the paymen
 test("the TIME example is optional while the method, confirmed roadmap, and monthly challenge remain visible", async () => {
   const h = hooks(), requests = [];
   const Monthly = (await load(`${base}MembershipMonthlySection.tsx`, { react: h.react }, { fetch: (...args) => requests.push(args) })).default;
-  const render = () => h.render(Monthly, { ctaLabel: "Join the waitlist" });
+  const render = () => h.render(Monthly, { ctaLabel: "Join the waitlist", schedule: publicSchedule.publicMembershipSchedule("2026-11-17T19:00:00Z") });
   const initial = render();
   const sample = nodes(initial).find(node => node.type === "details" && text(node).includes("Explore a month: TIME"));
   assert.ok(sample, "the example has an explicit native disclosure");
   assert.equal(sample.props.open, undefined, "the sample does not expand the default page");
   assert.equal(defaultVisibleNodes(initial).filter(node => node.type === "input").length, 0);
-  assert.deepEqual(defaultVisibleNodes(initial).filter(node => node.type === "h3").map(text), ["SEE", "FACE", "CUT", "GROW", "Coming up"]);
+  assert.deepEqual(defaultVisibleNodes(initial).filter(node => node.type === "h3").map(text), ["SEE", "FACE", "CUT", "GROW", "Now & next"]);
   const visibleCopy = defaultVisibleNodes(initial).filter(node => node.type === "p").map(text).join(" ");
   assert.match(visibleCopy, /4 calls.*90 minutes each/);
   assert.match(visibleCopy, /Foundations only/);
@@ -357,8 +403,8 @@ test("the TIME example is optional while the method, confirmed roadmap, and mont
     assert.equal(input.props.type, "radio", "native radios provide keyboard selection");
     input.props.onChange();
     const tree = render();
-    assert.match(text(tree), /December 2026.*TIME/);
-    assert.match(text(tree), /An example of how we’ll explore one topic/);
+    assert.match(text(tree), /A sample month.*TIME/);
+    assert.match(text(tree), /An example of exploring one topic/);
     assert.equal(nodes(tree).filter(node => node.type === "h3" && ["SEE", "FACE", "CUT", "GROW"].includes(text(node))).length, 4);
     const example = nodes(tree).find(node => node.props.id === input.props["aria-controls"]);
     assert.equal(example.props["aria-live"], "polite");

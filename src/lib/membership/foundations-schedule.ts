@@ -1,6 +1,6 @@
 /** Keep the accepted offer intact; enrollment can separately carry a late payment forward. */
-export const FOUNDATIONS_BILLING_SCHEDULE_VERSION = "foundations-prepaid-v3" as const;
-export type FoundationsBillingScheduleVersion = "foundations-prepaid-v1" | "foundations-prepaid-v2" | typeof FOUNDATIONS_BILLING_SCHEDULE_VERSION;
+export const FOUNDATIONS_BILLING_SCHEDULE_VERSION = "foundations-prepaid-v4" as const;
+export type FoundationsBillingScheduleVersion = "foundations-prepaid-v1" | "foundations-prepaid-v2" | "foundations-prepaid-v3" | typeof FOUNDATIONS_BILLING_SCHEDULE_VERSION;
 export const FOUNDATIONS_TIME_ZONE = "America/Denver" as const;
 export type FoundationsBillingSchedule = {
   version: FoundationsBillingScheduleVersion;
@@ -45,7 +45,7 @@ function anniversary(startsAt: string, months: number): string {
   return result.toISOString();
 }
 export function isFoundationsBillingScheduleVersion(value: unknown): value is FoundationsBillingScheduleVersion {
-  return value === "foundations-prepaid-v1" || value === "foundations-prepaid-v2" || value === FOUNDATIONS_BILLING_SCHEDULE_VERSION;
+  return value === "foundations-prepaid-v1" || value === "foundations-prepaid-v2" || value === "foundations-prepaid-v3" || value === FOUNDATIONS_BILLING_SCHEDULE_VERSION;
 }
 export function foundationsBillingScheduleForMonth(
   cohortMonth: string,
@@ -57,9 +57,9 @@ export function foundationsBillingScheduleForMonth(
   if (!isFoundationsBillingScheduleVersion(version)) throw new RangeError("Invalid Foundations schedule version.");
   const [year, month] = cohortMonth.split("-").map(Number);
   const firstThursday = 1 + (4 - new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 7) % 7;
-  // Preserve accepted v1/v2 calendars exactly. New v3 quotes move the final
-  // December call to December 30 to avoid New Year's Eve; billing anchors stay fixed.
-  const days = cohortMonth === "2026-11" ? [5, 12, 19, 30] : cohortMonth === "2026-12" ? [3, 10, 17, version === "foundations-prepaid-v2" ? 31 : 30] : [0, 1, 2, 3].map(week => firstThursday + week * 7);
+  // Keep every accepted schedule version reproducible. New v4 offers include
+  // the approved 2027 holiday changes; first calls and billing anchors stay fixed.
+  const days = cohortMonth === "2026-11" ? [5, 12, 19, 30] : cohortMonth === "2026-12" ? [3, 10, 17, version === "foundations-prepaid-v2" ? 31 : 30] : version === "foundations-prepaid-v4" && cohortMonth === "2027-11" ? [4, 11, 18, 29] : version === "foundations-prepaid-v4" && cohortMonth === "2027-12" ? [2, 9, 16, 30] : [0, 1, 2, 3].map(week => firstThursday + week * 7);
   const callStartsAt = days.map(day => denverCall(year, month, day)) as FoundationsBillingSchedule["callStartsAt"];
   const serviceStartsAt = callStartsAt[0];
   const nextChargeAt = anniversary(serviceStartsAt, plan === "monthly" ? 1 : 12);

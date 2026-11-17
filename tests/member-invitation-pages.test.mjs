@@ -74,9 +74,12 @@ test("invalid and revoked invitations reveal no member details or sample content
 test("public invitation routes pass the card and token without the owner's private count or identity", async () => {
   let current = { card, expiresAt, membershipType: "complimentary", complimentaryEndsAt: "2099-12-31T06:59:59.999Z", complimentaryReason: "PRIVATE REASON", complimentaryAuthorizedByAuthUserId: "PRIVATE ACTOR", joinedCount: 7391, personId: "PRIVATE PERSON", email: "PRIVATE EMAIL", recipientEmail: "PRIVATE RECIPIENT EMAIL", recipientPhone: "PRIVATE PHONE" };
   const page = await publicRoute(async value => { assert.equal(value, token); return current; });
+  const requestStartedAt = Date.now();
   const rendered = await page.default(params(token));
   assert.equal(rendered.type, renderOverview, "issued links open the complete membership landing page");
-  assert.deepEqual(Object.keys(rendered.props).sort(), ["invitation", "paymentSetupOnly", "prepaymentRequired", "registrationOnly", "signupEnabled"]);
+  assert.deepEqual(Object.keys(rendered.props).sort(), ["invitation", "paymentSetupOnly", "prepaymentRequired", "registrationOnly", "scheduleAsOf", "signupEnabled"]);
+  assert.equal(new Date(rendered.props.scheduleAsOf).toISOString(), rendered.props.scheduleAsOf, "The added public schedule field is a canonical server timestamp");
+  assert.ok(Date.parse(rendered.props.scheduleAsOf) >= requestStartedAt && Date.parse(rendered.props.scheduleAsOf) <= Date.now(), "Schedule time comes from this request");
   assert.equal(rendered.props.registrationOnly, false);
   assert.equal(rendered.props.invitation.membershipType, "complimentary"); assert.equal(rendered.props.invitation.complimentaryEndsAt, current.complimentaryEndsAt);
   assert.equal(rendered.props.invitation.expiresAt, expiresAt); assert.deepEqual(rendered.props.invitation.card, card); assert.equal(rendered.props.invitation.token, token);

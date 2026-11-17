@@ -67,11 +67,26 @@ test('prepaid schedules, paid proofs, activation and full-refund release use the
     const incorrect={...holiday,callStartsAt:[...holiday.callStartsAt.slice(0,3),new Date(Date.parse(holiday.callStartsAt[2])+7*86400000).toISOString()]};
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(incorrect)])).rows[0].valid,false);
   }
-  for(const plan of ['monthly','annual']) for(const version of ['foundations-prepaid-v1','foundations-prepaid-v2','foundations-prepaid-v3']){
+  for(const plan of ['monthly','annual']) for(const version of ['foundations-prepaid-v1','foundations-prepaid-v2','foundations-prepaid-v3','foundations-prepaid-v4']){
     const december=schedules.foundationsBillingScheduleForMonth('2026-12',plan,version);
     assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(december),plan])).rows[0].valid,true);
     const mislabeled={...december,version:version==='foundations-prepaid-v2'?'foundations-prepaid-v1':'foundations-prepaid-v2'};
     assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(mislabeled),plan])).rows[0].valid,false);
+  }
+  for(const month of ['2027-11','2027-12']) for(const plan of ['monthly','annual']) {
+    for(const version of ['foundations-prepaid-v3','foundations-prepaid-v4']) {
+      const accepted=schedules.foundationsBillingScheduleForMonth(month,plan,version);
+      assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(accepted),plan])).rows[0].valid,true);
+      const mislabeled={...accepted,version:version==='foundations-prepaid-v3'?'foundations-prepaid-v4':'foundations-prepaid-v3'};
+      assert.equal((await db.query('select private.ruined_valid_prepaid_schedule($1::jsonb,$2) valid',[JSON.stringify(mislabeled),plan])).rows[0].valid,false);
+    }
+  }
+  for(const month of ['2026-11','2026-12','2027-03','2027-11','2027-12']) {
+    const expected=schedules.foundationsBillingScheduleForMonth(month,'monthly');
+    for(const completedAt of [new Date(Date.parse(expected.cutoffAt)-1),new Date(expected.cutoffAt)]) {
+      const actual=(await db.query('select private.ruined_complimentary_foundations_schedule($1::timestamptz,null) schedule',[completedAt.toISOString()])).rows[0].schedule;
+      assert.deepEqual(actual,schedules.createFoundationsBillingSchedule(completedAt,'monthly'),'SQL complimentary and paid scheduling agree at cutoff');
+    }
   }
   for(const invalid of [{...schedule,version:undefined},{...schedule,callStartsAt:[schedule.callStartsAt[1],...schedule.callStartsAt.slice(1)]},{...schedule,nextChargeAt:schedule.initialTermEndsAt},{...schedule,extra:true}]){
     assert.equal((await db.query("select private.ruined_valid_prepaid_schedule($1::jsonb,'monthly') valid",[JSON.stringify(invalid)])).rows[0].valid,false);

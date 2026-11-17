@@ -1,6 +1,6 @@
 import "server-only";
 import type Stripe from "stripe";
-import { resolveFoundationsEnrollmentSchedule, type FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
+import { FOUNDATIONS_BILLING_SCHEDULE_VERSION, parseFoundationsBillingSchedule, resolveFoundationsEnrollmentSchedule, type FoundationsBillingSchedule } from "@/lib/membership/foundations-schedule";
 import { getBillingDatabase } from "./database";
 import { getStripe } from "./server";
 import { MembershipCommitmentError, type MembershipCommitment } from "./commitment-policy";
@@ -13,6 +13,17 @@ const same = (left: FoundationsBillingSchedule | null | undefined, right: Founda
 const effectiveContract = (contract: MembershipCommitment, schedule: FoundationsBillingSchedule): MembershipCommitment => ({ ...contract,
   startsAt: schedule.serviceStartsAt, initialTermEndsAt: schedule.initialTermEndsAt, billingSchedule: schedule });
 export const permitsAutomaticCohortRollover = (contract: MembershipCommitment) => /^ruined_membership-v([4-9]|[1-9]\d+)$/.test(contract.agreementVersion);
+
+/** A recorded retry keeps its original calendar version. Validate every date
+ * against that version, and its target month against the actual payment time. */
+function validRolloverSchedule(contract: MembershipCommitment, value: unknown, paidAt: Date): FoundationsBillingSchedule | null {
+  const schedule = parseFoundationsBillingSchedule(value, contract.billingPlan);
+  if (!schedule || !contract.billingSchedule || !Number.isFinite(paidAt.getTime())
+    || (schedule.version !== "foundations-prepaid-v3" && schedule.version !== FOUNDATIONS_BILLING_SCHEDULE_VERSION)
+    || schedule.cohortMonth <= contract.billingSchedule.cohortMonth) return null;
+  const expected = resolveFoundationsEnrollmentSchedule(contract.billingSchedule, paidAt, contract.billingPlan);
+  return schedule.cohortMonth === expected.cohortMonth ? schedule : null;
+}
 
 /** Update only the existing subscription's deferred renewal. The original paid
  * invoice and accepted metadata are immutable. Read-back verification makes a
@@ -28,7 +39,7 @@ export async function reconcileCohortRolloverProvider(stripe: Stripe, contract: 
     || current.schedule || current.pause_collection || current.pending_update) return fail();
   const payment = await inspectPrepaidMembershipInvoice(stripe, effectiveContract(contract, providerSchedule), { requireOnlyInitialInvoice: true });
   const paidAt = payment.invoice.status_transitions.paid_at;
-  if (!paidAt || paidAt * 1000 > now.getTime() || !same(resolveFoundationsEnrollmentSchedule(contract.billingSchedule, new Date(paidAt * 1000), contract.billingPlan), schedule)) return fail();
+  if (!paidAt || paidAt * 1000 > now.getTime() || !validRolloverSchedule(contract, schedule, new Date(paidAt * 1000))) return fail();
   const pending = await stripe.invoiceItems.list({ customer: contract.customerId, pending: true, limit: 1 });
   if (pending.data.length || pending.has_more) return fail();
   if (!same(providerSchedule, schedule)) {
@@ -72,13 +83,13 @@ export async function reconcilePaidFoundationsRollover(input: {subscriptionId: s
       and proof.provider_canceled_at is null and reservation.status='reserved' and contract.status='active'`;
   if (!candidate) return { handled: false, rolled: false, reviewRequired: false };
   if (!permitsAutomaticCohortRollover(candidate.contract) || !candidate.contract.billingSchedule) return { handled: true, rolled: false, reviewRequired: true };
-  const schedule = resolveFoundationsEnrollmentSchedule(candidate.contract.billingSchedule, new Date(candidate.paidAt), candidate.contract.billingPlan);
-  if (same(schedule, candidate.contract.billingSchedule)) return { handled: true, rolled: false, reviewRequired: true };
+  const proposedSchedule = resolveFoundationsEnrollmentSchedule(candidate.contract.billingSchedule, new Date(candidate.paidAt), candidate.contract.billingPlan);
+  if (same(proposedSchedule, candidate.contract.billingSchedule)) return { handled: true, rolled: false, reviewRequired: true };
   // Persist intent before contacting Stripe. This survives a provider success
   // followed by a transaction/process failure; the retry validates the same dates.
   await sql`insert into private.membership_cohort_rollovers(reservation_id,contract_id,stripe_subscription_id,stripe_invoice_id,paid_at,accepted_schedule,effective_schedule)
     values(${candidate.reservationId}::uuid,${candidate.contract.id}::uuid,${input.subscriptionId},${candidate.invoiceId},${candidate.paidAt}::timestamptz,
-      ${sql.json(JSON.parse(JSON.stringify(candidate.contract.billingSchedule)))}::jsonb,${sql.json(JSON.parse(JSON.stringify(schedule)))}::jsonb)
+      ${sql.json(JSON.parse(JSON.stringify(candidate.contract.billingSchedule)))}::jsonb,${sql.json(JSON.parse(JSON.stringify(proposedSchedule)))}::jsonb)
     on conflict(reservation_id) do nothing`;
   return await sql.begin(async tx => {
     const participants = await tx<Array<{memberId: string}>>`select member_id as "memberId" from membership_commercial_participants
@@ -91,7 +102,8 @@ export async function reconcilePaidFoundationsRollover(input: {subscriptionId: s
       select status,effective_schedule as "effectiveSchedule" from private.membership_cohort_rollovers
       where reservation_id=${candidate.reservationId}::uuid for update`;
     if (pending?.status === "completed") return { handled: true, rolled: true, reviewRequired: false };
-    if (!pending || !same(pending.effectiveSchedule, schedule)) return fail();
+    const schedule = pending && validRolloverSchedule(candidate.contract, pending.effectiveSchedule, new Date(candidate.paidAt));
+    if (!schedule) return fail();
     const [proof] = await tx<Array<{valid: boolean}>>`select (refund_state='review_required' and review_reason='cohort_cutoff_missed'
       and amount_refunded=0 and activated_at is null and cancellation_id is null and provider_canceled_at is null
       and not exists(select 1 from stripe_membership_cancellations where contract_id=${candidate.contract.id}::uuid and status<>'abandoned')) as valid

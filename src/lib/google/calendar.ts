@@ -409,6 +409,11 @@ export async function getRuinedOwnedGoogleCalendarEventResult(eventId: string): 
   );
 }
 
+/** Read-only operator audit, including the provider's current attendee set. */
+export async function getRuinedOwnedGoogleCalendarEventSnapshot(eventId: string): Promise<GoogleCalendarApiEvent> {
+  return getRuinedOwnedGoogleCalendarEvent(requireGoogleCalendarConfiguration(), eventId);
+}
+
 export async function createGoogleCalendarEvent(
   input: GoogleCalendarEventDraft & { recoverExisting?: boolean },
 ): Promise<GoogleCalendarEventResult> {

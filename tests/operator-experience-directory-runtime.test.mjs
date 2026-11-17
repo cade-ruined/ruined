@@ -51,6 +51,7 @@ function fixture(patch = {}, { hash = "", respond = async () => Response.json({ 
     "next/navigation": { useRouter: () => ({ push: (path) => navigations.push(path), refresh() {} }) },
     "next/link": { __esModule: true, default: "a" },
     "@/components/platform/OperatorDialog": { __esModule: true, default: Dialog },
+    "@/components/platform/OperatorClosedDates": { __esModule: true, default: () => null },
     "@/components/platform/OperatorQuickEventForm": { __esModule: true, default: QuickForm },
     "@/components/platform/OperatorPageFrame": { __esModule: true, default: "main" },
     "@/components/platform/StateLabel": { __esModule: true, default: "span" },

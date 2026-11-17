@@ -357,6 +357,7 @@ test("overview payment FAQ matches optional setup without changing paid signup t
   const Questions = (await load("src/components/public-members/MembershipQuestions.tsx")).default;
   const component = (await load("src/components/public-members/MembershipOverview.tsx", {
     react: React, "next/image": Stub, "next/link": "a",
+    "@/lib/membership/public-schedule": { publicMembershipSchedule: () => null },
     "@/data/public-membership": { MEMBERSHIP_LINKS: { signIn: "/access" } },
     "@/components/membership/PersonalInvitationAcceptance": () => null,
     "@/components/membership/use-invitation-expiry": { useInvitationExpired: value => value ? Date.parse(value) <= Date.now() : false },
@@ -385,6 +386,7 @@ test("landing signup stays inline beside the Ruined card, preserving launch mode
   const signups = [], cards = [];
   const component = (await load("src/components/public-members/MembershipOverview.tsx", {
     react: React, "next/image": Stub, "next/link": "a",
+    "@/lib/membership/public-schedule": { publicMembershipSchedule: () => null },
     "@/data/public-membership": { MEMBERSHIP_LINKS: { signIn: "/access" } },
     "@/components/membership/PersonalInvitationAcceptance": () => null,
     "@/components/membership/use-invitation-expiry": { useInvitationExpired: value => value ? Date.parse(value) <= Date.now() : false },

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import MembershipEmbed from "@/components/public-members/MembershipEmbed";
 import { getPlatformConfiguration } from "@/lib/platform/config";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Membership",
   robots: { index: false, follow: false },
@@ -13,6 +15,7 @@ export default async function MembershipEmbedPage({ searchParams }: { searchPara
   const configuration = getPlatformConfiguration();
   const setupPreview = configuration.mode === "preview" && params.preview === "payment-setup";
   return <MembershipEmbed
+    scheduleAsOf={new Date().toISOString()}
     prepaymentRequired={configuration.membershipPrepaymentRequired}
     registrationOnly={configuration.membershipRegistrationOnly || setupPreview}
     preview={configuration.mode === "preview"}

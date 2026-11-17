@@ -85,6 +85,7 @@ async function fixture(t) {
       'select registered_at is not null and test_ready from public.member_registration_access where member_id=$1';`);
   await db.exec(read("db/migrations/20261012200000_foundations_schedule_v3.sql"));
   await db.exec(read("db/migrations/20261104190000_complimentary_foundations_cohorts.sql"));
+  await db.exec(read("db/migrations/20261117190000_foundations_schedule_v4.sql").split("-- Preserve pending")[0] + "commit;");
   const sql = sqlBridge(db);
   const calendar=[];
   const env = { MEMBER_EMAIL_CADENCE_ENABLED: "true", MEMBER_EMAIL_CADENCE_ACTIVATED_AT: ago(2880), GOOGLE_COMMUNICATIONS_LIVEMODE: "true" };
@@ -572,7 +573,11 @@ test("reusable email sequences inherit only reviewed semantics and current autho
     const excluded = await f.event();
     await f.sql.begin(tx => f.inheritance.saveCadenceEventBinding(tx, actor.authId, excluded.id, { kind: "none", track: "members" }, excluded));
     assert.deepEqual((await f.inheritance.matchingCadenceEvents(f.sql, "membership", "members")).map(e => e.id).sort(), [first.id, second.id].sort());
-    assert.deepEqual(await reconcile(f), { plans: 2, enrolled: 0 });
+    const configuration=f.model.getMemberEmailCadenceConfiguration(f.env);
+    assert.deepEqual(await f.inheritance.reconcileCadenceInheritance(configuration,Date.now()+30_000,[]),{plans:0,enrolled:0});
+    assert.deepEqual(await f.inheritance.reconcileCadenceInheritance(configuration,Date.now()+30_000,[first.id]),{plans:1,enrolled:0});
+    assert.deepEqual((await inheritedPlans(f)).map(plan=>plan.experience_id),[first.id],"A scoped publication cannot change an unrelated call");
+    assert.deepEqual(await reconcile(f), { plans: 1, enrolled: 0 });
     assert.deepEqual(await reconcile(f), { plans: 0, enrolled: 0 });
     const plans = await inheritedPlans(f);
     assert.ok(plans.every(plan => plan.sequence_id === source.id && plan.sequence_revision === 1 && plan.snapshot.templateVersion === "approved-v1"));

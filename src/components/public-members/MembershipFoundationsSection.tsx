@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, type FC } from "react";
+import type { PublicMembershipSchedule } from "@/lib/membership/public-schedule";
 import styles from "./MembershipFoundationsSection.module.css";
 
 const foundationsPurpose = [
@@ -55,7 +56,7 @@ const letterExample = [
   { prompt: "If you are reading this…", response: "Remember what mattered enough to begin. Make room for it again." },
 ] as const;
 
-const MembershipFoundationsSection: FC<{ ctaLabel: string }> = () => {
+const MembershipFoundationsSection: FC<{ ctaLabel: string; schedule?: PublicMembershipSchedule }> = ({ schedule }) => {
   const [selectedExample, setSelectedExample] = useState(1);
   const example = timelineExamples[selectedExample];
   const timelinePanelId = useId();
@@ -68,6 +69,12 @@ const MembershipFoundationsSection: FC<{ ctaLabel: string }> = () => {
             <h2 className={styles.title} id="foundations-heading">Your starting point</h2>
             <p className={styles.sessionMeta}><span>4 live virtual sessions</span><span>90 minutes each</span></p>
             <p className={styles.introDescription}>Complete Foundations once at the start of membership, before the ongoing monthly work. Understand Ruined, your story, and how to show up for what comes next.</p>
+            {schedule && <div className={styles.nextGroup}>
+              <p className={styles.eyebrow}>Next Foundations group</p>
+              <p className={styles.startDate}><time dateTime={schedule.foundations.start.iso}>{schedule.foundations.start.date}</time></p>
+              <p className={styles.startTime}>{schedule.foundations.start.time}</p>
+              <p className={styles.cutoff}>Complete registration before <time dateTime={schedule.foundations.cutoff.iso}>{schedule.foundations.cutoff.date}, {schedule.foundations.cutoff.time}</time>. At or after the cutoff, your place moves to the next monthly group.</p>
+            </div>}
           </header>
 
           <div className={styles.cards}>

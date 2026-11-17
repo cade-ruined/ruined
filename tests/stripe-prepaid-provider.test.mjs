@@ -5,14 +5,14 @@ import test from "node:test";
 import ts from "typescript";
 import { prepaidPolicyFixture as prepaid, foundationsScheduleFixture as schedules } from "./helpers/prepaid-policy-fixture.mjs";
 
-async function load(path, dependencies = {}) {
+async function load(path, dependencies = {}, globals = {}) {
   const source = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const result = { exports: {} };
-  new Function("require", "module", "exports", code)(name => {
+  new Function("require", "module", "exports", ...Object.keys(globals), code)(name => {
     if (name === "server-only") return {};
     assert.ok(name in dependencies, name); return dependencies[name];
-  }, result, result.exports);
+  }, result, result.exports, ...Object.values(globals));
   return result.exports;
 }
 const pricing = await load("src/lib/membership/pricing.ts");
@@ -72,7 +72,7 @@ test("prepaid inspection binds actual initial cash to immutable service coverage
 });
 
 test("December v1, v2 and v3 payments retain their exact schedule identity and refundable coverage", async () => {
-  for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2", "foundations-prepaid-v3"]) {
+  for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2", "foundations-prepaid-v3","foundations-prepaid-v4"]) {
     const f = fixture({ month: "2026-12", version });
     assert.deepEqual(prepaid.prepaidScheduleFromSubscription(f.subscription), f.contract.billingSchedule);
     const proof = await f.inspect({ requireOnlyInitialInvoice: true });
@@ -102,14 +102,14 @@ test("previously accepted v1 and v2 schedule fingerprints remain byte-for-byte s
 });
 
 test("monthly and annual provider metadata must reconstruct the recorded schedule version", () => {
-  for (const plan of ["monthly", "annual"]) for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2", "foundations-prepaid-v3"]) {
+  for (const plan of ["monthly", "annual"]) for (const version of ["foundations-prepaid-v1", "foundations-prepaid-v2", "foundations-prepaid-v3","foundations-prepaid-v4"]) {
     const schedule = schedules.foundationsBillingScheduleForMonth("2026-12", plan, version);
     const subscription = { metadata: { billing_terms_version: "membership-billing-v2", ruined_billing_plan: plan,
       ...prepaid.prepaidBillingMetadata(schedule) }, trial_end: Date.parse(schedule.prepaidThrough) / 1000,
       billing_cycle_anchor: Date.parse(schedule.prepaidThrough) / 1000 };
     assert.deepEqual(prepaid.prepaidScheduleFromSubscription(subscription), schedule);
     assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_sha256: "wrong" } }), null);
-    assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_version: "foundations-prepaid-v4" } }), null);
+    assert.equal(prepaid.prepaidScheduleFromSubscription({ ...subscription, metadata: { ...subscription.metadata, ruined_billing_schedule_version: "foundations-prepaid-v5" } }), null);
   }
 });
 
@@ -169,9 +169,10 @@ function rolloverFixture(options = {}) {
     f.invoices.push(adjustment);f.subscription.latest_invoice=adjustment.id;
     return f.subscription;
   };
-  const target = schedules.resolveFoundationsEnrollmentSchedule(f.contract.billingSchedule,new Date(f.invoice.status_transitions.paid_at*1000),f.contract.billingPlan);
+  const resolved = schedules.resolveFoundationsEnrollmentSchedule(f.contract.billingSchedule,new Date(f.invoice.status_transitions.paid_at*1000),f.contract.billingPlan);
+  const target = options.targetVersion ? schedules.foundationsBillingScheduleForMonth(resolved.cohortMonth, f.contract.billingPlan, options.targetVersion) : resolved;
   const now = new Date(f.invoice.status_transitions.paid_at*1000+60000);
-  return {...f,writes,pending,target,run:()=>rollover.reconcileCohortRolloverProvider(f.stripe,f.contract,target,now)};
+  return {...f,writes,pending,target,now,run:()=>rollover.reconcileCohortRolloverProvider(f.stripe,f.contract,target,now)};
 }
 test("late monthly and annual payment carries forward on the same subscription with no new charge; retry is readback only",async()=>{
   for(const plan of ["monthly","annual"]) {
@@ -194,6 +195,76 @@ test("provider timeout after successful rollover is recovered by readback with n
   f.stripe.subscriptions.update=async(...args)=>{await mutate(...args);throw new Error("Timeout after provider success");};
   await assert.rejects(f.run(),/Timeout/);assert.equal(f.writes.length,1);
   await f.run();assert.equal(f.writes.length,1);
+});
+
+test("a pending v3 provider rollover keeps its exact holiday dates after the v4 release", async () => {
+  for (const plan of ["monthly", "annual"]) for (const month of ["2027-10", "2027-11"]) {
+    const f = rolloverFixture({ plan, month, version: "foundations-prepaid-v3", targetVersion: "foundations-prepaid-v3" });
+    const oldTarget = JSON.stringify(f.target);
+    const current = schedules.resolveFoundationsEnrollmentSchedule(f.contract.billingSchedule, new Date(f.invoice.status_transitions.paid_at * 1000), plan);
+    assert.notEqual(current.callStartsAt[3], f.target.callStartsAt[3]);
+    const first = await f.run();
+    assert.equal(f.writes.length, 1);
+    assert.equal(f.subscription.metadata.ruined_effective_schedule_version, "foundations-prepaid-v3");
+    assert.deepEqual(await f.run(), first);
+    assert.equal(f.writes.length, 1, "Retry must read back the old intent without changing Stripe again");
+    assert.equal(JSON.stringify(prepaid.prepaidScheduleFromSubscription(f.subscription)), oldTarget);
+  }
+});
+
+test("the worker resumes its recorded v3 intent rather than replacing it with a new v4 fingerprint", async () => {
+  const f = rolloverFixture({ month: "2027-10", version: "foundations-prepaid-v3", targetVersion: "foundations-prepaid-v3" });
+  const targetBefore = JSON.stringify(f.target);
+  const state = { status: "pending", effectiveSchedule: f.target, evidence: null, commercial: null };
+  let proposed, failCompletion = true;
+  const sql = async (strings, ...values) => {
+    const query = strings.join(" ");
+    if (query.includes("select contract.terms_snapshot")) return [{ contract: f.contract, paidAt: new Date(f.invoice.status_transitions.paid_at * 1000), invoiceId: f.invoice.id, reservationId: f.contract.id }];
+    if (query.includes("insert into private.membership_cohort_rollovers")) { proposed = values[6]; return []; }
+    if (query.includes("select member_id as")) return [{ memberId: f.contract.memberId }];
+    if (query.includes("select status,effective_schedule")) return [state];
+    if (query.includes("as valid")) return [{ valid: true }];
+    if (query.includes("update private.membership_cohort_rollovers")) {
+      if (failCompletion) { failCompletion = false; throw Error("Database timeout after provider success"); }
+      state.status = "completed"; state.evidence = values[0]; return [];
+    }
+    if (query.includes("insert into membership_commercial_events")) { state.commercial = values[2]; return []; }
+    if (/select id from ruined_members|select member_id from member_lifecycle|select pg_advisory_xact_lock|update stripe_membership_prepaid_proofs/.test(query)) return [];
+    throw Error(`Unexpected rollover query: ${query}`);
+  };
+  sql.json = value => value;
+  sql.begin = callback => callback(sql);
+  class Clock extends Date { constructor(...args) { super(...(args.length ? args : [f.now])); } }
+  const worker = await load("src/lib/stripe/cohort-rollover.ts", {
+    "@/lib/membership/foundations-schedule": schedules, "./database": { getBillingDatabase: () => sql }, "./server": { getStripe: () => f.stripe },
+    "./commitment-policy": policy, "./prepaid-provider": provider, "./prepaid-policy": prepaid,
+  }, { Date: Clock });
+  const run = () => worker.reconcilePaidFoundationsRollover({ subscriptionId: f.contract.subscriptionId, livemode: false });
+  await assert.rejects(run(), /Database timeout/);
+  assert.equal(state.status, "pending");
+  assert.equal(f.writes.length, 1);
+  assert.deepEqual(await run(), { handled: true, rolled: true, reviewRequired: false });
+  assert.equal(proposed.version, "foundations-prepaid-v4", "A fresh intent would use today's schedule");
+  assert.equal(state.status, "completed");
+  assert.equal(state.evidence.trialEnd, f.target.prepaidThrough);
+  assert.deepEqual(state.commercial.effectiveSchedule, f.target);
+  assert.equal(JSON.stringify(state.effectiveSchedule), targetBefore);
+  assert.equal(f.writes.length, 1);
+  await run();
+  assert.equal(f.writes.length, 1);
+});
+
+test("stored older schedules still require exact canonical dates and the payment's eligible month", async () => {
+  for (const change of [
+    f => { f.target.callStartsAt[3] = "2027-11-26T22:00:00.000Z"; },
+    f => { Object.assign(f.target, schedules.foundationsBillingScheduleForMonth("2027-12", "monthly", "foundations-prepaid-v3")); },
+    f => { Object.assign(f.target, schedules.foundationsBillingScheduleForMonth("2027-11", "monthly", "foundations-prepaid-v2")); },
+  ]) {
+    const f = rolloverFixture({ month: "2027-10", version: "foundations-prepaid-v3", targetVersion: "foundations-prepaid-v3" });
+    change(f);
+    await assert.rejects(f.run(), /requires_review/);
+    assert.equal(f.writes.length, 0);
+  }
 });
 test("legacy terms, wrong invoice timing, refunds, pending charges and foreign rollover metadata cannot authorize a change",async()=>{
   for(const change of [
