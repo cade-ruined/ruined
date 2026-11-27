@@ -213,6 +213,7 @@ function ProductCard({
   featured?: boolean;
 }) {
   const entries = getCatalogEntries([product]);
+  const ranchProduct = isRanchProduct(product);
   const [selectedColor, setSelectedColor] = useState(() => (entries.find((entry) => entry.available) ?? entries[0]).color);
   const entry = entries.find((candidate) => candidate.color === selectedColor) ?? entries[0];
   const { color } = entry;
@@ -231,7 +232,7 @@ function ProductCard({
     ? "Sold out"
     : product.expectedShipDate
       ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
-      : isRanchProduct(product) ? "Made to order" : "Available";
+      : ranchProduct ? "Made to order" : "Available";
   return (
     <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id}>
     <Link
@@ -244,7 +245,7 @@ function ProductCard({
       className="group block focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
     >
       <div
-        className={`relative overflow-hidden ${featured ? "aspect-[5/4] sm:aspect-[4/3] lg:aspect-[5/4]" : "aspect-[4/5]"}`}
+        className={`relative overflow-hidden ${featured ? "aspect-[5/4] sm:aspect-[4/3] lg:aspect-[5/4]" : ranchProduct ? "aspect-square" : "aspect-[4/5]"}`}
         style={{ background: PRODUCT_TONES[product.tone] }}
       >
         {image && (
@@ -254,7 +255,7 @@ function ProductCard({
             fill
             priority={featured}
             sizes={featured ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
-            className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.018]"
+            className={`${ranchProduct ? "object-contain" : "object-cover"} transition-transform duration-700 ease-out group-hover:scale-[1.018]`}
           />
         )}
         {image && secondImage && secondImage.url !== image.url && (
@@ -264,7 +265,7 @@ function ProductCard({
             aria-hidden="true"
             fill
             sizes={featured ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
-            className="pointer-events-none object-cover opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100"
+            className={`pointer-events-none ${ranchProduct ? "object-contain" : "object-cover"} opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100`}
           />
         )}
         <div className="absolute inset-x-2 top-2 flex justify-between font-mono text-[0.64rem] uppercase tracking-[0.14em] text-white/75 sm:inset-x-3 sm:top-3">
