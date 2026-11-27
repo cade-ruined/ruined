@@ -485,6 +485,32 @@ test("modal views and purchases identify their presentation without changing var
   detail.cleanup(); purchase.cleanup();
 });
 
+test("Ranch product pages and modals use normal availability while preserving sold-out and preorder states", () => {
+  for (const shopifyProductGid of ranchCatalog.RANCH_PRODUCT_IDS) {
+    for (const modal of [false, true]) {
+      for (const { available, expectedShipDate, expectedStatus } of [
+        { available: true, expectedStatus: "Available" },
+        { available: false, expectedStatus: "Sold out" },
+        { available: true, expectedShipDate: "2026-12-15", expectedStatus: "Preorder — pay in full" },
+        { available: false, expectedShipDate: "2026-12-15", expectedStatus: "Sold out" },
+      ]) {
+        const ranch = { ...product, shopifyProductGid, expectedShipDate,
+          variants: product.variants.map((variant) => ({ ...variant, available })),
+        };
+        const view = fixture("src/components/store/ProductDetail.tsx", { product: ranch, modal });
+        const tree = view.render();
+        const statusRow = elements(tree).find((node) => node.type === "div" &&
+          React.Children.toArray(node.props.children).some((child) => React.isValidElement(child) && child.type === "dt" && text(child) === "Status"));
+        assert.ok(statusRow, "The status specification must remain visible");
+        assert.equal(text(elements(statusRow).find((node) => node.type === "dd")), expectedStatus,
+          `${shopifyProductGid}, ${modal ? "modal" : "page"}`);
+        assert.doesNotMatch(text(tree), /made[ -]to[ -]order/i);
+        view.cleanup();
+      }
+    }
+  }
+});
+
 test("checkout reconciles withdrawn consent and removes attribution before any redirect", async () => {
   const visit = { at: new Date().toISOString(), source: "ig", medium: "paid_social", campaignId: "123", adsetId: "456", adId: "789", landingPath: "/store/hoodie" };
   const history = { version: 1, first: visit, latest: visit };

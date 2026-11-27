@@ -102,7 +102,7 @@ test("mobile scrolling is frozen and the result action restores the exact page p
   assert.equal(view.body.style.top, "-620px");
   assert.equal(view.body.style.left, "-4px");
   assert.equal(view.body.style.width, "100%");
-  view.button("View 1 style↗").props.onClick();
+  view.button("View 1 item↗").props.onClick();
   assert.deepEqual(view.body.style, view.initialStyle);
   assert.deepEqual(view.scroll, [{ left: 4, top: 620, behavior: "instant" }]);
   assert.deepEqual(view.focus.at(-1), { target: "trigger", preventScroll: true });

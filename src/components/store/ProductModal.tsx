@@ -22,9 +22,13 @@ export default function ProductModal({ handle, name, children }: {
     const dialog = dialogRef.current;
     if (!dialog) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Keep the opening listing even if its color changes inside quick view.
+    const openingColor = new URLSearchParams(window.location.search).get("color");
+    const productSelector = `[data-product-handle="${CSS.escape(handle)}"]`;
     const returnFocus = () => previousFocus?.isConnected && previousFocus !== document.body
       ? previousFocus
-      : document.querySelector<HTMLElement>(`[data-product-handle="${CSS.escape(handle)}"] a`);
+      : (openingColor ? document.querySelector<HTMLElement>(`${productSelector}[data-product-color="${CSS.escape(openingColor)}"] a`) : null)
+        ?? document.querySelector<HTMLElement>(`${productSelector} a`);
     const releaseScroll = acquireProductScrollLock({ restoreScroll: () => Boolean(returnFocus()) });
     try {
       if (!dialog.open) dialog.showModal();

@@ -137,7 +137,7 @@ export default function StoreFilterDrawer({
           <footer className={styles.footer}>
             <button type="button" className={styles.clear} disabled={!hasFilters} onClick={onClear}>Clear filters</button>
             <button type="button" className={styles.view} onClick={closeDrawer}>
-              View {resultCount} {resultCount === 1 ? "style" : "styles"}
+              View {resultCount} {resultCount === 1 ? "item" : "items"}
               <span aria-hidden="true">↗</span>
             </button>
           </footer>
