@@ -6,6 +6,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
+import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
 
 function load(path, dependencies = {}, environment = {}) {
   const compiled = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), "utf8"), {
@@ -19,7 +20,7 @@ function load(path, dependencies = {}, environment = {}) {
   return output.exports;
 }
 
-const colorHelpers = load("src/lib/store/product-colors.ts");
+const colorHelpers = load("src/lib/store/product-colors.ts", { "./ranch-catalog.js": ranchCatalog });
 const { getProductColorOption, getProductColorImages, getProductColorHref, getVariantImage, getCatalogEntries } = colorHelpers;
 const colors = ["Black", "Blue", "Grey", "Red"];
 const media = (name, alt = name) => ({ url: `https://cdn.shopify.com/s/files/1/1001/4077/7793/files/${name}?v=1789413276`, alt });
@@ -291,6 +292,8 @@ test("one catalog card offers four colors with matching URLs, photos, price and 
     const slots = [];
     let cursor = 0;
     const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
+      "@/lib/store/ranch-catalog.js": ranchCatalog,
+      "./ProductPrice": { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), RanchSaleNotice: () => null },
       "./StoreVideoHeader": { default: () => null },
       "./StoreFilterDrawer": { default: ({ children }) => children },
       "./StoreGallery.module.css": { default: {} },

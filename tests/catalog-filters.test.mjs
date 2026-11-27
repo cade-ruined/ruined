@@ -44,7 +44,7 @@ const ids = (items) => items.map(({ id }) => id);
 
 test("the current twelve styles have shopper-facing categories even without Shopify product types", () => {
   const counts = Object.fromEntries(CATALOG_CATEGORIES.map(({ id }) => [id, filterCatalogProducts(products, { category: id }).length]));
-  assert.deepEqual(counts, { all: 12, "tees-tanks": 6, hoodies: 3, "collared-shirts": 3 });
+  assert.deepEqual(counts, { all: 12, "tees-tanks": 6, hoodies: 3, pants: 0, "collared-shirts": 3 });
 });
 
 test("collections use actual Shopify membership, deduplicate, and exclude the home page group", () => {

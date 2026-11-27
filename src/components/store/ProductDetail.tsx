@@ -12,6 +12,7 @@ import { trackMetaProductView } from "@/lib/marketing/meta";
 import type { ProductVariant } from "@/data/products";
 import ProductPurchase from "./ProductPurchase";
 import ProductGallery from "./ProductGallery";
+import { isRanchProduct } from "@/lib/store/ranch-catalog.js";
 
 export default function ProductDetail({ product, children, modal = false }: {
   product: Product;
@@ -38,7 +39,9 @@ export default function ProductDetail({ product, children, modal = false }: {
     ? "Sold out"
     : product.expectedShipDate
       ? "Preorder — pay in full"
-      : variants.some((variant) => variant.id.startsWith("gid://shopify/ProductVariant/"))
+      : isRanchProduct(product)
+        ? "Made to order"
+        : variants.some((variant) => variant.id.startsWith("gid://shopify/ProductVariant/"))
         ? "Available"
         : "Studio confirmation";
   const specs = [

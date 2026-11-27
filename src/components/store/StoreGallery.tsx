@@ -15,9 +15,11 @@ import { getProductFitHref } from "@/lib/store/product-links";
 import { CATALOG_CATEGORIES, CATALOG_FITS, catalogFiltersHref, filterCatalogProducts, getCollectionFilters, getCatalogFitSelection, normalizeCatalogFilters, type CatalogFit } from "@/lib/store/catalog-filters";
 import StoreVideoHeader from "./StoreVideoHeader";
 import StoreFilterDrawer from "./StoreFilterDrawer";
+import ProductPrice, { RanchSaleNotice } from "./ProductPrice";
+import { isRanchProduct } from "@/lib/store/ranch-catalog.js";
 import styles from "./StoreGallery.module.css";
 
-const CATEGORY_LABELS = { all: "All", "tees-tanks": "Tees", hoodies: "Hoodies", "collared-shirts": "Collared" };
+const CATEGORY_LABELS = { all: "All", "tees-tanks": "Tees", hoodies: "Hoodies", pants: "Pants", "collared-shirts": "Collared" };
 
 export default function StoreGallery({
   products,
@@ -218,15 +220,18 @@ function ProductCard({
   const fitVariants = selectedFit ? product.variants.filter((variant) => variant.selectedOptions.some(
     (option) => option.name.toLowerCase() === "fit" && option.value === selectedFit,
   ) && (!color || variant.selectedOptions.some((option) => /^colou?r$/i.test(option.name) && option.value === color))) : undefined;
-  const price = fitVariants?.filter((variant) => Number.isFinite(Number(variant.priceAmount)))
-    .reduce<(typeof product.variants)[number] | undefined>((lowest, variant) => !lowest || Number(variant.priceAmount) < Number(lowest.priceAmount) ? variant : lowest, undefined)?.price ?? entry.price;
+  const colorVariants = product.variants.filter((variant) => !color || variant.selectedOptions.some(
+    (option) => /^colou?r$/i.test(option.name) && option.value === color,
+  ));
+  const pricedVariant = (fitVariants ?? colorVariants).filter((variant) => Number.isFinite(Number(variant.priceAmount)))
+    .reduce<(typeof product.variants)[number] | undefined>((lowest, variant) => !lowest || Number(variant.priceAmount) < Number(lowest.priceAmount) ? variant : lowest, undefined);
   const href = selectedFit ? getProductFitHref(product, entry.href, selectedFit) : entry.href;
   const [image, secondImage] = (selectedFit ? getProductFitImages(product, selectedFit) : undefined) ?? entry.images;
   const availability = !(fitVariants ? fitVariants.some((variant) => variant.available) : entry.available)
     ? "Sold out"
     : product.expectedShipDate
       ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
-      : "Available";
+      : isRanchProduct(product) ? "Made to order" : "Available";
   return (
     <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id}>
     <Link
@@ -269,14 +274,13 @@ function ProductCard({
         <span aria-hidden="true" className={`${styles.cardAction} absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center sm:bottom-4 sm:right-4`}>→</span>
       </div>
       <div className="px-1 pb-3 pt-3 sm:pt-4">
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
           <h2 className={`ui-heading leading-tight ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`}>
             {product.name}
           </h2>
-          <span className={`ui-heading shrink-0 whitespace-nowrap tabular-nums ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`}>
-            {price}
-          </span>
+          <ProductPrice product={product} variant={pricedVariant} fallbackPrice={entry.price} className={`ui-heading tabular-nums ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`} />
         </div>
+        <RanchSaleNotice product={product} compact className="mt-2 block font-mono text-[0.6rem] uppercase tracking-[0.08em] text-black/60" />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/50">
           <span className="truncate">{[color, selectedFit].filter(Boolean).join(" · ") || product.subtitle || product.material}</span>
           <span className={availability === "Sold out" ? "text-black/35" : "text-[var(--color-poster)]"}>{availability}</span>

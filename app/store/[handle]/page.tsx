@@ -78,7 +78,7 @@ export default async function ProductPage({
   ));
   const productUrl = `${SITE_URL}${getProductColorHref(product, color)}`;
   const returnPolicy = merchantReturnPolicy(policies, SITE_URL);
-  const offers = productOffers({ variants, productUrl, expectedShipDate: product.expectedShipDate, returnPolicyId: returnPolicy?.["@id"] });
+  const offers = productOffers({ variants, productUrl, expectedShipDate: product.expectedShipDate, returnPolicyId: returnPolicy?.["@id"], product });
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",

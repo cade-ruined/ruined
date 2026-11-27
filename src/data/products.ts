@@ -47,6 +47,8 @@ export type ProductCollection = {
 export type Product = {
   id: string;
   shopifyProductGid?: string;
+  // Server snapshot for time-limited price display and stable hydration.
+  pricingAsOf?: number;
   code: string; // e.g. "RU—001"
   name: string; // e.g. "Field Coat"
   productType?: string;

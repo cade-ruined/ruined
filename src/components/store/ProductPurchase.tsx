@@ -13,6 +13,7 @@ import { getProductFitOption } from "@/lib/store/product-fit-images";
 import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { trackMetaAddToCart } from "@/lib/marketing/meta";
 import BagLink from "./BagLink";
+import ProductPrice, { RanchSaleNotice } from "./ProductPrice";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
 import styles from "./ProductSurface.module.css";
@@ -183,7 +184,8 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
 
   return (
     <div className="mt-6">
-      <p className="display text-3xl">{selectedVariant?.price ?? product.price}</p>
+      <p className="display text-3xl"><ProductPrice product={product} variant={selectedVariant} /></p>
+      <RanchSaleNotice product={product} className="mt-3 block text-sm leading-relaxed text-black/65" />
 
       {isPreorder && (
         <div className="mt-5 border-l border-[var(--color-poster)] pl-4">

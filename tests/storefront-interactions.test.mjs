@@ -5,6 +5,10 @@ import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as colors from "../src/lib/store/product-colors.ts";
+import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
+import * as ranchPromotion from "../src/lib/store/ranch-promotion.js";
+
+const priceComponents = { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), RanchSaleNotice: () => null };
 import * as fits from "../src/lib/store/product-fit-images.ts";
 import * as links from "../src/lib/store/product-links.ts";
 import * as catalogFilters from "../src/lib/store/catalog-filters.ts";
@@ -34,7 +38,8 @@ function load(path, dependencies, environment = {}) {
   return loaded.exports.default ?? loaded.exports;
 }
 const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
-const text = node => typeof node === "string" ? node : React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : "";
+const text = node => typeof node === "string" ? node : React.isValidElement(node)
+  ? node.type === priceComponents.default ? text(node.type(node.props)) : React.Children.toArray(node.props.children).map(text).join("") : "";
 const Stub = () => null;
 const SizeGuide = () => null;
 const FilterDrawer = () => null;
@@ -62,7 +67,12 @@ function fixture(path, props = {}, options = {}) {
     react: hookProxy, "react/jsx-runtime": jsxRuntime,
     "next/link": { default: Stub }, "next/image": { default: Stub }, "next/navigation": { useSearchParams: () => params, usePathname: () => window.location.pathname },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
-    "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
+    "@/lib/store/product-colors": colors,
+    "@/lib/store/ranch-catalog.js": ranchCatalog,
+    "@/lib/store/ranch-promotion.js": ranchPromotion,
+    "@/lib/store/use-promotion-time": { usePromotionTime: () => Date.parse("2026-11-27T20:00:00Z") },
+    "@/components/store/ProductPrice": priceComponents,
+    "./ProductPrice": priceComponents, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
     "@/lib/store/catalog": { catalogNotice: () => ({}) },
     "@/lib/store/catalog-filters": catalogFilters,
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },

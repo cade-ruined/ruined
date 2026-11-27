@@ -11,8 +11,10 @@ import { EXPLORE_ROOMS, type ExploreRoom } from "@/data/navigation";
 import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 import { getProductColorHref, getProductColorImages } from "@/lib/store/product-colors";
+import { getRanchCollectionHref, getRanchProducts, getRanchRackSelections } from "@/lib/store/ranch-catalog";
 import JourneyQuickBuy from "./JourneyQuickBuy";
 import JourneyPreviewVideo from "./JourneyPreviewVideo";
+import ProductPrice, { RanchSaleNotice } from "@/components/store/ProductPrice";
 
 const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
@@ -155,6 +157,7 @@ export function JourneyLobbyIndex({
   const newProducts = products
     .filter((product) => product.image)
     .slice(0, 9);
+  const ranchProducts = getRanchProducts(products).filter((product) => product.image);
   const selections: LobbySelection[] = [
     ...(nextByob
       ? [{
@@ -169,13 +172,13 @@ export function JourneyLobbyIndex({
       : []),
     ...(newProducts.length
       ? [{
-          key: "new-arrivals",
-          href: "/store",
+          key: ranchProducts.length ? "ruined-ranch" : "new-arrivals",
+          href: ranchProducts.length ? getRanchCollectionHref(products) : "/store",
           realm: "Store" as const,
-          title: "New arrivals",
+          title: ranchProducts.length ? "Ruined Ranch" : "New arrivals",
           meta: "Shop the collection",
-          products: newProducts,
-          alt: "New Ruined apparel",
+          products: ranchProducts.length ? ranchProducts : newProducts,
+          alt: ranchProducts.length ? "Ruined Ranch hoodies and sweatpants" : "New Ruined apparel",
         }]
       : []),
     {
@@ -296,7 +299,9 @@ export function JourneyLobbyIndex({
               {selection.title}
             </strong>
             <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[0.6875rem] lg:text-xs uppercase leading-tight tracking-[0.08em] text-white/60 sm:tracking-[0.12em]">
-              <span>{selection.meta}</span>
+              <span>{selection.key === "ruined-ranch" && selection.products?.[0]
+                ? <RanchSaleNotice product={selection.products[0]} compact fallback={selection.meta} />
+                : selection.meta}</span>
               {selection.href && <span className="shrink-0 text-white/80 transition-transform group-hover:translate-x-1">↗</span>}
             </span>
           </span>
@@ -369,14 +374,17 @@ export function JourneyStoreIndex({
     { id: "womens-crop-tee" },
     { id: "long-sleeve-crest-polo" },
   ];
-  const featuredProducts: { product: Product; color?: string }[] = [];
-  for (const { id, color } of rackSelections) {
-    const product = products.find((item) => item.id === id);
-    if (product) featuredProducts.push({ product, color });
+  const featuredProducts: { product: Product; color?: string }[] = getRanchRackSelections(products);
+  const ranchFeatured = featuredProducts.length > 0;
+  if (!ranchFeatured) {
+    for (const { id, color } of rackSelections) {
+      const product = products.find((item) => item.id === id);
+      if (product) featuredProducts.push({ product, color });
+    }
   }
   // Keep the shelf useful if a featured product leaves the published catalog.
   for (const product of products) {
-    if (featuredProducts.length === 3) break;
+    if (featuredProducts.length >= 3) break;
     if (!featuredProducts.some((entry) => entry.product.id === product.id)) featuredProducts.push({ product });
   }
   const productCount = featuredProducts.length;
@@ -395,14 +403,14 @@ export function JourneyStoreIndex({
     <div data-journey-store-index className="w-full">
       <div className={`mb-2 flex items-center justify-between gap-3 text-[var(--color-bone)] ${shelfWidthClass}`}>
         <h2 className={`shrink-0 whitespace-nowrap ![font-family:var(--font-cadehandy2)] !font-normal leading-none !tracking-normal text-[var(--color-poster)] ${rackHeadingSizeClass}`}>
-          On the Rack
+          {ranchFeatured ? "Ruined Ranch" : "On the Rack"}
         </h2>
         <Link
-          href="/store"
-          aria-label={productCount === 0 && notice.retry ? "Off the Rack — try the catalog again" : "Off the Rack — view the full catalog"}
+          href={ranchFeatured ? getRanchCollectionHref(products) : "/store"}
+          aria-label={ranchFeatured ? "Shop the Ruined Ranch collection" : productCount === 0 && notice.retry ? "Off the Rack — try the catalog again" : "Off the Rack — view the full catalog"}
           className="inline-flex min-h-11 shrink-0 items-center gap-2 bg-black px-2 py-2 font-sans text-xs text-white transition-colors hover:text-[var(--color-poster)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:px-4 sm:text-sm"
         >
-          <span>Off the Rack</span>
+          <span>{ranchFeatured ? "Shop all" : "Off the Rack"}</span>
           <span aria-hidden="true">↗</span>
         </Link>
       </div>
@@ -419,7 +427,7 @@ export function JourneyStoreIndex({
         <div
           data-journey-rack
           role="region"
-          aria-label="On the Rack products"
+          aria-label={ranchFeatured ? "Ruined Ranch products" : "On the Rack products"}
           tabIndex={productCount > 1 ? 0 : undefined}
           onPointerDown={(event) => {
             if (event.currentTarget.scrollWidth > event.currentTarget.clientWidth) event.stopPropagation();
@@ -475,8 +483,9 @@ export function JourneyStoreIndex({
                       {product.name}
                     </strong>
                     <span className="mt-1 block font-sans text-[0.6rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[clamp(0.4rem,0.9vw,0.52rem)] sm:tracking-[0.16em]">
-                      {color ? `${color} · ` : ""}{product.price}
+                      {color ? `${color} · ` : ""}<ProductPrice product={product} />
                     </span>
+                    <RanchSaleNotice product={product} compact className="mt-1 block font-sans text-[0.6rem] uppercase tracking-[0.08em] text-white/85 sm:text-[clamp(0.4rem,0.9vw,0.52rem)]" />
                     {shipDate && (
                       <span className="mt-1 block font-sans text-[clamp(0.38rem,0.82vw,0.5rem)] uppercase tracking-[0.08em] text-[var(--color-poster)] sm:tracking-[0.13em]">
                         Preorder · Est. ship {shipDate}
