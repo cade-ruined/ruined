@@ -293,7 +293,7 @@ test("one catalog card offers four colors with matching URLs, photos, price and 
     let cursor = 0;
     const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
       "@/lib/store/ranch-catalog.js": ranchCatalog,
-      "./ProductPrice": { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), RanchSaleNotice: () => null },
+      "./ProductPrice": { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), StoreSaleNotice: () => null },
       "./StoreVideoHeader": { default: () => null },
       "./StoreFilterDrawer": { default: ({ children }) => children },
       "./StoreGallery.module.css": { default: {} },

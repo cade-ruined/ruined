@@ -7,7 +7,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import { parseFragment } from "parse5";
 import ts from "typescript";
 import * as ranch from "../src/lib/store/ranch-catalog.js";
-import * as promotion from "../src/lib/store/ranch-promotion.js";
+import * as promotion from "../src/lib/store/store-promotion.js";
 import * as colors from "../src/lib/store/product-colors.ts";
 import * as filters from "../src/lib/store/catalog-filters.ts";
 import * as fits from "../src/lib/store/product-fit-images.ts";
@@ -23,8 +23,8 @@ function load(path, dependencies) {
   return output.exports;
 }
 const price = load("src/components/store/ProductPrice.tsx", {
-  "react/jsx-runtime": jsxRuntime, "@/lib/store/ranch-catalog.js": ranch, "@/lib/store/ranch-promotion.js": promotion,
-  "@/lib/store/use-promotion-time": { usePromotionTime: () => Date.parse(promotion.RANCH_SALE_START) },
+  "react/jsx-runtime": jsxRuntime, "@/lib/store/ranch-catalog.js": ranch, "@/lib/store/store-promotion.js": promotion,
+  "@/lib/store/use-promotion-time": { usePromotionTime: () => Date.parse(promotion.STORE_SALE_START) },
 });
 let query = "";
 const { default: StoreGallery } = load("src/components/store/StoreGallery.tsx", {
@@ -100,6 +100,8 @@ test("filters and their result counts use color listings while other products re
   const unfiltered = render(combined);
   assert.equal(unfiltered.cards.length, 13); assert.equal(unfiltered.status, "13 items");
   const legacyCards = unfiltered.cards.filter(card => attr(card, "data-product-handle") === legacy.id);
+  assert.ok(text(legacyCards[0]).includes("$67.20"), "Non-Ranch Shopify products receive the storewide sale");
+  assert.ok(text(legacyCards[0]).includes("30% off storewide"));
   assert.equal(legacyCards.length, 1); assert.equal(all(legacyCards[0]).filter(node => node.tagName === "button").length, 2);
   const pants = render(combined, "category=pants&collection=ruined-ranch");
   assert.equal(pants.cards.length, 6); assert.equal(pants.drawerCount, 6); assert.equal(pants.status, "6 items of 13");

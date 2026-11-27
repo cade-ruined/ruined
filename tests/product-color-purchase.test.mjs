@@ -6,9 +6,9 @@ import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as colors from "../src/lib/store/product-colors.ts";
 import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
-import * as ranchPromotion from "../src/lib/store/ranch-promotion.js";
+import * as storePromotion from "../src/lib/store/store-promotion.js";
 
-const priceComponents = { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), RanchSaleNotice: () => null };
+const priceComponents = { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), StoreSaleNotice: () => null };
 import * as fits from "../src/lib/store/product-fit-images.ts";
 
 function load(path, dependencies) {
@@ -48,7 +48,7 @@ const dependencies = {
   "next/image": { default: () => null },
   "@/lib/store/product-colors": colors,
     "@/lib/store/ranch-catalog.js": ranchCatalog,
-    "@/lib/store/ranch-promotion.js": ranchPromotion,
+    "@/lib/store/store-promotion.js": storePromotion,
     "@/lib/store/use-promotion-time": { usePromotionTime: () => Date.parse("2026-11-27T20:00:00Z") },
     "@/components/store/ProductPrice": priceComponents,
     "./ProductPrice": priceComponents,
@@ -196,7 +196,7 @@ test("bag reconciliation keeps the selected color's image, link, price, and cano
   const [item] = resolveBagItems([{
     key: "saved", variantId: chosen.id, productId: product.id, productName: "Old name",
     priceAmount: "1.00", image: product.image, quantity: 2,
-  }], [product]);
+  }], [product], Date.parse(storePromotion.STORE_SALE_END));
   assert.equal(item.variantId, chosen.id);
   assert.equal(item.productId, product.id);
   assert.equal(item.productName, product.name);

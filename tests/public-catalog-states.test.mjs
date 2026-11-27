@@ -46,7 +46,7 @@ const uiDependencies = {
   "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
     "@/lib/store/ranch-catalog.js": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
   "@/lib/store/product-fit-images": productFits,
   "@/lib/store/product-links": productLinks,
 };

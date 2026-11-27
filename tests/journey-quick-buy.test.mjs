@@ -87,7 +87,7 @@ function fixture(item = product, add = () => 1, props = {}) {
     "@/lib/marketing/meta": { trackMetaAddToCart: (item, selected, quantity) => tracked.push({ item, selected, quantity }) },
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add(payload) { calls.push(payload); return add(payload); } }) },
@@ -349,7 +349,7 @@ test("the walk shelf renders three purchase panels beside product links and a fu
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add() {} }) },
@@ -357,7 +357,7 @@ test("the walk shelf renders three purchase panels beside product links and a fu
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
@@ -409,7 +409,7 @@ test("an overflowing rack keeps product gestures out of the walk without taking 
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: "a" },
@@ -457,7 +457,7 @@ test("On the Rack features Blue, the women's script crop, and the Crest polo in 
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add() {} }) },
@@ -465,7 +465,7 @@ test("On the Rack features Blue, the women's script crop, and the Crest polo in 
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },

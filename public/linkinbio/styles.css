@@ -60,3 +60,7 @@ footer{display:flex;align-items:center;justify-content:space-between;margin-top:
 .landscape picture{display:block;width:100%;height:100%}
 
 .collection-feature{--link-image:none;--link-shadow:var(--blue);margin:0 5px 28px 0}
+.sale-notice{margin:-12px 0 24px;font-size:12px;line-height:1.5;color:var(--muted)}
+.product-price{display:inline-flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.product-price [data-current-price]{color:var(--white)}
+.product-price s{font-size:12px}

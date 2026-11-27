@@ -1,14 +1,15 @@
-import { isRanchProduct } from "./ranch-catalog.js";
-
-// Matches the product-scoped automatic discount configured in Shopify.
+// Matches the storewide automatic discount configured in Shopify.
 // Catalog/variant prices remain unchanged; Shopify applies it once at checkout.
-export const RANCH_SALE_START = "2026-11-27T19:27:26Z";
-export const RANCH_SALE_END = "2026-12-01T06:59:59Z";
-export const RANCH_SALE_PERCENT = 30;
-export const RANCH_SALE_COPY = `${RANCH_SALE_PERCENT}% off Ruined Ranch through Monday, November 30, 11:59 p.m. MT. Automatically applied at checkout.`;
+import { STORE_SALE_START, STORE_SALE_END, STORE_SALE_PERCENT } from "../../../public/store-promotion-config.js";
+export { STORE_SALE_START, STORE_SALE_END, STORE_SALE_PERCENT, STORE_SALE_COPY } from "../../../public/store-promotion-config.js";
 
-export function isRanchSaleActive(now = Date.now()) {
-  return now >= Date.parse(RANCH_SALE_START) && now < Date.parse(RANCH_SALE_END);
+/** @param {{shopifyProductGid?: string}} product */
+export function isStoreSaleProduct(product) {
+  return /^gid:\/\/shopify\/Product\/[1-9]\d*$/.test(product.shopifyProductGid ?? "");
+}
+
+export function isStoreSaleActive(now = Date.now()) {
+  return now >= Date.parse(STORE_SALE_START) && now < Date.parse(STORE_SALE_END);
 }
 
 /** @param {number} amount @param {string} currency */
@@ -25,12 +26,12 @@ export function formatStoreMoney(amount, currency) {
  * @param {{priceAmount: string, currencyCode: string} | undefined} variant
  * @param {number} [now]
  */
-export function ranchPromotionPrice(product, variant, now = Date.now()) {
-  if (!isRanchProduct(product) || !variant || !isRanchSaleActive(now)) return undefined;
+export function storePromotionPrice(product, variant, now = Date.now()) {
+  if (!isStoreSaleProduct(product) || !variant || !isStoreSaleActive(now)) return undefined;
   const amount = Number(variant.priceAmount);
   if (!variant.priceAmount.trim() || !Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(variant.currencyCode)) return undefined;
   const regularCents = Math.round(amount * 100);
-  const saleCents = Math.round(regularCents * (100 - RANCH_SALE_PERCENT) / 100);
+  const saleCents = Math.round(regularCents * (100 - STORE_SALE_PERCENT) / 100);
   return {
     amount: saleCents / 100,
     priceAmount: (saleCents / 100).toFixed(2),

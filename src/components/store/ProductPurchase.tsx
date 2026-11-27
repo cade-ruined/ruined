@@ -13,7 +13,7 @@ import { getProductFitOption } from "@/lib/store/product-fit-images";
 import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { trackMetaAddToCart } from "@/lib/marketing/meta";
 import BagLink from "./BagLink";
-import ProductPrice, { RanchSaleNotice } from "./ProductPrice";
+import ProductPrice, { StoreSaleNotice } from "./ProductPrice";
 import ProductSizeGuideDialog from "./ProductSizeGuideDialog";
 import { useBag, isShopifyVariantId } from "./bag-store";
 import styles from "./ProductSurface.module.css";
@@ -35,10 +35,6 @@ function visibleOptions(product: Product): ProductOption[] {
   );
   const color = getProductColorOption(product);
   return color ? [color, ...options.filter((option) => option !== color)] : options;
-}
-
-function formatPriceForSentence(price: string): string {
-  return price.replace(/^([£$€])\s+/, "$1");
 }
 
 function formatExpectedShipDate(value?: string): string | undefined {
@@ -185,7 +181,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
   return (
     <div className="mt-6">
       <p className="display text-3xl"><ProductPrice product={product} variant={selectedVariant} /></p>
-      <RanchSaleNotice product={product} className="mt-3 block text-sm leading-relaxed text-black/65" />
+      <StoreSaleNotice product={product} className="mt-3 block text-sm leading-relaxed text-black/65" />
 
       {isPreorder && (
         <div className="mt-5 border-l border-[var(--color-poster)] pl-4">
@@ -193,7 +189,7 @@ export default function ProductPurchase({ product, initialColor, initialFit, ini
             Preorder — pay in full
           </p>
           <p className="mt-2 text-sm leading-relaxed text-black/65">
-            Pay {formatPriceForSentence(selectedVariant?.price ?? product.price)} now. Expected to ship {expectedShipDate}.
+            Pay <ProductPrice product={product} variant={selectedVariant} /> now. Expected to ship {expectedShipDate}.
           </p>
         </div>
       )}
