@@ -21,6 +21,12 @@ import styles from "./StoreGallery.module.css";
 
 const CATEGORY_LABELS = { all: "All", "tees-tanks": "Tees", hoodies: "Hoodies", pants: "Pants", "collared-shirts": "Collared" };
 
+function catalogCards(products: Product[]) {
+  return products.flatMap((product) => isRanchProduct(product)
+    ? getCatalogEntries([product]).map(({ key, color }) => ({ key, product, color }))
+    : [{ key: product.id, product, color: undefined }]);
+}
+
 export default function StoreGallery({
   products,
   catalogStatus = products.length ? "ready" : "unavailable",
@@ -44,10 +50,12 @@ export default function StoreGallery({
   }, products);
   const collections = getCollectionFilters(products);
   const visibleProducts = filterCatalogProducts(products, filters);
+  const visibleCards = catalogCards(visibleProducts);
+  const totalCards = catalogCards(products).length;
   const filtered = filters.category !== "all" || Boolean(filters.collection) || filters.fit !== "all";
   const selection = catalogAnalyticsSelection(filters);
   const lastReportedView = useRef<string | null>(null);
-  const resultCount = visibleProducts.length;
+  const resultCount = visibleCards.length;
 
   useEffect(() => {
     configureCatalogAnalytics(getCollectionFilters(products));
@@ -68,7 +76,7 @@ export default function StoreGallery({
     if (catalogAnalyticsSelection(nextFilters) === selection) return;
     const key = Object.keys(next).length > 1 ? "reset" : Object.keys(next)[0] as "category" | "collection" | "fit";
     const value = key === "reset" ? "all" : nextFilters[key] || "all";
-    trackStoreEvent("store_filter_changed", { filter: `${key}:${value}`, results: filterCatalogProducts(products, nextFilters).length });
+    trackStoreEvent("store_filter_changed", { filter: `${key}:${value}`, results: catalogCards(filterCatalogProducts(products, nextFilters)).length });
     window.history.pushState(null, "", catalogFiltersHref(window.location.pathname, searchParams.toString(), nextFilters));
   }
   if (!products.length) {
@@ -156,11 +164,11 @@ export default function StoreGallery({
               </label>
             </StoreFilterDrawer>
           </div>
-          <p role="status" className="sr-only">{visibleProducts.length} {visibleProducts.length === 1 ? "style" : "styles"}{filtered ? ` of ${products.length}` : ""}</p>
-          {visibleProducts.length ? (
+          <p role="status" className="sr-only">{resultCount} {resultCount === 1 ? "item" : "items"}{filtered ? ` of ${totalCards}` : ""}</p>
+          {visibleCards.length ? (
             <div className="grid grid-cols-2 border-l border-black/15 lg:grid-cols-4">
-              {visibleProducts.map((product, index) => (
-                <ProductCard key={product.id} product={product} index={index} selection={selection} fit={filters.fit} featured={product.id === "camo-hoodie"} />
+              {visibleCards.map(({ key, product, color }, index) => (
+                <ProductCard key={key} product={product} pinnedColor={color} index={index} selection={selection} fit={filters.fit} featured={product.id === "camo-hoodie"} />
               ))}
             </div>
           ) : (
@@ -204,18 +212,20 @@ function ProductCard({
   index,
   selection,
   fit,
+  pinnedColor,
   featured = false,
 }: {
   product: Product;
   index: number;
   selection: string;
   fit: CatalogFit;
+  pinnedColor?: string;
   featured?: boolean;
 }) {
   const entries = getCatalogEntries([product]);
   const ranchProduct = isRanchProduct(product);
   const [selectedColor, setSelectedColor] = useState(() => (entries.find((entry) => entry.available) ?? entries[0]).color);
-  const entry = entries.find((candidate) => candidate.color === selectedColor) ?? entries[0];
+  const entry = entries.find((candidate) => candidate.color === (pinnedColor ?? selectedColor)) ?? entries[0];
   const { color } = entry;
   const selectedFit = getCatalogFitSelection(product, fit);
   const fitVariants = selectedFit ? product.variants.filter((variant) => variant.selectedOptions.some(
@@ -232,9 +242,9 @@ function ProductCard({
     ? "Sold out"
     : product.expectedShipDate
       ? `Preorder · Ships ${formatExpectedShipDate(product.expectedShipDate)}`
-      : ranchProduct ? "Made to order" : "Available";
+      : "Available";
   return (
-    <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id}>
+    <article className={`border-b border-r border-black/15 bg-[var(--color-bone)] p-2 sm:p-3 ${featured ? "col-span-2" : ""}`} data-product-handle={product.id} data-product-color={color}>
     <Link
       href={href}
       scroll={false}
@@ -288,7 +298,7 @@ function ProductCard({
         </div>
       </div>
     </Link>
-    {entries.length > 1 && (
+    {pinnedColor === undefined && entries.length > 1 && (
       <div role="group" aria-label={`${product.name} colors`} className="flex flex-wrap px-1 pb-1">
         {entries.map((choice) => (
           <button key={choice.key} type="button" aria-label={`${product.name} — ${choice.color}`} aria-pressed={choice.color === color}

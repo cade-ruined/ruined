@@ -8,12 +8,13 @@ import ts from "typescript";
 const elements = node => React.isValidElement(node) ? [node, ...React.Children.toArray(node.props.children).flatMap(elements)] : [];
 const text = node => React.isValidElement(node) ? React.Children.toArray(node.props.children).map(text).join("") : String(node ?? "");
 
-function fixture() {
+function fixture(options = {}) {
   const slots = [], effects = [], events = [], focus = [], locks = [];
   let cursor = 0, tree, backs = 0, releases = 0;
   class Element { isConnected = true; focus(options) { focus.push(options); } }
   const previousFocus = new Element();
-  const document = { body: {}, activeElement: previousFocus, querySelector: () => null };
+  const document = { body: {}, activeElement: previousFocus, querySelector: options.querySelector ?? (() => null) };
+  const window = { location: { search: options.search ?? "" } };
   const react = { ...React,
     useRef(initial) { const i = cursor++; slots[i] ??= { current: initial }; return slots[i]; },
     useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = value; }]; },
@@ -29,9 +30,9 @@ function fixture() {
   };
   const compiled = ts.transpileModule(readFileSync(new URL("../src/components/store/ProductModal.tsx", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const output = { exports: {} };
-  new Function("require", "module", "exports", "document", "HTMLElement", "requestAnimationFrame", "CSS", compiled)(name => {
+  new Function("require", "module", "exports", "document", "HTMLElement", "requestAnimationFrame", "CSS", "window", compiled)(name => {
     assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name];
-  }, output, output.exports, document, Element, callback => callback(), { escape: value => value });
+  }, output, output.exports, document, Element, callback => callback(), { escape: value => value }, window);
   const content = React.createElement("div", { "data-selected-variant": "blue-medium" }, "Product");
   function render() {
     cursor = 0;
@@ -43,6 +44,7 @@ function fixture() {
   }
   render();
   return { render, dialog, events, focus, locks, content,
+    setSearch(value) { window.location.search = value; },
     get releases() { return releases; }, leaveBackground() { previousFocus.isConnected = false; },
     get tree() { return tree; }, get backs() { return backs; },
     button(label) { return elements(tree).find(node => node.type === "button" && (text(node).startsWith(label) || node.props["aria-label"] === label)); },
@@ -62,6 +64,25 @@ test("expanding preserves product children and reports expansion only, minimizin
   assert.equal(view.backs, 0);
   assert.equal(view.locks.length, 1, "expansion preserves the existing modal lock");
   view.cleanup();
+});
+
+test("fallback focus returns to the opening color listing even after a quick-view color change", () => {
+  for (const color of ["Blue", "Brown"]) {
+    const selectors = [], focused = [];
+    const target = { isConnected: true, focus: options => focused.push(options) };
+    const selector = `[data-product-handle="hoodie"][data-product-color="${color}"] a`;
+    const view = fixture({ search: `?color=${color}`, querySelector: value => { selectors.push(value); return value === selector ? target : null; } });
+    view.leaveBackground();
+    view.setSearch("?color=Black");
+    assert.equal(view.locks[0].restoreScroll(), true);
+    view.cleanup();
+    assert.ok(selectors.every(value => value === selector));
+    assert.deepEqual(focused, [{ preventScroll: true }]);
+  }
+  const focused = [];
+  const legacy = fixture({ search: "?color=Blue", querySelector: selector => selector === '[data-product-handle="hoodie"] a' ? { isConnected: true, focus: options => focused.push(options) } : null });
+  legacy.leaveBackground(); legacy.cleanup();
+  assert.deepEqual(focused, [{ preventScroll: true }], "existing single-card products retain the handle fallback");
 });
 
 test("Escape and backdrop dismiss once, while product-content interactions do not dismiss", () => {
