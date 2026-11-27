@@ -19,7 +19,7 @@ function load(react = React, environment = {}, exportName = "JourneyLobbyIndex")
     react, "react/jsx-runtime": jsxRuntime,
     "@/lib/store/product-colors": productColors,
     "@/lib/store/ranch-catalog": ranchCatalog,
-    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), StoreSaleNotice: ({ fallback }) => fallback ?? null },
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
     "next/image": { default: ({ src, alt, className }) => React.createElement("img", { src, alt, className }) },
     "./JourneyQuickBuy": { default: () => null },

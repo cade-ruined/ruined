@@ -6,9 +6,9 @@ import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as colors from "../src/lib/store/product-colors.ts";
 import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
-import * as ranchPromotion from "../src/lib/store/ranch-promotion.js";
+import * as storePromotion from "../src/lib/store/store-promotion.js";
 
-const priceComponents = { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), RanchSaleNotice: () => null };
+const priceComponents = { default: ({ product, variant, fallbackPrice }) => React.createElement("span", null, variant?.price ?? fallbackPrice ?? product.price), StoreSaleNotice: () => null };
 import * as fits from "../src/lib/store/product-fit-images.ts";
 import * as links from "../src/lib/store/product-links.ts";
 import * as catalogFilters from "../src/lib/store/catalog-filters.ts";
@@ -69,7 +69,7 @@ function fixture(path, props = {}, options = {}) {
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors,
     "@/lib/store/ranch-catalog.js": ranchCatalog,
-    "@/lib/store/ranch-promotion.js": ranchPromotion,
+    "@/lib/store/store-promotion.js": storePromotion,
     "@/lib/store/use-promotion-time": { usePromotionTime: () => Date.parse("2026-11-27T20:00:00Z") },
     "@/components/store/ProductPrice": priceComponents,
     "./ProductPrice": priceComponents, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
@@ -156,7 +156,7 @@ test("bag view waits for hydration and consent, then remains one view across car
   const view = fixture("src/components/store/BagPageClient.tsx", { products: [product], email: "private@example.test" }, { allowed: false, hydrated: false });
   view.render(); view.setAllowed(true); view.consent(); assert.equal(view.events.length, 0);
   view.setHydrated(true); view.render();
-  assert.deepEqual(view.named("store_bag_viewed")[0].properties, { source: "bag", quantity: 1, value: 64, currency: "USD" });
+  assert.deepEqual(view.named("store_bag_viewed")[0].properties, { source: "bag", quantity: 1, value: 44.8, currency: "USD" });
   view.setItems([{ ...bagItem, quantity: 2 }]); view.render(); view.consent();
   assert.equal(view.named("store_bag_viewed").length, 1);
   view.cleanup();

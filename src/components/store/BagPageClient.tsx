@@ -12,7 +12,7 @@ import type { Product } from "@/data/products";
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { getProductColorHref, getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 import { isShopifyVariantId, type BagItem, useBag } from "./bag-store";
-import { ranchPromotionPrice, RANCH_SALE_COPY } from "@/lib/store/ranch-promotion.js";
+import { storePromotionPrice, STORE_SALE_COPY } from "@/lib/store/store-promotion.js";
 import { usePromotionTime } from "@/lib/store/use-promotion-time";
 
 type DisplayBagItem = BagItem & {
@@ -36,7 +36,7 @@ export function resolveBagItems(items: BagItem[], products: Product[], now = Dat
 
     const colorOption = getProductColorOption(current.product);
     const color = current.variant.selectedOptions.find((option) => option.name === colorOption?.name)?.value;
-    const promotion = ranchPromotionPrice(current.product, current.variant, now);
+    const promotion = storePromotionPrice(current.product, current.variant, now);
 
     return {
       ...item,
@@ -303,7 +303,7 @@ export default function BagPageClient({
               {FREE_STANDARD_SHIPPING_COPY}
             </p>
           )}
-          {hasPromotion && <p className="mt-3 text-sm leading-relaxed text-white/75">{RANCH_SALE_COPY}</p>}
+          {hasPromotion && <p className="mt-3 text-sm leading-relaxed text-white/75">{STORE_SALE_COPY}</p>}
           <p className={`${canCheckout ? "mt-2" : "mt-4"} text-xs leading-relaxed text-white/65`}>
             {preorderShipDates.length === 1
               ? `Preorders are paid in full now and expected to ship ${preorderShipDates[0]}. `

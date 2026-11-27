@@ -14,7 +14,7 @@ import { getProductColorHref, getProductColorImages } from "@/lib/store/product-
 import { getRanchCollectionHref, getRanchProducts, getRanchRackSelections, isRanchProduct } from "@/lib/store/ranch-catalog";
 import JourneyQuickBuy from "./JourneyQuickBuy";
 import JourneyPreviewVideo from "./JourneyPreviewVideo";
-import ProductPrice, { RanchSaleNotice } from "@/components/store/ProductPrice";
+import ProductPrice, { StoreSaleNotice } from "@/components/store/ProductPrice";
 
 const JOURNEY_GRID_CLASS =
   "grid grid-cols-3 gap-1 border border-white/25 bg-black/75 p-1 shadow-[7px_8px_0_rgba(0,0,0,0.5)] sm:gap-1.5 sm:p-1.5";
@@ -299,8 +299,8 @@ export function JourneyLobbyIndex({
               {selection.title}
             </strong>
             <span className="mt-1 flex items-end justify-between gap-1 font-sans text-[0.6875rem] lg:text-xs uppercase leading-tight tracking-[0.08em] text-white/60 sm:tracking-[0.12em]">
-              <span>{selection.key === "ruined-ranch" && selection.products?.[0]
-                ? <RanchSaleNotice product={selection.products[0]} compact fallback={selection.meta} />
+              <span>{selection.products?.[0]
+                ? <StoreSaleNotice product={selection.products[0]} compact fallback={selection.meta} />
                 : selection.meta}</span>
               {selection.href && <span className="shrink-0 text-white/80 transition-transform group-hover:translate-x-1">↗</span>}
             </span>
@@ -487,7 +487,7 @@ export function JourneyStoreIndex({
                     <span className="mt-1 block font-sans text-[0.6rem] uppercase tracking-[0.1em] text-white/65 sm:mt-2 sm:text-[clamp(0.4rem,0.9vw,0.52rem)] sm:tracking-[0.16em]">
                       {color ? `${color} · ` : ""}<ProductPrice product={product} />
                     </span>
-                    <RanchSaleNotice product={product} compact className="mt-1 block font-sans text-[0.6rem] uppercase tracking-[0.08em] text-white/85 sm:text-[clamp(0.4rem,0.9vw,0.52rem)]" />
+                    <StoreSaleNotice product={product} compact className="mt-1 block font-sans text-[0.6rem] uppercase tracking-[0.08em] text-white/85 sm:text-[clamp(0.4rem,0.9vw,0.52rem)]" />
                     {shipDate && (
                       <span className="mt-1 block font-sans text-[clamp(0.38rem,0.82vw,0.5rem)] uppercase tracking-[0.08em] text-[var(--color-poster)] sm:tracking-[0.13em]">
                         Preorder · Est. ship {shipDate}

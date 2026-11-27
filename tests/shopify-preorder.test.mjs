@@ -103,7 +103,7 @@ test("product and bag present the restrained pay-in-full preorder promise", () =
   assert.match(purchase, /Preorder — pay in full/);
   assert.match(
     purchase,
-    /Pay \{formatPriceForSentence\(selectedVariant\?\.price \?\? product\.price\)\} now\. Expected to ship \{expectedShipDate\}\./
+    /Pay <ProductPrice product=\{product\} variant=\{selectedVariant\} \/> now\. Expected to ship \{expectedShipDate\}\./
   );
   assert.match(purchase, /isPreorder\s*\?\s*"Preorder"\s*:\s*"Add to bag"/);
   assert.match(purchase, /options\.slice\(0, optionIndex\)/);

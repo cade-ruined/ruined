@@ -15,7 +15,7 @@ import { getProductFitHref } from "@/lib/store/product-links";
 import { CATALOG_CATEGORIES, CATALOG_FITS, catalogFiltersHref, filterCatalogProducts, getCollectionFilters, getCatalogFitSelection, normalizeCatalogFilters, type CatalogFit } from "@/lib/store/catalog-filters";
 import StoreVideoHeader from "./StoreVideoHeader";
 import StoreFilterDrawer from "./StoreFilterDrawer";
-import ProductPrice, { RanchSaleNotice } from "./ProductPrice";
+import ProductPrice, { StoreSaleNotice } from "./ProductPrice";
 import { isRanchProduct } from "@/lib/store/ranch-catalog.js";
 import styles from "./StoreGallery.module.css";
 
@@ -291,7 +291,7 @@ function ProductCard({
           </h2>
           <ProductPrice product={product} variant={pricedVariant} fallbackPrice={entry.price} className={`ui-heading tabular-nums ${featured ? "text-xl sm:text-3xl" : "text-sm sm:text-lg"}`} />
         </div>
-        <RanchSaleNotice product={product} compact className="mt-2 block font-mono text-[0.6rem] uppercase tracking-[0.08em] text-black/60" />
+        <StoreSaleNotice product={product} compact className="mt-2 block font-mono text-[0.6rem] uppercase tracking-[0.08em] text-black/60" />
         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-black/50">
           <span className="truncate">{[color, selectedFit].filter(Boolean).join(" · ") || product.subtitle || product.material}</span>
           <span className={availability === "Sold out" ? "text-black/35" : "text-[var(--color-poster)]"}>{availability}</span>
