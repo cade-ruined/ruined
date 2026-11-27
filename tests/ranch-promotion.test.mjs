@@ -38,10 +38,10 @@ test("automatic sale is restricted to four Shopify identities and the exact conf
 test("sale amounts preserve cents and original variant prices", () => {
   const original = JSON.stringify(product);
   const hoodie = promotion.ranchPromotionPrice(product, variant, start);
-  assert.deepEqual([hoodie.price, hoodie.priceAmount, hoodie.regularPrice, hoodie.savings], ["$57.60", "57.60", "$96", 38.4]);
-  const pants = promotion.ranchPromotionPrice({ shopifyProductGid: ranch.RANCH_PRODUCT_IDS[2] }, { ...variant, priceAmount: "72.00" }, start);
-  assert.deepEqual([pants.price, pants.priceAmount, pants.regularPrice], ["$43.20", "43.20", "$72"]);
-  assert.equal(promotion.ranchPromotionPrice(product, { ...variant, priceAmount: "72.99" }, start).priceAmount, "43.79");
+  assert.deepEqual([hoodie.price, hoodie.priceAmount, hoodie.regularPrice, hoodie.savings], ["$67.20", "67.20", "$96", 28.8]);
+  const pants = promotion.ranchPromotionPrice({ shopifyProductGid: ranch.RANCH_PRODUCT_IDS[2] }, { ...variant, priceAmount: "77.00" }, start);
+  assert.deepEqual([pants.price, pants.priceAmount, pants.regularPrice], ["$53.90", "53.90", "$77"]);
+  assert.equal(promotion.ranchPromotionPrice(product, { ...variant, priceAmount: "72.99" }, start).priceAmount, "51.09");
   for (const priceAmount of ["", "NaN", "-4", "Infinity"]) assert.equal(promotion.ranchPromotionPrice(product, { ...variant, priceAmount }, start), undefined);
   assert.equal(JSON.stringify(product), original);
 });
@@ -54,10 +54,12 @@ test("shared price and sale copy disappear together at expiration", () => {
   });
   const render = () => renderToStaticMarkup(React.createElement(React.Fragment, null, React.createElement(ProductPrice, { product, variant }), React.createElement(RanchSaleNotice, { product })));
   const active = render();
-  assert.match(active, /\$57\.60/); assert.match(active, /<del[^>]*>\$96<\/del>/); assert.match(active, /Automatically applied at checkout/);
+  assert.match(active, /\$67\.20/); assert.match(active, /<del[^>]*>\$96<\/del>/); assert.match(active, /30% off Ruined Ranch/); assert.match(active, /Automatically applied at checkout/);
+  const compact = renderToStaticMarkup(React.createElement(RanchSaleNotice, { product, compact: true }));
+  assert.match(compact, /30% off · through Monday/);
   now = end;
   const expired = render();
-  assert.match(expired, /\$96/); assert.doesNotMatch(expired, /\$57\.60|<del|40%/);
+  assert.match(expired, /\$96/); assert.doesNotMatch(expired, /\$67\.20|<del|30%/);
 });
 
 test("canonical bag prices apply the sale once and expire without mutating stored base prices", () => {
@@ -70,9 +72,9 @@ test("canonical bag prices apply the sale once and expire without mutating store
   const stored = [{ key: "item", variantId: variant.id, productId: product.id, quantity: 2, priceAmount: "1.00", unitPrice: "$1" }];
   const snapshot = JSON.stringify(stored);
   const [sale] = resolveBagItems(stored, [product], start);
-  assert.equal(sale.priceAmount, "57.60"); assert.equal(sale.regularUnitPrice, "$96"); assert.equal(Number(sale.priceAmount) * sale.quantity, 115.2);
+  assert.equal(sale.priceAmount, "67.20"); assert.equal(sale.regularUnitPrice, "$96"); assert.equal(Number(sale.priceAmount) * sale.quantity, 134.4);
   const [twice] = resolveBagItems([sale], [product], start);
-  assert.equal(twice.priceAmount, "57.60");
+  assert.equal(twice.priceAmount, "67.20");
   const [expired] = resolveBagItems([sale], [product], end);
   assert.equal(expired.priceAmount, "96.00"); assert.equal(expired.regularUnitPrice, undefined);
   assert.equal(sale.variantId, variant.id); assert.equal(JSON.stringify(stored), snapshot); assert.equal(variant.priceAmount, "96.00");
@@ -80,7 +82,7 @@ test("canonical bag prices apply the sale once and expire without mutating store
 
 test("structured offers match the visible sale and return to base pricing after the deadline", () => {
   const offer = (pricingAsOf) => productOffers({ variants: [variant], productUrl: "https://theruinedproject.com/store/mens-ruined-ranch-hoodie", product: { ...product, pricingAsOf } })[0];
-  assert.equal(offer(start).price, "57.60"); assert.equal(offer(start).validThrough, promotion.RANCH_SALE_END);
+  assert.equal(offer(start).price, "67.20"); assert.equal(offer(start).validThrough, promotion.RANCH_SALE_END);
   assert.equal(offer(end).price, "96.00"); assert.equal(offer(end).validThrough, undefined);
 });
 

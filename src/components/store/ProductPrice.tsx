@@ -2,7 +2,7 @@
 
 import type { Product, ProductVariant } from "@/data/products";
 import { isRanchProduct } from "@/lib/store/ranch-catalog.js";
-import { isRanchSaleActive, ranchPromotionPrice, RANCH_SALE_COPY } from "@/lib/store/ranch-promotion.js";
+import { isRanchSaleActive, ranchPromotionPrice, RANCH_SALE_COPY, RANCH_SALE_PERCENT } from "@/lib/store/ranch-promotion.js";
 import { usePromotionTime } from "@/lib/store/use-promotion-time";
 
 export default function ProductPrice({ product, variant, fallbackPrice, className = "" }: {
@@ -33,5 +33,5 @@ export function RanchSaleNotice({ product, className = "", compact = false, fall
 }) {
   const now = usePromotionTime(product.pricingAsOf);
   if (!isRanchProduct(product) || !isRanchSaleActive(now)) return fallback ? <span className={className}>{fallback}</span> : null;
-  return <span className={className}>{compact ? "40% off · through Monday" : RANCH_SALE_COPY}</span>;
+  return <span className={className}>{compact ? `${RANCH_SALE_PERCENT}% off · through Monday` : RANCH_SALE_COPY}</span>;
 }
