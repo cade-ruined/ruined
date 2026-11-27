@@ -464,12 +464,12 @@ test("mobile stage combines canonical arrivals with in-place walk frames", async
   assert.match(lobbyIndex, /<JourneyPreviewVideo[\s\S]*src=\{selection.video\}[\s\S]*poster=\{selection.poster\}/);
   assert.match(lobbyIndex, /target=\{selection\.external \? "_blank" : undefined\}/);
   assert.match(lobbyIndex, /className="journey-card-title/);
-  assert.match(indexes, /featuredProducts\.length === 3/);
+  assert.match(indexes, /featuredProducts\.length >= 3/);
   assert.match(indexes, /gridTemplateColumns: `repeat\(\$\{productCount\}, minmax\(0, 1fr\)\)`/);
   assert.match(indexes, /productCount === 2[\s\S]*max-w-\[38rem\]/);
   assert.match(indexes, /href=\{getProductColorHref\(product, color\)\}/);
   assert.match(indexes, /product\.expectedShipDate[\s\S]*Preorder · Est\. ship \{shipDate\}/);
-  assert.match(indexes, /href="\/store"[\s\S]*Off the Rack/);
+  assert.match(indexes, /href=\{ranchFeatured \? getRanchCollectionHref\(products\) : "\/store"\}[\s\S]*Off the Rack/);
   assert.doesNotMatch(indexes, /View catalogue/);
   assert.match(indexes, /projects\.slice\(0, 3\)/);
   assert.match(indexes, /visibleEvents\.length === 2[\s\S]*"min-\[1025px\]:mx-auto min-\[1025px\]:w-2\/3"/);

@@ -8,6 +8,7 @@ import { parseFragment } from "parse5";
 import ts from "typescript";
 import { compile } from "tailwindcss";
 import * as productColors from "../src/lib/store/product-colors.ts";
+import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
 
 const compiled = new Map();
 function load(path, dependencies, environment = {}) {
@@ -85,6 +86,8 @@ function fixture(item = product, add = () => 1, props = {}) {
   const Component = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/marketing/meta": { trackMetaAddToCart: (item, selected, quantity) => tracked.push({ item, selected, quantity }) },
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add(payload) { calls.push(payload); return add(payload); } }) },
@@ -166,7 +169,7 @@ test("a selected variant's higher price is disclosed before adding and clears wh
   assert.equal(disclosedPrice(), undefined, "The matching card price need not be repeated");
   view.choose("Color", "Blue");
   view.choose("Size", "M");
-  assert.equal(content(disclosedPrice()), "$68");
+  assert.match(renderToStaticMarkup(disclosedPrice()), />\$68</);
   assert.equal(view.calls.length, 0, "The price must be visible before purchase");
   view.choose("Color", "Black");
   assert.equal(disclosedPrice(), undefined, "An incomplete choice must not retain the previous variant's price");
@@ -345,12 +348,16 @@ test("quick-buy gestures stay local without canceling native controls or capturi
 test("the walk shelf renders three purchase panels beside product links and a full-catalog route", async () => {
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add() {} }) },
   }).default;
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
@@ -401,6 +408,8 @@ test("an overflowing rack keeps product gestures out of the walk without taking 
   const quickBuy = fixture();
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: "a" },
@@ -447,12 +456,16 @@ test("an overflowing rack keeps product gestures out of the walk without taking 
 test("On the Rack features Blue, the women's script crop, and the Crest polo in the requested order", () => {
   const QuickBuy = load("src/components/sequence/JourneyQuickBuy.tsx", {
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "@/components/store/bag-store": { useBag: () => ({ add() {} }) },
   }).default;
   const { JourneyStoreIndex } = load("src/components/sequence/JourneyIndexes.tsx", {
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },

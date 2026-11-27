@@ -8,6 +8,7 @@ import ts from "typescript";
 import { loadCatalog } from "../src/lib/store/catalog-loader.ts";
 import * as catalog from "../src/lib/store/catalog.ts";
 import * as productColors from "../src/lib/store/product-colors.ts";
+import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
 import * as productFits from "../src/lib/store/product-fit-images.ts";
 import * as catalogFilters from "../src/lib/store/catalog-filters.ts";
 import * as productLinks from "../src/lib/store/product-links.ts";
@@ -43,11 +44,15 @@ const uiDependencies = {
   "@/lib/store/catalog-filters": catalogFilters,
   "next/navigation": { usePathname: () => "/store", useSearchParams: () => new URLSearchParams() },
   "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/lib/store/ranch-catalog.js": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
   "@/lib/store/product-fit-images": productFits,
   "@/lib/store/product-links": productLinks,
 };
 const { default: StoreGallery } = await compile("src/components/store/StoreGallery.tsx", {
   ...uiDependencies,
+  "./ProductPrice": uiDependencies["@/components/store/ProductPrice"],
   "./StoreVideoHeader": { default: () => null },
   "./StoreFilterDrawer": { default: ({ children }) => children },
   "./StoreGallery.module.css": { default: {} },
@@ -55,6 +60,7 @@ const { default: StoreGallery } = await compile("src/components/store/StoreGalle
 });
 const { default: ProductPurchase } = await compile("src/components/store/ProductPurchase.tsx", {
   ...uiDependencies,
+  "./ProductPrice": uiDependencies["@/components/store/ProductPrice"],
   "@/data/product-size-guides": { getProductSizeGuide: () => undefined, getProductSizeGuideConfig: () => undefined },
   "@/data/store-policies": { FREE_STANDARD_SHIPPING_COPY: "Free standard shipping over $150." },
   "./BagLink": { default: () => null },

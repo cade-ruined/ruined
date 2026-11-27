@@ -1,4 +1,5 @@
 import type { Product, ProductImage, ProductOption, ProductVariant } from "@/data/products";
+import { getRanchStyle } from "./ranch-catalog.js";
 
 export type CatalogEntry = {
   key: string;
@@ -66,8 +67,20 @@ function sundayClothesPhoto(product: Product, image: ProductImage) {
   return match ? { color: match[1], view: match[2] } : undefined;
 }
 
+// Shopify appends a UUID when a filename already exists in Files.
+const RANCH_PHOTO = /^RR_(Mens|Womens)_(Top|Bottoms?)_(Black|Blue|Brown)(_Back)?_Concrete_Flash(?:_[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})?\.png$/;
+
+function ranchPhoto(product: Product, image: ProductImage) {
+  const style = getRanchStyle(product);
+  if (!style) return undefined;
+  const match = RANCH_PHOTO.exec(filename(image) ?? "");
+  if (!match || match[1] !== style.gender || !match[2].startsWith(style.garment)
+    || (style.garment === "Bottom" && match[4])) return undefined;
+  return { color: match[3], view: match[4] ? "back" : "front" };
+}
+
 function colorImageLabel(product: Product, image: ProductImage): ProductImage {
-  const photo = sundayClothesPhoto(product, image);
+  const photo = sundayClothesPhoto(product, image) ?? ranchPhoto(product, image);
   return photo && (!image.alt.trim() || image.alt.trim() === product.name)
     ? { ...image, alt: `${product.name} — ${photo.color}, ${photo.view.toLowerCase()}` }
     : image;
@@ -76,8 +89,9 @@ function colorImageLabel(product: Product, image: ProductImage): ProductImage {
 function associatedVariantImage(product: Product, variant: ProductVariant, color: string): ProductImage | undefined {
   const image = variant.image;
   if (!image) return undefined;
-  const photo = sundayClothesPhoto(product, image);
+  const photo = sundayClothesPhoto(product, image) ?? ranchPhoto(product, image);
   if (photo) return photo.color.toLowerCase() === color.toLowerCase() ? colorImageLabel(product, image) : undefined;
+  if (getRanchStyle(product) && RANCH_PHOTO.test(filename(image) ?? "")) return undefined;
   const cover = product.image ?? product.images?.[0];
   // Storefront variant.image falls back to the product cover when unassigned.
   // A shared cover therefore cannot establish a multi-color association.
@@ -100,6 +114,14 @@ function sundayClothesImages(product: Product, color: string): ProductImage[] {
   });
 }
 
+function ranchImages(product: Product, color: string): ProductImage[] {
+  if (!getRanchStyle(product)) return [];
+  const matching = productImages(product).filter((image) => ranchPhoto(product, image)?.color.toLowerCase() === color.toLowerCase());
+  return ["front", "back"].flatMap((view) => matching
+    .filter((image) => ranchPhoto(product, image)?.view === view)
+    .map((image) => colorImageLabel(product, image)));
+}
+
 export function getProductColorImages(product: Product, color?: string): ProductImage[] {
   const resolvedColor = resolveColor(product, color);
   if (!resolvedColor) return productImages(product);
@@ -109,6 +131,7 @@ export function getProductColorImages(product: Product, color?: string): Product
   return distinctImages([
     ...colorVariants(product, resolvedColor).map((variant) => associatedVariantImage(product, variant, resolvedColor)),
     ...sundayClothesImages(product, resolvedColor),
+    ...ranchImages(product, resolvedColor),
     ...singleColorImages,
   ]);
 }

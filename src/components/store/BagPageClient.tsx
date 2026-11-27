@@ -12,14 +12,18 @@ import type { Product } from "@/data/products";
 import { FREE_STANDARD_SHIPPING_COPY } from "@/data/store-policies";
 import { getProductColorHref, getProductColorOption, getVariantImage } from "@/lib/store/product-colors";
 import { isShopifyVariantId, type BagItem, useBag } from "./bag-store";
+import { ranchPromotionPrice, RANCH_SALE_COPY } from "@/lib/store/ranch-promotion.js";
+import { usePromotionTime } from "@/lib/store/use-promotion-time";
 
 type DisplayBagItem = BagItem & {
   canonical: boolean;
   available: boolean;
   href: string;
+  regularUnitPrice?: string;
+  savings?: number;
 };
 
-export function resolveBagItems(items: BagItem[], products: Product[]): DisplayBagItem[] {
+export function resolveBagItems(items: BagItem[], products: Product[], now = Date.now()): DisplayBagItem[] {
   const variants = new Map(
     products.flatMap((product) =>
       product.variants.map((variant) => [variant.id, { product, variant }] as const)
@@ -32,6 +36,7 @@ export function resolveBagItems(items: BagItem[], products: Product[]): DisplayB
 
     const colorOption = getProductColorOption(current.product);
     const color = current.variant.selectedOptions.find((option) => option.name === colorOption?.name)?.value;
+    const promotion = ranchPromotionPrice(current.product, current.variant, now);
 
     return {
       ...item,
@@ -40,8 +45,10 @@ export function resolveBagItems(items: BagItem[], products: Product[]): DisplayB
       productCode: current.product.code,
       variantTitle: current.variant.title,
       selectedOptions: current.variant.selectedOptions,
-      unitPrice: current.variant.price,
-      priceAmount: current.variant.priceAmount,
+      unitPrice: promotion?.price ?? current.variant.price,
+      priceAmount: promotion?.priceAmount ?? current.variant.priceAmount,
+      regularUnitPrice: promotion?.regularPrice,
+      savings: promotion?.savings,
       currencyCode: current.variant.currencyCode,
       image: getVariantImage(current.product, current.variant),
       href: getProductColorHref(current.product, color),
@@ -57,7 +64,8 @@ function formatTotal(amount: number, currencyCode: string): string {
     return new Intl.NumberFormat("en-GB", {
       style: "currency",
       currency: currencyCode,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   } catch {
     return `${currencyCode} ${amount.toFixed(2)}`;
@@ -91,7 +99,9 @@ export default function BagPageClient({
   const [submitting, setSubmitting] = useState(false);
   const viewed = useRef(false);
   const [error, setError] = useState("");
-  const displayItems = useMemo(() => resolveBagItems(items, products), [items, products]);
+  const now = usePromotionTime(products[0]?.pricingAsOf);
+  const displayItems = useMemo(() => resolveBagItems(items, products, now), [items, products, now]);
+  const hasPromotion = displayItems.some((item) => Boolean(item.regularUnitPrice));
   const currencies = new Set(displayItems.map((item) => item.currencyCode));
   const currency = currencies.size === 1 ? displayItems[0]?.currencyCode : undefined;
   const total = displayItems.reduce(
@@ -244,7 +254,10 @@ export default function BagPageClient({
                     <p className="font-mono text-[0.52rem] uppercase tracking-[0.22em] text-white/40">{item.productCode}</p>
                     <Link href={item.href} className="display mt-2 block text-2xl leading-none transition-colors hover:text-[var(--color-poster)] sm:text-4xl">{item.productName}</Link>
                   </div>
-                  <p className="display shrink-0 text-lg sm:text-2xl">{item.unitPrice}</p>
+                  <p className="display flex shrink-0 flex-wrap items-baseline gap-2 text-lg sm:text-2xl">
+                    <span>{item.unitPrice}</span>
+                    {item.regularUnitPrice && <del className="text-sm text-white/50">{item.regularUnitPrice}</del>}
+                  </p>
                 </div>
                 <p className="mt-3 font-mono text-[0.55rem] uppercase tracking-[0.18em] text-white/50">
                   {item.selectedOptions.map((option) => `${option.name} · ${option.value}`).join(" / ") || item.variantTitle}
@@ -290,6 +303,7 @@ export default function BagPageClient({
               {FREE_STANDARD_SHIPPING_COPY}
             </p>
           )}
+          {hasPromotion && <p className="mt-3 text-sm leading-relaxed text-white/75">{RANCH_SALE_COPY}</p>}
           <p className={`${canCheckout ? "mt-2" : "mt-4"} text-xs leading-relaxed text-white/65`}>
             {preorderShipDates.length === 1
               ? `Preorders are paid in full now and expected to ship ${preorderShipDates[0]}. `

@@ -7,6 +7,7 @@ import { getProductColorOption, getVariantImage } from "@/lib/store/product-colo
 import { trackStoreEvent } from "@/lib/analytics/storefront";
 import { MARKETING_CONSENT_EVENT } from "@/lib/marketing/consent";
 import { trackMetaAddToCart } from "@/lib/marketing/meta";
+import ProductPrice from "@/components/store/ProductPrice";
 
 function matches(variant: ProductVariant, selection: Record<string, string>) {
   return Object.entries(selection).every(([name, value]) =>
@@ -186,7 +187,7 @@ export default function JourneyQuickBuy({ product, color }: { product: Product; 
         {added ? `${product.name}${selectionSummary ? `, ${selectionSummary}` : ""} added to bag.` : ""}
       </span>
       {selectedVariant && selectedVariant.price !== product.price && (
-        <p className="mt-1.5 text-xs text-white" aria-live="polite">{selectedVariant.price}</p>
+        <p className="mt-1.5 text-xs text-white" aria-live="polite"><ProductPrice product={product} variant={selectedVariant} /></p>
       )}
       {error && <p role="alert" className="mt-1.5 text-xs leading-snug text-[var(--color-poster)]">Couldn’t save to bag. Please try again.</p>}
     </div>

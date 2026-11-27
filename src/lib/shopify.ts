@@ -265,6 +265,7 @@ function mapProduct(node: SFProductNode, index: number): Product {
   return {
     id: node.handle,
     shopifyProductGid: node.id,
+    pricingAsOf: Date.now(),
     code: meta.code ?? `RU—${String(index + 1).padStart(3, "0")}`,
     name: node.title,
     productType: node.productType ?? "",

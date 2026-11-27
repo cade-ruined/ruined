@@ -116,9 +116,9 @@ test("product and bag present the restrained pay-in-full preorder promise", () =
   assert.match(bagPage, /Preorder — pay in full/);
   assert.match(bagRoute, /const products = await getProducts\(\)/);
   assert.match(bagRoute, /<BagPageClient email=\{email\} products=\{products\}/);
-  assert.match(bagPage, /resolveBagItems\(items, products\)/);
-  assert.match(bagPage, /unitPrice:\s*current\.variant\.price/);
-  assert.match(bagPage, /priceAmount:\s*current\.variant\.priceAmount/);
+  assert.match(bagPage, /resolveBagItems\(items, products, now\)/);
+  assert.match(bagPage, /unitPrice:\s*promotion\?\.price \?\? current\.variant\.price/);
+  assert.match(bagPage, /priceAmount:\s*promotion\?\.priceAmount \?\? current\.variant\.priceAmount/);
   assert.match(
     bagPage,
     /Pay \{formatPriceForSentence\(item\.unitPrice\)\} now\. Expected to ship \{formatExpectedShipDate\(item\.expectedShipDate\)\}\./

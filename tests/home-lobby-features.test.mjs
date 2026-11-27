@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { parseFragment } from "parse5";
 import ts from "typescript";
 import * as productColors from "../src/lib/store/product-colors.ts";
+import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
 import { resolvePublicEventDate } from "../src/lib/events/public-event-date.ts";
 
 const indexSource = await readFile(new URL("../src/components/sequence/JourneyIndexes.tsx", import.meta.url), "utf8");
@@ -17,6 +18,8 @@ function load(react = React, environment = {}, exportName = "JourneyLobbyIndex")
   const dependencies = {
     react, "react/jsx-runtime": jsxRuntime,
     "@/lib/store/product-colors": productColors,
+    "@/lib/store/ranch-catalog": ranchCatalog,
+    "@/components/store/ProductPrice": { default: ({ product, variant }) => React.createElement("span", null, variant?.price ?? product.price), RanchSaleNotice: () => null },
     "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children) },
     "next/image": { default: ({ src, alt, className }) => React.createElement("img", { src, alt, className }) },
     "./JourneyQuickBuy": { default: () => null },
@@ -82,6 +85,27 @@ test("new arrivals includes the reactivated BYOB tank in the live catalog-linked
   }
   const store = render({ products: [...products, makeProduct("tenth-piece")] }).cards.find((card) => attr(card, "href") === "/store");
   assert.equal(nodes(store).filter((node) => node.tagName === "img").length, 9, "The collage stays bounded when more products are added");
+});
+
+test("published Ranch products replace the arrivals collage and link to all four styles", () => {
+  const ranch = ranchCatalog.RANCH_PRODUCT_IDS.map((shopifyProductGid, index) => ({
+    ...makeProduct(`ranch-${index}`), shopifyProductGid,
+    collections: [{ handle: "ruined-ranch", title: "Ruined Ranch" }],
+  }));
+  const { cards } = render({ products: [...products, ...ranch].reverse() });
+  const store = cards.find((card) => attr(card, "href") === "/store?collection=ruined-ranch");
+  assert.ok(store);
+  assert.match(text(store), /Ruined Ranch/);
+  assert.doesNotMatch(text(store), /New arrivals/);
+  assert.deepEqual(nodes(store).filter((node) => node.tagName === "img").map((node) => attr(node, "src")), ranch.map(({ image }) => image.url));
+  const unpublished = render({ products: products.map((product) => ({ ...product, name: "Ruined Ranch" })) });
+  assert.ok(unpublished.cards.some((card) => /New arrivals/.test(text(card))));
+
+  const JourneyStoreIndex = load(React, {}, "JourneyStoreIndex");
+  const rack = parseFragment(renderToStaticMarkup(React.createElement(JourneyStoreIndex, { products: [...products, ...ranch] })));
+  const rackCards = nodes(rack).filter((node) => attr(node, "data-journey-product-card") !== undefined);
+  assert.deepEqual(rackCards.map((node) => attr(node, "data-journey-product-card")), ranch.map(({ id }) => id));
+  assert.ok(nodes(rack).some((node) => attr(node, "style") === "grid-template-columns:repeat(4, minmax(0, 1fr))"));
 });
 
 test("an open event can lead with its own image even without the archive event", () => {

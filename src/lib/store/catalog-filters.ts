@@ -4,6 +4,7 @@ export const CATALOG_CATEGORIES = [
   { id: "all", label: "All" },
   { id: "tees-tanks", label: "Tees & Tanks" },
   { id: "hoodies", label: "Hoodies" },
+  { id: "pants", label: "Pants" },
   { id: "collared-shirts", label: "Collared Shirts" },
 ] as const;
 
@@ -21,7 +22,7 @@ export type ProductCategory = Exclude<CatalogCategory, "all">;
 export type CatalogFilters = { category: CatalogCategory; collection: string; fit: CatalogFit };
 export type CatalogFilterInput = { category?: string | null; collection?: string | null; fit?: string | null };
 
-const COLLECTION_ORDER = ["staples", "sunday-clothes", "less-permanent", "collared-script", "byob"];
+const COLLECTION_ORDER = ["ruined-ranch", "staples", "sunday-clothes", "less-permanent", "collared-script", "byob"];
 const EXCLUDED_COLLECTIONS = new Set(["frontpage"]);
 
 // Existing Shopify products mostly have no productType. These stable handles
@@ -43,6 +44,7 @@ const CATEGORY_BY_HANDLE: Record<string, ProductCategory> = {
 
 function categoryFromText(text: string): ProductCategory | null {
   if (/\b(?:hoodies?|hooded)\b/i.test(text)) return "hoodies";
+  if (/\b(?:sweatpants|pants|trousers|joggers)\b/i.test(text)) return "pants";
   if (/\b(?:collared|polos?)\b/i.test(text)) return "collared-shirts";
   if (/\b(?:tees?|t[ -]?shirts?|tanks?)\b/i.test(text)) return "tees-tanks";
   return null;

@@ -1,4 +1,5 @@
 import type { Product, ProductVariant } from "@/data/products";
+import { ranchPromotionPrice, RANCH_SALE_END } from "./ranch-promotion.js";
 
 /** An editorial excerpt, not a search-engine length requirement. */
 export function productMetadataDescription(product: Pick<Product, "name" | "description">): string {
@@ -20,11 +21,12 @@ export function productMetadataDescription(product: Pick<Product, "name" | "desc
 }
 
 /** Each purchasable variant has its own price, stock, and restorable selection URL. */
-export function productOffers({ variants, productUrl, expectedShipDate, returnPolicyId }: {
+export function productOffers({ variants, productUrl, expectedShipDate, returnPolicyId, product }: {
   variants: ProductVariant[];
   productUrl: string;
   expectedShipDate?: string;
   returnPolicyId?: string;
+  product?: Pick<Product, "shopifyProductGid" | "pricingAsOf">;
 }) {
   return variants.flatMap((variant) => {
     const variantId = /^gid:\/\/shopify\/ProductVariant\/(\d+)$/.exec(variant.id)?.[1];
@@ -32,11 +34,13 @@ export function productOffers({ variants, productUrl, expectedShipDate, returnPo
     if (!variantId || !variant.priceAmount.trim() || !Number.isFinite(amount) || amount < 0 || !/^[A-Z]{3}$/.test(variant.currencyCode)) return [];
     const url = new URL(productUrl);
     url.searchParams.set("variant", variantId);
+    const promotion = product ? ranchPromotionPrice(product, variant, product.pricingAsOf) : undefined;
     return [{
       "@type": "Offer",
       url: url.href,
       priceCurrency: variant.currencyCode,
-      price: amount.toFixed(2),
+      price: promotion?.priceAmount ?? amount.toFixed(2),
+      ...(promotion ? { validThrough: RANCH_SALE_END } : {}),
       availability: !variant.available
         ? "https://schema.org/OutOfStock"
         : expectedShipDate

@@ -6,6 +6,7 @@ import * as jsxRuntime from "react/jsx-runtime";
 import ts from "typescript";
 import * as fits from "../src/lib/store/product-fit-images.ts";
 import * as colors from "../src/lib/store/product-colors.ts";
+import * as ranchCatalog from "../src/lib/store/ranch-catalog.js";
 import * as links from "../src/lib/store/product-links.ts";
 
 const photos = ["Men's", "Women's"].flatMap((fit) => ["back", "front"].map((view) => ({
@@ -66,6 +67,7 @@ test("product gallery switches to the selected Fit while other products retain c
     "next/navigation": { useSearchParams: () => new URLSearchParams(query) },
     "@/data/products": { PRODUCT_TONES: { shadow: "#000" } },
     "@/lib/store/product-colors": colors,
+    "@/lib/store/ranch-catalog.js": ranchCatalog,
     "@/lib/store/product-fit-images": fits,
     "@/lib/store/product-links": links,
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
@@ -159,7 +161,8 @@ test("a fit-filter landing reports its matching representative variant without p
     "react/jsx-runtime": jsxRuntime,
     "./ProductGallery": { default: () => null }, "./ProductPurchase": { default: Purchase },
     "next/navigation": { useSearchParams: () => new URLSearchParams("fit=Women%27s") },
-    "@/lib/store/product-colors": colors, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
+    "@/lib/store/product-colors": colors,
+    "@/lib/store/ranch-catalog.js": ranchCatalog, "@/lib/store/product-fit-images": fits, "@/lib/store/product-links": links,
     "@/lib/marketing/consent": { MARKETING_CONSENT_EVENT: "consent" },
     "@/lib/marketing/meta": { trackMetaProductView: (_product, variant) => metaViews.push(variant) },
     "@/lib/analytics/storefront": { trackStoreEvent: (name, properties) => { events.push({ name, properties }); return true; } },
