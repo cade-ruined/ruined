@@ -11,7 +11,7 @@ import { EXPLORE_ROOMS, type ExploreRoom } from "@/data/navigation";
 import { MEMBERSHIP_INTRO, MEMBERSHIP_LINKS } from "@/data/public-membership";
 import { catalogNotice, type CatalogStatus } from "@/lib/store/catalog";
 import { getProductColorHref, getProductColorImages } from "@/lib/store/product-colors";
-import { getRanchCollectionHref, getRanchProducts, getRanchRackSelections } from "@/lib/store/ranch-catalog";
+import { getRanchCollectionHref, getRanchProducts, getRanchRackSelections, isRanchProduct } from "@/lib/store/ranch-catalog";
 import JourneyQuickBuy from "./JourneyQuickBuy";
 import JourneyPreviewVideo from "./JourneyPreviewVideo";
 import ProductPrice, { RanchSaleNotice } from "@/components/store/ProductPrice";
@@ -438,6 +438,7 @@ export function JourneyStoreIndex({
           }}
         >
           {featuredProducts.map(({ product, color }, index) => {
+            const ranchProduct = isRanchProduct(product);
             const [firstImage, secondImage] = getProductColorImages(product, color);
             const shipDate = product.expectedShipDate
               ? formatJourneyShipDate(product.expectedShipDate)
@@ -453,6 +454,7 @@ export function JourneyStoreIndex({
                 <Link
                   href={getProductColorHref(product, color)}
                   className={`${JOURNEY_CARD_CLASS} block max-sm:max-h-[max(4.5rem,calc(100svh_-_20rem))] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white`}
+                  style={ranchProduct ? { aspectRatio: "1 / 1" } : undefined}
                 >
                   {firstImage && (
                     <Image
@@ -460,7 +462,7 @@ export function JourneyStoreIndex({
                       alt={firstImage.alt}
                       fill
                       sizes="(min-width: 640px) 22rem, 84vw"
-                      className="object-cover transition-transform duration-700 group-hover:scale-[1.025]"
+                      className={`${ranchProduct ? "object-contain" : "object-cover"} transition-transform duration-700 group-hover:scale-[1.025]`}
                     />
                   )}
                   {firstImage && secondImage && secondImage.url !== firstImage.url && (
@@ -470,7 +472,7 @@ export function JourneyStoreIndex({
                       aria-hidden="true"
                       fill
                       sizes="(min-width: 640px) 22rem, 84vw"
-                      className="pointer-events-none object-cover opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100"
+                      className={`pointer-events-none ${ranchProduct ? "object-contain" : "object-cover"} opacity-0 transition-opacity duration-300 motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover:opacity-100`}
                     />
                   )}
                   <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/20" />
