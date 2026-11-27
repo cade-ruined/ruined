@@ -21,13 +21,13 @@ function makeRanch(index) {
     }));
   });
   const product = {
-    id, name, shopifyProductGid: RANCH_PRODUCT_IDS[index], price: garment === "Top" ? "$96" : "$72", available: true,
+    id, name, shopifyProductGid: RANCH_PRODUCT_IDS[index], price: garment === "Top" ? "$96" : "$77", available: true,
     options: [{ name: "Color", values: colors }, { name: "Size", values: ["S", "M"] }],
     collections: [collection], image: photos[0], images: [...photos].reverse(),
     variants: colors.flatMap((color, colorIndex) => ["S", "M"].map((size, sizeIndex) => ({
       id: `gid://shopify/ProductVariant/${index}${colorIndex}${sizeIndex}`, available: true,
       selectedOptions: [{ name: "Color", value: color }, { name: "Size", value: size }],
-      priceAmount: garment === "Top" ? "96.00" : "72.00", currencyCode: "USD", image: photos[0],
+      priceAmount: garment === "Top" ? "96.00" : "77.00", currencyCode: "USD", image: photos[0],
     }))),
   };
   return product;

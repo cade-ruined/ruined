@@ -53,7 +53,7 @@ const products = definitions.map(([id, name, gender, garment], index) => {
   const images = choices.flatMap(color => (garment === "Top" ? ["", "_Back"] : [""]).map(view => ({
     url: `https://cdn.shopify.com/files/RR_${gender}_${garment}_${color}${view}_Concrete_Flash.png`, alt: `${name} ${color}${view}`,
   })));
-  const amount = garment === "Top" ? "96.00" : "72.00";
+  const amount = garment === "Top" ? "96.00" : "77.00";
   return { id, name, shopifyProductGid: ranch.RANCH_PRODUCT_IDS[index], code: `RR-${index}`, price: `$${Number(amount)}`, tone: "shadow", available: true,
     productType: garment === "Top" ? "Hoodie" : "Sweatpants", collections: [{ handle: "ruined-ranch", title: "Ruined Ranch" }],
     options: [{ name: "Color", values: choices }, { name: "Size", values: ["S", "M"] }], image: images[0], images,
@@ -85,8 +85,8 @@ test("Ranch shows twelve fixed-color listings with correct views, links, prices 
       if (index < 2) assert.match(attr(imageNodes[1], "src"), new RegExp(`_${color}_Back_Concrete_Flash\\.png$`));
       assert.ok(imageNodes.every(node => attr(node, "class").includes("object-contain")));
       assert.equal(nodes.filter(node => node.tagName === "button").length, 0, "A fixed-color listing must not switch into another card's color");
-      assert.ok(text(card).includes(index < 2 ? "$57.60" : "$43.20"));
-      assert.ok(text(card).includes(index < 2 ? "$96" : "$72"));
+      assert.ok(text(card).includes(index < 2 ? "$67.20" : "$53.90"));
+      assert.ok(text(card).includes(index < 2 ? "$96" : "$77"));
       assert.equal(text(card).includes("Sold out"), index === 0 && color === "Blue");
       assert.doesNotMatch(text(card), /Made to order/i);
     }
